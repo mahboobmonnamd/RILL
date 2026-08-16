@@ -11,9 +11,11 @@
 #import <CoreText/CoreText.h>
 #import <Metal/Metal.h>
 #import <QuartzCore/QuartzCore.h>
+#import <ApplicationServices/ApplicationServices.h>
 #include <simd/simd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 // ---------------------------------------------------------------- shaders
 //
@@ -640,6 +642,17 @@ static inline vector_float4 rgba(uint32_t c) {
 /* ^C was untypeable in the previous build, which also made T-DROP unreachable
  * through the GUI (docs/SPIKE-0-AUDIT.md S3-8g). */
 - (void)keyDown:(NSEvent *)event {
+    if (_nfrRunning && _sentinel.armed && _sentinel.keyTimestamp == 0 && event.characters.length) {
+        unichar typed = [event.characters characterAtIndex:0];
+        if ((uint32_t)typed == _sentinel.codepoint) {
+            /* Map NSEvent.timestamp onto the presentedTime timebase
+             * (CACurrentMediaTime). Mixing boot-uptime with mach time produced
+             * negative intervals and a 100% discard run. */
+            NSTimeInterval uptime = NSProcessInfo.processInfo.systemUptime;
+            NSTimeInterval ca = CACurrentMediaTime();
+            _sentinel.keyTimestamp = event.timestamp + (ca - uptime);
+        }
+    }
     NSEventModifierFlags mods = event.modifierFlags;
     NSString *plain = event.charactersIgnoringModifiers;
 
@@ -696,6 +709,12 @@ static inline vector_float4 rgba(uint32_t c) {
 - (void)insertText:(id)string replacementRange:(NSRange)r {
     (void)r;
     NSString *s = [string isKindOfClass:[NSAttributedString class]] ? [string string] : string;
+    if (_nfrRunning && _sentinel.armed && _sentinel.keyTimestamp == 0 && s.length) {
+        unichar typed = [s characterAtIndex:0];
+        if ((uint32_t)typed == _sentinel.codepoint) {
+            _sentinel.keyTimestamp = CACurrentMediaTime();
+        }
+    }
     NSData *d = [s dataUsingEncoding:NSUTF8StringEncoding];
     [self sendBytes:d.bytes length:d.length];
 }
@@ -723,8 +742,8 @@ static inline vector_float4 rgba(uint32_t c) {
         return;
     }
     double ms = (presented - keyTs) * 1000.0;
-    if (ms <= 0 || ms > 5000) {
-        _discards++; /* clock skew or a lost attribution; never a 0ms sample */
+    if (keyTs <= 0 || ms <= 0 || ms > 5000) {
+        _discards++; /* no keyDown, clock skew, or a lost attribution */
     } else {
         [_samples addObject:@(ms)];
     }
@@ -801,11 +820,14 @@ static inline vector_float4 rgba(uint32_t c) {
         UniChar u = (UniChar)cp;
         CGEventKeyboardSetUnicodeString(down, 1, &u);
         CGEventKeyboardSetUnicodeString(up, 1, &u);
-        /* Start timestamp: when the window server created the event, not when
-         * our code first saw it. */
-        _sentinel.keyTimestamp = (double)CGEventGetTimestamp(down) / 1e9;
-        CGEventPost(kCGSessionEventTap, down);
-        CGEventPost(kCGSessionEventTap, up);
+        /* Post to this pid. kCGSessionEventTap delivers to the frontmost app,
+         * which during an agent run is usually the editor, so every sample
+         * timed out (0 accepted / 357 discards). */
+        pid_t me = getpid();
+        [NSApp activateIgnoringOtherApps:YES];
+        [self.window makeKeyAndOrderFront:nil];
+        CGEventPostToPid(me, down);
+        CGEventPostToPid(me, up);
         CFRelease(down);
         CFRelease(up);
         return;
