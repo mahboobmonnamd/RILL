@@ -82,8 +82,14 @@ impl Frame {
         }
     }
 
-    pub fn is_control_rpc(&self) -> bool {
-        false
+    /// Frames permitted on the warm path (SPEC-ATTACH §8).
+    ///
+    /// Replaces `is_control_rpc`, which returned a hardcoded `false` and was
+    /// never called — the reported `control_rpc=0` was guaranteed by the
+    /// literal, not by the absence of RPCs (docs/SPIKE-0-AUDIT.md S1-3).
+    /// T-NFR now asserts this at the client's single `send` chokepoint.
+    pub fn is_warm_path(&self) -> bool {
+        matches!(self, Self::Data(_) | Self::Credit(_))
     }
 
     pub fn encode(&self) -> Result<Vec<u8>, Error> {
@@ -236,6 +242,12 @@ impl Decoder {
                 return Err(Error::TooLarge(len));
             }
             if self.buf.len() < 5 + len {
+                // Fail closed rather than buffering without bound: a peer that
+                // declares a large frame and never sends it must not be able to
+                // grow the daemon's memory (SPEC-ATTACH §3).
+                if self.buf.len() > MAX_FRAME + 5 {
+                    return Err(Error::TooLarge(self.buf.len()));
+                }
                 break;
             }
             let payload = self.buf[5..5 + len].to_vec();
@@ -323,5 +335,60 @@ mod tests {
         let bytes = Frame::Data(b"hi".to_vec()).encode().expect("encode");
         assert_ne!(bytes[0], b'{');
         assert_ne!(bytes[0], b'[');
+    }
+
+    /// SPEC-ATTACH §8. Only DATA and CREDIT belong on a keystroke.
+    #[test]
+    fn only_data_and_credit_are_warm_path_frames() {
+        assert!(Frame::Data(vec![1]).is_warm_path());
+        assert!(Frame::Credit(1).is_warm_path());
+        assert!(!Frame::Attach { generation: 1 }.is_warm_path());
+        assert!(!Frame::Exit { status: 0 }.is_warm_path());
+        assert!(!Frame::Resize {
+            cols: 1,
+            rows: 1,
+            px_w: 1,
+            px_h: 1
+        }
+        .is_warm_path());
+        assert!(!Frame::Refused {
+            reason: RefuseReason::Invalid
+        }
+        .is_warm_path());
+    }
+
+    #[test]
+    fn unknown_tag_is_a_protocol_error_not_a_skip() {
+        let mut d = Decoder::new();
+        let err = d.push(&[99, 0, 0, 0, 0]).expect_err("unknown tag must fail");
+        assert!(matches!(err, Error::UnknownTag(99)));
+    }
+
+    #[test]
+    fn declared_length_beyond_max_frame_is_rejected() {
+        let mut d = Decoder::new();
+        let mut bytes = vec![Tag::Data as u8];
+        bytes.extend_from_slice(&(MAX_FRAME as u32 + 1).to_le_bytes());
+        assert!(matches!(d.push(&bytes), Err(Error::TooLarge(_))));
+    }
+
+    /// Every byte boundary, not just one. This is the hazard SOCK_STREAM
+    /// introduces over seqpacket and it is the decoder's whole purpose.
+    #[test]
+    fn every_split_point_reassembles() {
+        let full = Frame::Resize {
+            cols: 100,
+            rows: 40,
+            px_w: 800,
+            px_h: 600,
+        }
+        .encode()
+        .expect("encode");
+        for split in 0..=full.len() {
+            let mut d = Decoder::new();
+            let mut got = d.push(&full[..split]).expect("first half");
+            got.extend(d.push(&full[split..]).expect("second half"));
+            assert_eq!(got.len(), 1, "split at {split} lost or duplicated a frame");
+        }
     }
 }

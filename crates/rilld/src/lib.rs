@@ -3,8 +3,10 @@
 use rill_attach::{Decoder, Frame};
 use rill_chip0::Chip0;
 use rill_kernel::{Session, Winsize};
+use std::fs::File;
 use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -12,7 +14,9 @@ use std::time::Duration;
 pub struct Daemon {
     listener: UnixListener,
     socket_path: PathBuf,
+    _lock: File,
     session: Session,
+    /// The connection currently holding the attach claim.
     client: Option<Client>,
     chip: Chip0,
 }
@@ -30,17 +34,41 @@ impl Daemon {
         size: Winsize,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let socket_path = socket_path.as_ref().to_path_buf();
+        if let Some(dir) = socket_path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+
+        // An exclusive lock, taken before anything is unlinked.
+        //
+        // The previous sequence was exists() -> connect() -> remove_file() ->
+        // bind(), which two daemons racing could both pass, with the second
+        // unlinking the first's live socket (audit S3-7).
+        let lock_path = socket_path.with_extension("lock");
+        let lock = File::options()
+            .create(true)
+            .read(true)
+            .write(true)
+            .truncate(false)
+            .open(&lock_path)?;
+        // SAFETY: lock is an open, owned file for the duration of the call.
+        if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+            return Err("already running".into());
+        }
+
+        // The lock is ours, so any socket at this path is stale unless someone
+        // is answering on it.
         if socket_path.exists() {
             if UnixStream::connect(&socket_path).is_ok() {
                 return Err("already running".into());
             }
-            let _ = std::fs::remove_file(&socket_path);
+            std::fs::remove_file(&socket_path)?;
         }
-        if let Some(dir) = socket_path.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
+
         let listener = UnixListener::bind(&socket_path)?;
         listener.set_nonblocking(true)?;
+        // The attach socket carries keystrokes and shell output. Do not leave
+        // it world-writable (SPEC-ATTACH §1).
+        std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o600))?;
         let session = Session::spawn(shell, args, size)?;
         if let Ok(path) = std::env::var("RILL_TEST_PIDFILE") {
             std::fs::write(path, format!("{}\n", session.child_pid()))?;
@@ -49,6 +77,7 @@ impl Daemon {
         Ok(Self {
             listener,
             socket_path,
+            _lock: lock,
             session,
             client: None,
             chip,
@@ -61,6 +90,20 @@ impl Daemon {
 
     pub fn socket_path(&self) -> &Path {
         &self.socket_path
+    }
+
+    /// Must stay at 1 however much the user types. Resync is a cold path
+    /// (FR-RESYNC, SPEC-CHIP0 §7).
+    pub fn resync_count(&self) -> u32 {
+        self.session.resync_count()
+    }
+
+    pub fn stalled_reads(&self) -> u64 {
+        self.session.stalled_reads()
+    }
+
+    pub fn child_alive(&self) -> bool {
+        self.session.child_alive()
     }
 
     pub fn step(&mut self, timeout_ms: i32) -> Result<(), Box<dyn std::error::Error>> {
@@ -94,27 +137,27 @@ impl Daemon {
             events: libc::POLLIN,
             revents: 0,
         });
-        let client_idx = if self.client.is_some() {
-            fds.push(libc::pollfd {
-                fd: self.client.as_ref().map(|c| c.stream.as_raw_fd()).expect("client"),
-                events: libc::POLLIN | libc::POLLOUT,
-                revents: 0,
-            });
-            Some(1usize)
-        } else {
-            None
+        // No `expect` on a daemon path: an unwrap here would take the user's
+        // shell with it (PRD NFR-FAIL).
+        let client_idx = match self.client.as_ref() {
+            Some(c) => {
+                fds.push(libc::pollfd {
+                    fd: c.stream.as_raw_fd(),
+                    events: libc::POLLIN | libc::POLLOUT,
+                    revents: 0,
+                });
+                Some(1usize)
+            }
+            None => None,
         };
-        let pty_idx = if self.session.credit() > 0 && self.session.child_alive() {
-            let i = fds.len();
-            fds.push(libc::pollfd {
-                fd: self.session.master_fd(),
-                events: libc::POLLIN,
-                revents: 0,
-            });
-            Some(i)
-        } else {
-            None
-        };
+        // The PTY is not in this fd set. `Session::wait_readable` is the only
+        // readiness surface the kernel exposes; the master fd never leaves the
+        // kernel crate (ADR 0001 §5, SPEC-KERNEL §1, audit S3-4). The socket
+        // poll uses a short timeout so PTY readiness is checked promptly.
+        let want_pty = self.session.credit() > 0 && self.session.child_alive();
+        let timeout_ms = if want_pty { timeout_ms.min(2) } else { timeout_ms };
+
+        // SAFETY: fds is a valid, non-empty slice of initialised pollfd.
         let n = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, timeout_ms) };
         if n < 0 {
             let err = std::io::Error::last_os_error();
@@ -131,10 +174,10 @@ impl Daemon {
                 self.read_client()?;
             }
         }
-        if let Some(i) = pty_idx {
-            if fds[i].revents & libc::POLLIN != 0 {
-                let _ = self.session.on_pty_readable()?;
-            }
+        if want_pty && self.session.wait_readable(Duration::from_millis(0))? {
+            // Drain what credit allows in this turn rather than one chunk per
+            // poll, so a flood does not need N wakeups to move N chunks.
+            while self.session.credit() > 0 && self.session.on_pty_readable()? > 0 {}
         }
         Ok(())
     }
@@ -143,7 +186,28 @@ impl Daemon {
         match self.listener.accept() {
             Ok((stream, _)) => {
                 stream.set_nonblocking(true)?;
-                if self.client.is_some() && self.session.attached() {
+                // A live connection holds its slot whether or not it has sent
+                // ATTACH yet.
+                //
+                // The previous condition also required `session.attached()`, so
+                // a client that connected and never attached could be silently
+                // displaced by the next connection — FR-ONE bypassable by not
+                // attaching (audit S3-6).
+                let occupied = {
+                    #[cfg(feature = "mutate")]
+                    {
+                        if std::env::var("RILL_MUTATE").as_deref() == Ok("accept_replaces_client") {
+                            false
+                        } else {
+                            self.client.is_some()
+                        }
+                    }
+                    #[cfg(not(feature = "mutate"))]
+                    {
+                        self.client.is_some()
+                    }
+                };
+                if occupied {
                     let mut s = stream;
                     let frame = Frame::Refused {
                         reason: rill_attach::RefuseReason::AlreadyAttached,
@@ -193,8 +257,20 @@ impl Daemon {
     }
 
     fn flush_outbound(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // With no client, leave control frames queued. The previous version
+        // drained and discarded everything here, so an EXIT that arrived while
+        // the window was closed was destroyed and the reopened window painted a
+        // live cursor over a dead process (audit S3-2).
         let Some(client) = self.client.as_mut() else {
-            while self.session.pop_outbound().is_some() {}
+            let mut keep = Vec::new();
+            while let Some(f) = self.session.pop_outbound() {
+                if !matches!(f, Frame::Data(_)) {
+                    keep.push(f);
+                }
+            }
+            for f in keep {
+                self.session.enqueue_outbound(f);
+            }
             return Ok(());
         };
         while let Some(frame) = self.session.pop_outbound() {
@@ -243,171 +319,3 @@ pub fn pump(daemon: &mut Daemon, duration: Duration) -> Result<(), Box<dyn std::
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rill_attach::Frame;
-    use rill_chip0::{Chip0, TerminalEmulation};
-    use std::os::unix::net::UnixStream;
-    use std::thread;
-    use std::time::Instant;
-
-    fn temp_sock() -> PathBuf {
-        let n = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("time")
-            .as_nanos();
-        PathBuf::from(format!("/tmp/rill-test-{n}.sock"))
-    }
-
-    fn send(stream: &mut UnixStream, frame: Frame) {
-        let bytes = frame.encode().expect("enc");
-        stream.write_all(&bytes).expect("write");
-    }
-
-    fn recv_until(stream: &mut UnixStream, decoder: &mut Decoder, timeout: Duration) -> Vec<Frame> {
-        stream.set_nonblocking(true).ok();
-        let mut all = Vec::new();
-        let start = Instant::now();
-        let mut buf = [0u8; 65536];
-        while start.elapsed() < timeout {
-            match stream.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => all.extend(decoder.push(&buf[..n]).expect("dec")),
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    thread::sleep(Duration::from_millis(5));
-                }
-                Err(_) => break,
-            }
-        }
-        all
-    }
-
-    #[test]
-    fn t_resync_reopen_idle_shell_is_not_blank() {
-        let sock = temp_sock();
-        let mut daemon = Daemon::bind(&sock, "/bin/sh", &[], Winsize::default()).expect("bind");
-        let mut gui = UnixStream::connect(&sock).expect("connect");
-        pump(&mut daemon, Duration::from_millis(50)).ok();
-        send(&mut gui, Frame::Attach { generation: 1 });
-        send(&mut gui, Frame::Credit(u32::MAX));
-        pump(&mut daemon, Duration::from_millis(80)).ok();
-        send(&mut gui, Frame::Data(b"printf 'RILL-MARK-42'\n".to_vec()));
-        pump(&mut daemon, Duration::from_millis(200)).ok();
-        drop(gui);
-        pump(&mut daemon, Duration::from_millis(50)).ok();
-
-        let mut gui2 = UnixStream::connect(&sock).expect("reconnect");
-        send(&mut gui2, Frame::Attach { generation: 2 });
-        send(&mut gui2, Frame::Credit(u32::MAX));
-        pump(&mut daemon, Duration::from_millis(200)).ok();
-        let mut dec = Decoder::new();
-        let frames = recv_until(&mut gui2, &mut dec, Duration::from_millis(300));
-        let mut bytes = Vec::new();
-        for f in frames {
-            if let Frame::Data(b) = f {
-                bytes.extend(b);
-            }
-        }
-        let mut chip = Chip0::new(80, 24).expect("chip");
-        chip.feed(&bytes).expect("feed resync");
-        let grid = chip.snapshot().expect("snap");
-        let text: String = grid
-            .cells
-            .iter()
-            .filter_map(|c| char::from_u32(c.codepoint))
-            .collect();
-        assert!(
-            text.contains("RILL-MARK-42"),
-            "reopen was blank over a live process: {text:?}"
-        );
-    }
-
-    #[test]
-    fn t_attach_detach_attach_grids_do_not_diverge() {
-        let sock = temp_sock();
-        let mut daemon = Daemon::bind(&sock, "/bin/sh", &[], Winsize::default()).expect("bind");
-        let mut gui = UnixStream::connect(&sock).expect("c1");
-        send(&mut gui, Frame::Attach { generation: 1 });
-        send(&mut gui, Frame::Credit(u32::MAX));
-        pump(&mut daemon, Duration::from_millis(80)).ok();
-        send(&mut gui, Frame::Data(b"printf 'GRID-A'\n".to_vec()));
-        pump(&mut daemon, Duration::from_millis(200)).ok();
-        let mut dec = Decoder::new();
-        let first = recv_until(&mut gui, &mut dec, Duration::from_millis(200));
-        drop(gui);
-        pump(&mut daemon, Duration::from_millis(50)).ok();
-
-        let mut gui2 = UnixStream::connect(&sock).expect("c2");
-        send(&mut gui2, Frame::Attach { generation: 2 });
-        send(&mut gui2, Frame::Credit(u32::MAX));
-        pump(&mut daemon, Duration::from_millis(200)).ok();
-        let mut dec2 = Decoder::new();
-        let second = recv_until(&mut gui2, &mut dec2, Duration::from_millis(300));
-
-        fn grid_of(frames: &[Frame]) -> String {
-            let mut bytes = Vec::new();
-            for f in frames {
-                if let Frame::Data(b) = f {
-                    bytes.extend_from_slice(b);
-                }
-            }
-            let mut chip = Chip0::new(80, 24).expect("chip");
-            chip.feed(&bytes).ok();
-            chip.snapshot()
-                .map(|g| {
-                    g.cells
-                        .iter()
-                        .filter_map(|c| char::from_u32(c.codepoint))
-                        .collect::<String>()
-                })
-                .unwrap_or_default()
-        }
-        let a = grid_of(&first);
-        let b = grid_of(&second);
-        assert!(a.contains("GRID-A") || b.contains("GRID-A"));
-        assert!(
-            b.contains("GRID-A"),
-            "reattach grid diverged / lost content: first={a:?} second={b:?}"
-        );
-    }
-
-    #[test]
-    fn t_kill_gui_process_child_pid_unchanged() {
-        let sock = temp_sock();
-        let mut daemon = Daemon::bind(&sock, "/bin/sh", &["-c", "exec sleep 30"], Winsize::default())
-            .expect("bind");
-        let pid = daemon.child_pid();
-
-        let gui = UnixStream::connect(&sock).expect("gui");
-        drop(gui);
-        pump(&mut daemon, Duration::from_millis(80)).ok();
-        assert_eq!(daemon.child_pid(), pid);
-        assert!(
-            nix_still_alive(pid),
-            "child pid changed or died after GUI drop"
-        );
-    }
-
-    fn nix_still_alive(pid: u32) -> bool {
-        let r = unsafe { libc::kill(pid as i32, 0) };
-        r == 0
-    }
-
-    #[test]
-    fn t_bind_does_not_steal_a_live_socket() {
-        let sock = temp_sock();
-        let first = Daemon::bind(&sock, "/bin/sh", &["-c", "exec sleep 30"], Winsize::default())
-            .expect("first bind");
-        let pid = first.child_pid();
-        let err = Daemon::bind(&sock, "/bin/sh", &["-c", "exec sleep 30"], Winsize::default())
-            .err()
-            .expect("second bind must fail");
-        assert!(
-            err.to_string().contains("already running"),
-            "live socket was stolen: {err}"
-        );
-        assert!(nix_still_alive(pid), "steal respawned the child");
-        drop(first);
-    }
-}

@@ -126,6 +126,7 @@ int rill_vt_snapshot(RillVt *vt, RillPodHeader *hdr, RillPodCell **cells, size_t
     uint16_t d0 = 0;
     uint16_t d1 = rows == 0 ? 0 : (uint16_t)(rows - 1);
     int first_dirty = 1;
+    uint32_t grapheme_truncated = 0;
 
     if (ghostty_render_state_get(vt->render, GHOSTTY_RENDER_STATE_DATA_ROW_ITERATOR, &vt->rows)
         != GHOSTTY_SUCCESS) {
@@ -148,12 +149,39 @@ int rill_vt_snapshot(RillVt *vt, RillPodHeader *hdr, RillPodCell **cells, size_t
                 vt->cells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_LEN, &glen);
             uint32_t cp = 32;
             if (glen > 0) {
-                uint32_t buf[8];
-                uint32_t take = glen < 8 ? glen : 8;
-                ghostty_render_state_row_cells_get(
-                    vt->cells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_BUF, buf);
-                cp = buf[0];
-                (void)take;
+                /* GRAPHEMES_BUF writes `glen` elements and takes no capacity.
+                 * The previous code passed a fixed uint32_t[8] and discarded
+                 * its own clamp, so any cluster longer than 8 codepoints — a
+                 * ZWJ emoji sequence, stacked combining marks — overran the
+                 * stack, under the control of whatever process writes to the
+                 * PTY. Query the length first and never hand over a buffer
+                 * smaller than it (SPEC-CHIP0 §5, audit S3-1). */
+                uint32_t stackbuf[RILL_GRAPHEME_MAX];
+                uint32_t *gbuf = stackbuf;
+                uint32_t *heap = NULL;
+
+                if (glen > RILL_GRAPHEME_MAX) {
+                    heap = malloc((size_t)glen * sizeof(uint32_t));
+                    gbuf = heap; /* NULL on OOM; handled below */
+                }
+
+                if (gbuf != NULL
+                    && ghostty_render_state_row_cells_get(
+                           vt->cells,
+                           GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_BUF,
+                           gbuf)
+                           == GHOSTTY_SUCCESS) {
+                    /* Spike 0's POD cell carries one codepoint. Extra cluster
+                     * codepoints are read (the API requires the full buffer)
+                     * but not rendered; a combining-mark-aware cell is
+                     * Milestone 1. */
+                    cp = gbuf[0];
+                } else {
+                    /* Could not materialise the cluster. Render a space and
+                     * count it. Never guess, never read out of bounds. */
+                    grapheme_truncated++;
+                }
+                free(heap);
             }
             GhosttyColorRgb fg = def_fg;
             GhosttyColorRgb bg = def_bg;
@@ -211,6 +239,7 @@ int rill_vt_snapshot(RillVt *vt, RillPodHeader *hdr, RillPodCell **cells, size_t
     hdr->full_damage = dirty == GHOSTTY_RENDER_STATE_DIRTY_FULL;
     hdr->damage_row0 = d0;
     hdr->damage_row1 = d1;
+    hdr->grapheme_truncated = grapheme_truncated;
     *cells = grid;
     *ncells = n;
     ghostty_render_state_clean(vt->render);

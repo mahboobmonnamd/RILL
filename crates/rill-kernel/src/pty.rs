@@ -1,12 +1,15 @@
 //! Kernel-owned PTY. The master fd never leaves this module.
+//!
+//! SPEC-KERNEL §1, §2, §8.
 
 use crate::error::Error;
 use std::fs::File;
-use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
-use std::os::unix::process::CommandExt;
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::process::{Child, Command, Stdio};
+use std::time::Duration;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Winsize {
     pub cols: u16,
     pub rows: u16,
@@ -25,16 +28,41 @@ impl Default for Winsize {
     }
 }
 
+/// Line-discipline mode for the slave.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Discipline {
+    /// Normal interactive terminal.
+    Interactive,
+    /// `ISIG`, `ICANON`, `ECHO`, `OPOST`, `IXON`, `ISTRIP` cleared, so the
+    /// line discipline cannot rewrite the byte stream. Required by T-BYTES:
+    /// otherwise the "child output" under test is really the tty echo
+    /// (SPEC-KERNEL §10, audit S2-2).
+    Raw,
+}
+
 pub struct Pty {
     master: File,
     child: Child,
+    reaped: Option<i32>,
 }
 
 impl Pty {
     pub fn spawn(shell: &str, args: &[&str], size: Winsize) -> Result<Self, Error> {
+        Self::spawn_with(shell, args, size, Discipline::Interactive)
+    }
+
+    pub fn spawn_with(
+        shell: &str,
+        args: &[&str],
+        size: Winsize,
+        discipline: Discipline,
+    ) -> Result<Self, Error> {
         let (master_fd, slave_fd) = openpty()?;
         set_nonblocking(master_fd.as_raw_fd())?;
         set_winsize(master_fd.as_raw_fd(), size)?;
+        if discipline == Discipline::Raw {
+            set_raw(slave_fd.as_raw_fd())?;
+        }
 
         let slave_in = slave_fd.try_clone().map_err(Error::Spawn)?;
         let slave_out = slave_fd.try_clone().map_err(Error::Spawn)?;
@@ -46,6 +74,7 @@ impl Pty {
             .stdout(Stdio::from(slave_out))
             .stderr(Stdio::from(slave_err))
             .env("TERM", "xterm-256color");
+        // SAFETY: only async-signal-safe calls between fork and exec.
         unsafe {
             cmd.pre_exec(|| {
                 if libc::setsid() < 0 {
@@ -59,11 +88,11 @@ impl Pty {
         }
         let child = cmd.spawn().map_err(Error::Spawn)?;
         drop(slave_fd);
-        set_nonblocking(master_fd.as_raw_fd())?;
 
         Ok(Self {
             master: File::from(master_fd),
             child,
+            reaped: None,
         })
     }
 
@@ -71,9 +100,20 @@ impl Pty {
         self.child.id()
     }
 
+    /// Raw `wait` status, so a signal death is distinguishable from an exit
+    /// code. The previous `code().unwrap_or(1)` reported `1` for `SIGKILL`,
+    /// which the GUI would have displayed as a normal failing exit
+    /// (SPEC-KERNEL §2).
     pub fn try_wait(&mut self) -> Result<Option<i32>, Error> {
+        if let Some(st) = self.reaped {
+            return Ok(Some(st));
+        }
         match self.child.try_wait()? {
-            Some(st) => Ok(Some(st.code().unwrap_or(1))),
+            Some(st) => {
+                let raw = st.into_raw();
+                self.reaped = Some(raw);
+                Ok(Some(raw))
+            }
             None => Ok(None),
         }
     }
@@ -82,12 +122,13 @@ impl Pty {
         let mut written = 0;
         let start = std::time::Instant::now();
         while written < bytes.len() {
-            if !wait_fd(self.master.as_raw_fd(), Wait::Write, 20)? {
-                if start.elapsed() > std::time::Duration::from_secs(2) {
+            if !wait_fd(self.master.as_raw_fd(), libc::POLLOUT, 20)? {
+                if start.elapsed() > Duration::from_secs(2) {
                     return Err(Error::Pty("write timeout"));
                 }
                 continue;
             }
+            // SAFETY: fd is owned; slice bounds are checked above.
             let n = unsafe {
                 libc::write(
                     self.master.as_raw_fd(),
@@ -110,10 +151,12 @@ impl Pty {
     }
 
     pub fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
-        if !wait_fd(self.master.as_raw_fd(), Wait::Read, 10)? {
+        if !wait_fd(self.master.as_raw_fd(), libc::POLLIN, 0)? {
             return Ok(0);
         }
-        let n = unsafe { libc::read(self.master.as_raw_fd(), buf.as_mut_ptr() as *mut _, buf.len()) };
+        // SAFETY: fd is owned; buf is a valid mutable slice.
+        let n =
+            unsafe { libc::read(self.master.as_raw_fd(), buf.as_mut_ptr() as *mut _, buf.len()) };
         if n < 0 {
             let err = std::io::Error::last_os_error();
             if err.kind() == std::io::ErrorKind::WouldBlock
@@ -127,6 +170,14 @@ impl Pty {
         Ok(n as usize)
     }
 
+    /// Readiness as a capability, not a descriptor. `rilld` drives the session
+    /// through this; the master fd is never handed out (ADR 0001 §5,
+    /// SPEC-KERNEL §1, audit S3-4).
+    pub fn wait_readable(&self, timeout: Duration) -> Result<bool, Error> {
+        let ms = timeout.as_millis().min(i32::MAX as u128) as i32;
+        wait_fd(self.master.as_raw_fd(), libc::POLLIN, ms)
+    }
+
     pub fn set_winsize(&mut self, size: Winsize) -> Result<(), Error> {
         set_winsize(self.master.as_raw_fd(), size)
     }
@@ -135,12 +186,34 @@ impl Pty {
         get_winsize(self.master.as_raw_fd())
     }
 
-    pub fn master_raw_fd(&self) -> RawFd {
-        self.master.as_raw_fd()
+    /// Intentional teardown. Nothing else may kill the child — in particular
+    /// not `Drop` (SPEC-KERNEL §2, audit S3-3).
+    pub fn terminate(&mut self) -> Result<(), Error> {
+        if self.reaped.is_some() {
+            return Ok(());
+        }
+        self.child.kill().map_err(Error::Io)?;
+        let st = self.child.wait().map_err(Error::Io)?;
+        self.reaped = Some(st.into_raw());
+        Ok(())
     }
 }
 
+impl Drop for Pty {
+    /// Deliberately does not kill the child.
+    ///
+    /// The previous implementation did, which meant any error path that
+    /// dropped a `Session` — a transient `poll` failure, an unwind, a `?` in
+    /// `Daemon::run` — destroyed the user's shell. That is the one thing this
+    /// product promises never to do, and it must not depend on nobody ever
+    /// returning `Err` (audit S3-3).
+    ///
+    /// Callers that want the child gone call [`Pty::terminate`].
+    fn drop(&mut self) {}
+}
+
 fn openpty() -> Result<(OwnedFd, File), Error> {
+    // SAFETY: standard POSIX PTY handshake; every fd is wrapped or closed.
     let master = unsafe { libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY | libc::O_NONBLOCK) };
     if master < 0 {
         return Err(Error::Pty("posix_openpt"));
@@ -163,37 +236,29 @@ fn openpty() -> Result<(OwnedFd, File), Error> {
     Ok((master, unsafe { File::from_raw_fd(slave) }))
 }
 
-enum Wait {
-    Read,
-    Write,
-}
-
-fn wait_fd(fd: RawFd, wait: Wait, timeout_ms: i32) -> Result<bool, Error> {
-    let mut tv = libc::timeval {
-        tv_sec: (timeout_ms / 1000) as libc::time_t,
-        tv_usec: ((timeout_ms % 1000) * 1000) as libc::suseconds_t,
+/// `poll`, never `select`. `select`/`fd_set` is undefined behaviour for
+/// fd >= `FD_SETSIZE` (1024), which a long-lived daemon can reach
+/// (SPEC-KERNEL §8, audit S3-8c).
+fn wait_fd(fd: RawFd, events: libc::c_short, timeout_ms: i32) -> Result<bool, Error> {
+    let mut pfd = libc::pollfd {
+        fd,
+        events,
+        revents: 0,
     };
-    unsafe {
-        let mut set = std::mem::zeroed::<libc::fd_set>();
-        libc::FD_ZERO(&mut set);
-        libc::FD_SET(fd, &mut set);
-        let nfds = fd + 1;
-        let rc = match wait {
-            Wait::Read => libc::select(nfds, &mut set, std::ptr::null_mut(), std::ptr::null_mut(), &mut tv),
-            Wait::Write => libc::select(nfds, std::ptr::null_mut(), &mut set, std::ptr::null_mut(), &mut tv),
-        };
-        if rc < 0 {
-            let err = std::io::Error::last_os_error();
-            if err.raw_os_error() == Some(libc::EINTR) {
-                return Ok(false);
-            }
-            return Err(Error::Io(err));
+    // SAFETY: single valid pollfd, count 1.
+    let rc = unsafe { libc::poll(&mut pfd, 1, timeout_ms) };
+    if rc < 0 {
+        let err = std::io::Error::last_os_error();
+        if err.raw_os_error() == Some(libc::EINTR) {
+            return Ok(false);
         }
-        Ok(rc > 0)
+        return Err(Error::Io(err));
     }
+    Ok(rc > 0 && pfd.revents & (events | libc::POLLHUP | libc::POLLERR) != 0)
 }
 
 fn set_nonblocking(fd: RawFd) -> Result<(), Error> {
+    // SAFETY: fd is owned by the caller for the duration of this call.
     let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
     if flags < 0 {
         return Err(Error::Pty("fcntl get"));
@@ -201,8 +266,25 @@ fn set_nonblocking(fd: RawFd) -> Result<(), Error> {
     if unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
         return Err(Error::Pty("fcntl set"));
     }
-    let mut one: libc::c_int = 1;
-    unsafe { libc::ioctl(fd, libc::FIONBIO, &mut one) };
+    Ok(())
+}
+
+fn set_raw(fd: RawFd) -> Result<(), Error> {
+    // SAFETY: termios is fully initialised by tcgetattr before use.
+    unsafe {
+        let mut t: libc::termios = std::mem::zeroed();
+        if libc::tcgetattr(fd, &mut t) < 0 {
+            return Err(Error::Pty("tcgetattr"));
+        }
+        t.c_lflag &= !(libc::ICANON | libc::ECHO | libc::ECHOE | libc::ECHOK | libc::ISIG);
+        t.c_iflag &= !(libc::IXON | libc::ICRNL | libc::INLCR | libc::ISTRIP | libc::IGNCR);
+        t.c_oflag &= !libc::OPOST;
+        t.c_cc[libc::VMIN] = 1;
+        t.c_cc[libc::VTIME] = 0;
+        if libc::tcsetattr(fd, libc::TCSANOW, &t) < 0 {
+            return Err(Error::Pty("tcsetattr"));
+        }
+    }
     Ok(())
 }
 
@@ -213,6 +295,7 @@ fn set_winsize(fd: RawFd, size: Winsize) -> Result<(), Error> {
         ws_xpixel: size.px_w,
         ws_ypixel: size.px_h,
     };
+    // SAFETY: ws is a fully initialised winsize.
     if unsafe { libc::ioctl(fd, libc::TIOCSWINSZ, &ws) } < 0 {
         return Err(Error::Pty("TIOCSWINSZ"));
     }
@@ -226,6 +309,7 @@ fn get_winsize(fd: RawFd) -> Result<Winsize, Error> {
         ws_xpixel: 0,
         ws_ypixel: 0,
     };
+    // SAFETY: ws is a fully initialised winsize.
     if unsafe { libc::ioctl(fd, libc::TIOCGWINSZ, &mut ws) } < 0 {
         return Err(Error::Pty("TIOCGWINSZ"));
     }
@@ -235,26 +319,4 @@ fn get_winsize(fd: RawFd) -> Result<Winsize, Error> {
         px_w: ws.ws_xpixel,
         px_h: ws.ws_ypixel,
     })
-}
-
-/// Test helper: the kernel crate is allowed to own this fd; callers must not
-/// send it over SCM_RIGHTS.
-#[allow(dead_code)]
-pub fn leak_master_forbidden(_pty: &Pty) -> RawFd {
-    // Intentionally not `pub` on Pty beyond poll. This symbol exists so
-    // reviews can grep that we never export the master to the GUI crate.
-    _pty.master.as_raw_fd()
-}
-
-impl Drop for Pty {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
-}
-
-// Keep IntoRawFd import used if we later wrap fds; silence on stable.
-#[allow(dead_code)]
-fn _keep_into_raw_fd(fd: OwnedFd) -> RawFd {
-    fd.into_raw_fd()
 }

@@ -5,6 +5,11 @@ edition.workspace = true
 license.workspace = true
 description = "PTY owner, sole writer, bounded byte ring (lane A)"
 
+[features]
+# Negative-control mutations (ADR 0002 D3). Only `validate-spike0.sh
+# --negative-controls` enables this; shipping builds carry no mutation code.
+mutate = []
+
 [dependencies]
 rill-attach.workspace = true
 libc.workspace = true
