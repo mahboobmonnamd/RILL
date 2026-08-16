@@ -83,10 +83,20 @@ for three gates, one of which it never ran (audit S4-3).
 
 ## Current state — 2026-08-16
 
-All gates **Red** or **Green-unproven**. No evidence artifact exists that
-closes a gate. T-NFR has not run on battery.
+Laptop artifact: `evidence/spike0-20260816T163646Z.json`. **Does not close
+Spike 0.** No gate is Proven (ADR 0002 D8: never run in `gates.yml`).
+
+- Library and packaged gates (T-BYTES, T-DROP, T-ATTACH, T-RESIZE, T-EXIT,
+  T-SPAWN, T-KILL, T-RESYNC) passed unmutated. Automated cargo mutations
+  (`drop_high_bytes`, `drop_on_full`, `resize_before_data`,
+  `clear_outbound_on_detach`, `accept_replaces_client`, `no_resync`) failed
+  the named tests. That is **Green-unproven**, not Proven.
+- T-KILL / T-SPAWN production mutations remain **manual** (`went_red: null`).
+  T-SPAWN's always-on fixture positive control passed.
+- T-NFR **Red** on battery hid: p95 **23.525ms** vs 8.33ms (120 Hz), 1000
+  samples, 0 discards, `ax_trusted=1`. `timer_pump` in `app` mode also missed
+  (p95 24.578ms) and is **inconclusive** because the unmutated run already
+  misses the budget.
+- ASan over `fixtures/bytes/` was not run.
 
 The withdrawn 2026-08-16 run (`p95=0.032ms control_rpc=0`) must not be cited.
-
-T-EXIT across detach and T-ATTACH's connect-without-attaching hole have
-passing tests. Record a negative-control red before marking them Proven.

@@ -20,7 +20,10 @@ Status vocabulary: **Red** (no evidence) · **Green-unproven** (passes, never
 demonstrated red) · **Proven** (demonstrated red, then green, in CI or a
 recorded evidence artifact).
 
-All gates are currently **Red** per ADR 0002 D1.
+Ledger below is the 2026-08-16 laptop run
+(`evidence/spike0-20260816T163646Z.json`). No gate is **Proven** (ADR 0002 D8).
+T-NFR is **Red**. Spike 0 stays **Red**. The withdrawn `p95=0.032ms` run must
+not be cited.
 
 ---
 
@@ -328,16 +331,20 @@ snapshot, inside the Rust client, never reaching the host or the GPU.
 
 | ID | Status | Automated negative control | Blocking defect it also covers |
 |---|---|---|---|
-| T-BYTES | Red | `drop_high_bytes` | S3-1 (overflow) via the emoji fixture |
-| T-DROP | Red | `drop_on_full` | S3-5 (nominal backpressure) |
-| T-RESIZE | Red | `resize_before_data` | — |
-| T-EXIT | Red | `clear_outbound_on_detach` | **S3-2 (EXIT lost on detach)** |
-| T-ATTACH | Red | `accept_replaces_client` | **S3-6 (refusal hole)** |
-| T-RESYNC | Red | `no_resync` | — |
-| T-KILL | Red | manual | S3-3 (drop kills child) |
-| T-SPAWN | Red | permanent positive control | S1-1 |
-| T-NFR | Red | `timer_pump` | S3-8b, S3-8g, S3-8h |
+| T-BYTES | Green-unproven | `drop_high_bytes` went red (named test) | S3-1 (overflow) via the emoji fixture |
+| T-DROP | Green-unproven | `drop_on_full` went red (`stalled_reads` stayed 0) | S3-5 (nominal backpressure) |
+| T-RESIZE | Green-unproven | `resize_before_data` went red | — |
+| T-EXIT | Green-unproven | `clear_outbound_on_detach` went red | **S3-2 (EXIT lost on detach)** |
+| T-ATTACH | Green-unproven | `accept_replaces_client` went red | **S3-6 (refusal hole)** |
+| T-RESYNC | Green-unproven | `no_resync` went red (blank reopen) | — |
+| T-KILL | Green-unproven | manual (`went_red: null`) | S3-3 (drop kills child) |
+| T-SPAWN | Green-unproven | permanent positive control passed; `openpty_in_main_m` still `null` | S1-1 |
+| T-NFR | Red | `timer_pump` inconclusive (unmutated hid already misses 8.33ms) | S3-8b, S3-8g, S3-8h |
 
-T-EXIT across detach and T-ATTACH's connect-without-attaching hole were
-production defects; both have tests that now pass. They are **Green-unproven**
-until a negative-control run records them going red (ADR 0002 D2).
+T-NFR battery hid: p50=23.349ms p95=**23.525ms** p99=23.598ms max=42.835ms,
+samples=1000 discarded=0, 120 Hz budget=8.33ms, `ax_trusted=1`. After warmup,
+`key_to_commit` ≈ 1.4ms; `commit_to_presented` ≈ 20–22ms; present cadence
+~40 Hz. Almost all of p95 is compositor/vsync.
+
+`timer_pump` in `app` mode: p95=24.578ms, also a miss. That is not a
+demonstrated invert of the instrument.

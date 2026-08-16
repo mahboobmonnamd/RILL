@@ -36,19 +36,17 @@ demonstrated **red** on a build where the behaviour is absent (ADR 0002 D2).
 
 | ID | Test | Fails while… | Status |
 |---|---|---|---|
-| T-BYTES | invalid UTF-8 through the kernel ring and Chip 0 feed | kernel history drops bytes, or Chip 0 never shows a non-ASCII cell for a high-byte fixture | **Red** — old test compared the input to our own copy of the input |
-| T-DROP | unbounded `yes`, finite credit, `^C`, keep typing | any sequence number missing, or the kernel never stalls its reads | **Red** — old test granted infinite credit and asserted `head` works |
-| T-ATTACH | attach → detach → attach; cell-by-cell grid compare | grids diverge, or a bare connection displaces the attached client | **Red** — connect-without-attach hole fails today |
-| T-RESIZE | child's own `TIOCGWINSZ` after `SIGWINCH`, with pending input | child's size ≠ display geometry, or resize overtakes queued input | **Red** — old test round-tripped our own ioctl |
-| T-EXIT | `exit`, including **while detached** | reopened window paints a cursor over a dead process | **Red** — fails today: `detach()` discards the `EXIT` frame |
-| T-SPAWN | `nm -u` + `otool -Iv` on the packaged GUI, plus a positive control | PTY-creation primitives imported, or the check itself is broken | **Red** — old test used `nm -U`, which excludes the symbols it asserted on |
-| T-KILL | packaged `Rill.app`, `SIGKILL` the process group and AppKit Quit | child pid changes, or reattach is blank | **Red** — procedure is sound, never demonstrated red |
-| T-RESYNC | reopen idle `zsh` and alt-screen `vim` | blank window over a live process, or resync touches the warm path | **Red** — old test asserted on a prefix it prepended itself |
-| T-NFR | key-down `NSEvent.timestamp` → drawable `presentedTime`, on battery | p95 over one refresh interval, discards > 2%, or any control RPC | **Red** — old test found glyphs the shell had already echoed, and stopped at the POD snapshot |
+| T-BYTES | invalid UTF-8 through the kernel ring and Chip 0 feed | kernel history drops bytes, or Chip 0 never shows a non-ASCII cell for a high-byte fixture | **Green-unproven** — `drop_high_bytes` went red, then unmutated tests passed (laptop; D8) |
+| T-DROP | unbounded `yes`, finite credit, `^C`, keep typing | any sequence number missing, or the kernel never stalls its reads | **Green-unproven** — `drop_on_full` went red (`stalled_reads` stayed 0), then unmutated tests passed (laptop; D8) |
+| T-ATTACH | attach → detach → attach; cell-by-cell grid compare | grids diverge, or a bare connection displaces the attached client | **Green-unproven** — `accept_replaces_client` went red, then unmutated tests passed (laptop; D8) |
+| T-RESIZE | child's own `TIOCGWINSZ` after `SIGWINCH`, with pending input | child's size ≠ display geometry, or resize overtakes queued input | **Green-unproven** — `resize_before_data` went red, then unmutated tests passed (laptop; D8) |
+| T-EXIT | `exit`, including **while detached** | reopened window paints a cursor over a dead process | **Green-unproven** — `clear_outbound_on_detach` went red, then unmutated tests passed (laptop; D8) |
+| T-SPAWN | `nm -u` + `otool -Iv` on the packaged GUI, plus a positive control | PTY-creation primitives imported, or the check itself is broken | **Green-unproven** — packaged GUI has no PTY-creation imports; fixture positive control reported a violation. `openpty_in_main_m` is still manual |
+| T-KILL | packaged `Rill.app`, `SIGKILL` the process group and AppKit Quit | child pid changes, or reattach is blank | **Green-unproven** — packaged persist_e2e passed. `drop_POSIX_SPAWN_SETSID` is still manual |
+| T-RESYNC | reopen idle `zsh` and alt-screen `vim` | blank window over a live process, or resync touches the warm path | **Green-unproven** — `no_resync` went red (blank reopen), then unmutated tests passed (laptop; D8) |
+| T-NFR | key-down `NSEvent.timestamp` → drawable `presentedTime`, on battery | p95 over one refresh interval, discards > 2%, or any control RPC | **Red** — battery hid, 1000/0 discarded, p95 **23.525ms** vs 8.33ms (120 Hz). `timer_pump` is inconclusive: unmutated already misses |
 
-T-EXIT across detach and T-ATTACH's connect-without-attaching hole were
-fixed in-tree; their tests pass. That is **Green-unproven**, not Proven — no
-negative-control artifact exists yet (ADR 0002 D2).
+Laptop record: `evidence/spike0-20260816T163646Z.json`. No gate is **Proven** (ADR 0002 D8: never run in `gates.yml`). Spike 0 stays **RED**. The withdrawn `p95=0.032ms` run must not be cited.
 
 ## Blocking defects found by the audit
 

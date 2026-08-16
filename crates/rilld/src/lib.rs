@@ -119,7 +119,10 @@ impl Daemon {
 
     pub fn run(mut self) -> Result<(), Box<dyn std::error::Error>> {
         loop {
-            self.step(50)?;
+            /* 50ms was a hidden poll interval on the keystroke path (same
+             * class of defect as the 60 Hz NSTimer). When a client is
+             * attached with credit, wait 0 so PTY echo is not deferred. */
+            self.step(1)?;
         }
     }
 
@@ -158,11 +161,7 @@ impl Daemon {
         // kernel crate (ADR 0001 §5, SPEC-KERNEL §1, audit S3-4). The socket
         // poll uses a short timeout so PTY readiness is checked promptly.
         let want_pty = self.session.credit() > 0 && self.session.child_alive();
-        let timeout_ms = if want_pty {
-            timeout_ms.min(2)
-        } else {
-            timeout_ms
-        };
+        let timeout_ms = if want_pty { 0 } else { timeout_ms.min(1) };
 
         // SAFETY: fds is a valid, non-empty slice of initialised pollfd.
         let n = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, timeout_ms) };

@@ -174,26 +174,21 @@ if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
   echo
   echo "== negative controls (ADR 0002 D3) =="
   # Mutations live behind the `mutate` cargo feature, so shipping builds carry
-  # no mutation code at all (ADR 0002 D3).
-  MUT="--features mutate"
-  # shellcheck disable=SC2086
+  # no mutation code at all (ADR 0002 D3). Pass `--features` and `mutate` as
+  # separate argv words: a single `--features mutate` token is a cargo error
+  # (zsh does not split `$MUT`, and that red is not a demonstrated mutation).
   run_control "T-BYTES-chip" drop_high_bytes \
-    cargo test -p rill-chip0 --offline $MUT t_bytes
-  # shellcheck disable=SC2086
+    cargo test -p rill-chip0 --offline --features mutate t_bytes
   run_control "T-DROP" drop_on_full \
-    cargo test -p rill-kernel --offline $MUT t_drop -- --test-threads=1
-  # shellcheck disable=SC2086
+    cargo test -p rill-kernel --offline --features mutate t_drop -- --test-threads=1
   run_control "T-RESIZE" resize_before_data \
-    cargo test -p rill-kernel --offline $MUT t_resize
-  # shellcheck disable=SC2086
+    cargo test -p rill-kernel --offline --features mutate t_resize
   run_control "T-EXIT-detach" clear_outbound_on_detach \
-    cargo test -p rilld --offline $MUT t_exit_across_detach
-  # shellcheck disable=SC2086
+    cargo test -p rilld --offline --features mutate t_exit_across_detach
   run_control "T-ATTACH" accept_replaces_client \
-    cargo test -p rilld --offline $MUT t_attach -- --test-threads=1
-  # shellcheck disable=SC2086
+    cargo test -p rilld --offline --features mutate t_attach -- --test-threads=1
   run_control "T-RESYNC" no_resync \
-    cargo test -p rilld --offline $MUT t_resync -- --test-threads=1
+    cargo test -p rilld --offline --features mutate t_resync -- --test-threads=1
   run_control "T-NFR" timer_pump run_t_nfr
   # T-KILL and T-SPAWN mutations require an ObjC rebuild; reviewer applies them
   # and pastes the red (TEST-CASES). Recorded as manual, not asserted here.

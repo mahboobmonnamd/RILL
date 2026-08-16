@@ -214,8 +214,18 @@ impl Session {
                 // Replay a death the previous client never learned about, so
                 // the reopened window does not paint a cursor over a corpse.
                 if let Some(status) = self.child_exit {
-                    self.outbound.push_back(Frame::Exit { status });
-                    self.exit_delivered = true;
+                    #[cfg(feature = "mutate")]
+                    if std::env::var("RILL_MUTATE").as_deref() == Ok("clear_outbound_on_detach") {
+                        // S3-2: detach dropped EXIT and reattach did not replay it.
+                    } else {
+                        self.outbound.push_back(Frame::Exit { status });
+                        self.exit_delivered = true;
+                    }
+                    #[cfg(not(feature = "mutate"))]
+                    {
+                        self.outbound.push_back(Frame::Exit { status });
+                        self.exit_delivered = true;
+                    }
                 }
                 Ok(())
             }
@@ -233,7 +243,7 @@ impl Session {
             } => {
                 // Input queued before this frame must reach the child before
                 // the new geometry does (FR-RESIZE, SPEC-KERNEL §5).
-                let skip_flush = {
+                let resize_first = {
                     #[cfg(feature = "mutate")]
                     {
                         std::env::var("RILL_MUTATE").as_deref() == Ok("resize_before_data")
@@ -243,7 +253,7 @@ impl Session {
                         false
                     }
                 };
-                if !skip_flush {
+                if !resize_first {
                     self.flush_input()?;
                 }
                 self.size = Winsize {
@@ -254,6 +264,9 @@ impl Session {
                 };
                 self.pty.set_winsize(self.size)?;
                 self.record(IoEvent::Winsize(self.size));
+                if resize_first {
+                    self.flush_input()?;
+                }
                 Ok(())
             }
 
@@ -262,6 +275,11 @@ impl Session {
                     return Err(Error::Dead);
                 }
                 self.pending_input.push_back(bytes);
+                // Queue without writing so Resize can overtake (T-RESIZE mutation).
+                #[cfg(feature = "mutate")]
+                if std::env::var("RILL_MUTATE").as_deref() == Ok("resize_before_data") {
+                    return Ok(());
+                }
                 self.flush_input()
             }
 
