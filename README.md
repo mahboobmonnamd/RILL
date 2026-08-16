@@ -38,6 +38,14 @@ flowchart TB
 
 Warm typing never touches JSON, cell dumps, or the graph.
 
+## Setup
+
+```sh
+make setup
+```
+
+Installs or checks Rust (`rustc` ≥ 1.85), Zig (≥ 0.16, for Chip 0 / `libghostty-vt` only), and Xcode Command Line Tools. Then fetches Ghostty source as a build-time dep and builds the VT library — not Ghostty.app. `third_party/ghostty` is gitignored.
+
 ## Start here
 
 1. [PRD](docs/PRD.md) — what we ship and what we refuse
