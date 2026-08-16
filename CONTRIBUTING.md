@@ -1,5 +1,19 @@
 # Contributing
 
+## Sequence
+
+A spike is research. It does not validate production behavior.
+
+After a spike, and for any development, in order:
+
+1. **ADR** (Accepted)
+2. **Spec** (GitHub issue: plane, lane, ADR, named test IDs, what we will not do)
+3. **Test cases** (red first; user-reported bugs named as the bug)
+4. **Implementation** (smallest change)
+5. **Integration / e2e** (packaged app for persist, paint, spawn, NFR-KEY)
+
+A PR that implements without 1–3 is rejected.
+
 ## Tracker
 
 GitHub Issues and Milestones are the only work tracker. An issue is not a license to expand Spike 0.

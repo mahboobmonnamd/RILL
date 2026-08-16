@@ -5,8 +5,10 @@ alwaysApply: true
 
 # Issues and tests
 
+- Spike = research. After that, no code until ADR → spec → named test cases exist.
 - Claim a GitHub issue in an open milestone before coding. Set lane A–E.
 - Named SPEC-style test first. For a user-reported bug, the test name states the bug and fails for that reason.
-- Close an issue only with files, named tests, commands, and results in the PR.
+- Implementation is the smallest change that turns those tests green.
+- Close an issue only with files, named tests, packaged e2e if user-visible, commands, and results in the PR. Socket-only tests do not close persist, paint, spawn, or NFR-KEY.
 - Spike 0 stop: if T-NFR is not Proven on a packaged build, do not merge Milestone 1 UI.
 - This repo is self-contained. Do not cite another application tree as authority.

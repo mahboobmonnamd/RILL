@@ -5,6 +5,14 @@
 - Lane:
 - Test ID:
 
+## Sequence
+
+- [ ] ADR Accepted
+- [ ] Spec issue
+- [ ] Test cases failed for the intended reason, then passed
+- [ ] Implementation
+- [ ] Integration / e2e (packaged if user-visible)
+
 ## Test plan
 
 - [ ] Named test failed for the intended reason, then passed

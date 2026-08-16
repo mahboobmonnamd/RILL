@@ -1,0 +1,18 @@
+---
+description: ADR → spec → tests → implementation → e2e. Spike is research; after that this is mandatory.
+alwaysApply: true
+---
+
+# Development sequence
+
+A **spike** is research. It may explore. It does not make the code valid.
+
+After a spike, and for **any** development (including finishing Spike 0 gates in the packaged app), follow this order. Do not skip. Do not implement first.
+
+1. **ADR** — Accepted in this tree. Proposed docs do not authorize code.
+2. **Spec** — named requirements and what we will not do. GitHub issue in an open milestone, one lane.
+3. **Test cases** — named tests written first. They fail for the intended reason. User-reported bugs: the test name states the bug.
+4. **Implementation** — smallest change that turns those tests green.
+5. **Integration / e2e** — packaged-app gates for anything user-visible. Socket-only tests do not close persist, paint, spawn, or NFR-KEY.
+
+Handoff is invalid if a later step ran without the earlier ones existing in the PR.

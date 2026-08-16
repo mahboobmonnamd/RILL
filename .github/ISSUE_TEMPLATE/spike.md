@@ -16,6 +16,13 @@ A | B | C | D | E
 
 ### Named test ID
 
+### Sequence
+- [ ] ADR Accepted
+- [ ] Spec (this issue)
+- [ ] Test cases (red)
+- [ ] Implementation
+- [ ] Integration / e2e (packaged if user-visible)
+
 ### What we will not do
 
 ### Milestone
