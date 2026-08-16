@@ -142,8 +142,32 @@ require "packaged rilld bound $SOCK" test -S "$SOCK"
 
 # ADR 0003 D7: hid mode closes the gate; app mode is a CI diagnostic and is
 # marked as not gate-closing. Neither is skipped.
+# Launch the .app through LaunchServices so TCC Accessibility attaches to
+# the bundle. Direct `Contents/MacOS/Rill` is not the identity the user
+# enabled; `open` exits 0 even when the app does not, so grade the report.
 NFR_MODE="${RILL_NFR_MODE:-hid}"
-run_gate "T-NFR" env RILL_SOCKET="$SOCK" "$GUI" "--nfr-key=$NFR_MODE"
+APP="$ROOT/dist/Rill.app"
+run_t_nfr() {
+  nfr_out="$TMP/T-NFR.app.out"
+  nfr_err="$TMP/T-NFR.app.err"
+  : > "$nfr_out"
+  : > "$nfr_err"
+  if [ -n "${RILL_MUTATE:-}" ]; then
+    open -n -W --stdout "$nfr_out" --stderr "$nfr_err" \
+      --env "RILL_SOCKET=$SOCK" --env "RILL_MUTATE=$RILL_MUTATE" \
+      "$APP" --args "--nfr-key=$NFR_MODE"
+  else
+    open -n -W --stdout "$nfr_out" --stderr "$nfr_err" \
+      --env "RILL_SOCKET=$SOCK" "$APP" --args "--nfr-key=$NFR_MODE"
+  fi
+  cat "$nfr_out"
+  cat "$nfr_err" >&2
+  if grep -q '^T-NFR: ' "$nfr_err"; then
+    return 1
+  fi
+  grep -q '^T-NFR mode=' "$nfr_out"
+}
+run_gate "T-NFR" run_t_nfr
 
 # --------------------------------------------------------------- negative controls
 if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
@@ -170,8 +194,7 @@ if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
   # shellcheck disable=SC2086
   run_control "T-RESYNC" no_resync \
     cargo test -p rilld --offline $MUT t_resync -- --test-threads=1
-  run_control "T-NFR" timer_pump \
-    env RILL_SOCKET="$SOCK" "$GUI" "--nfr-key=$NFR_MODE"
+  run_control "T-NFR" timer_pump run_t_nfr
   # T-KILL and T-SPAWN mutations require an ObjC rebuild; reviewer applies them
   # and pastes the red (TEST-CASES). Recorded as manual, not asserted here.
   printf '{"gate":"T-KILL","mutation":"drop_POSIX_SPAWN_SETSID","went_red":null}\n'  >> "$CONTROLS"

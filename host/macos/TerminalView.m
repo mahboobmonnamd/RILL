@@ -13,9 +13,24 @@
 #import <QuartzCore/QuartzCore.h>
 #import <ApplicationServices/ApplicationServices.h>
 #include <simd/simd.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+/* US ANSI virtual keycodes for a–z. CGEventCreateKeyboardEvent(NULL, 0, …)
+ * always posts 'a'; CGEventKeyboardSetUnicodeString did not populate
+ * NSEvent.characters on PostToPid, so T-NFR hid discarded every sample
+ * while --nfr-key=app (NSEvent sendEvent) painted 999/1000. */
+static CGKeyCode rill_vk_ansi_letter(uint32_t cp) {
+    static const CGKeyCode kVk[26] = {0,  11, 8,  2,  14, 3,  5,  4,  34, 38, 40,
+                                      37, 46, 45, 31, 35, 12, 15, 1,  17, 32, 9,
+                                      13, 7,  16, 6};
+    if (cp < 'a' || cp > 'z') {
+        return 0;
+    }
+    return kVk[cp - 'a'];
+}
 
 // ---------------------------------------------------------------- shaders
 //
@@ -113,7 +128,7 @@ typedef struct {
 #define RILL_FLAG_CURSOR    256u
 
 #define RILL_ATLAS_DIM 2048
-#define RILL_MAX_FRAMES_IN_FLIGHT 3
+#define RILL_MAX_FRAMES_IN_FLIGHT 2
 
 typedef struct {
     float u, v, w, h;      /* normalized atlas rect */
@@ -161,10 +176,12 @@ typedef struct {
     RillSentinel _sentinel;
     NSMutableArray<NSNumber *> *_samples;
     uint32_t _discards;
-    uint32_t _nfrRemaining;
+    uint32_t _nfrTarget;
+    uint32_t _nfrSeq;
     RillNfrMode _nfrMode;
     BOOL _nfrRunning;
     BOOL _nfrFailed;
+    uint32_t _nfrHidKeyDowns;
 }
 
 // ---------------------------------------------------------------- lifecycle
@@ -253,6 +270,7 @@ typedef struct {
     layer.framebufferOnly = YES;
     layer.maximumDrawableCount = RILL_MAX_FRAMES_IN_FLIGHT;
     layer.displaySyncEnabled = YES; /* the recorded number is what a person sees */
+    layer.allowsNextDrawableTimeout = NO;
     self.layer = layer;
 
     _queue = [_device newCommandQueue];
@@ -535,6 +553,9 @@ static inline vector_float4 rgba(uint32_t c) {
                     grid:(const RillPodGrid *)grid {
     CAMetalLayer *layer = (CAMetalLayer *)self.layer;
     CGFloat scale = self.window.backingScaleFactor > 0 ? self.window.backingScaleFactor : 1.0;
+    if (layer.contentsScale != scale) {
+        layer.contentsScale = scale;
+    }
     CGSize drawableSize = CGSizeMake(cols * _cellW * scale, rows * _cellH * scale);
     if (drawableSize.width < 1 || drawableSize.height < 1) {
         return;
@@ -642,6 +663,14 @@ static inline vector_float4 rgba(uint32_t c) {
 /* ^C was untypeable in the previous build, which also made T-DROP unreachable
  * through the GUI (docs/SPIKE-0-AUDIT.md S3-8g). */
 - (void)keyDown:(NSEvent *)event {
+    if (_nfrRunning && _nfrMode == RillNfrModeHid) {
+        _nfrHidKeyDowns++;
+        if (_nfrHidKeyDowns == 1) {
+            fprintf(stderr, "T-NFR hid keyDown characters=%s keyCode=%u\n",
+                    event.characters.UTF8String ?: "", (unsigned)event.keyCode);
+            fflush(stderr);
+        }
+    }
     if (_nfrRunning && _sentinel.armed && _sentinel.keyTimestamp == 0 && event.characters.length) {
         unichar typed = [event.characters characterAtIndex:0];
         if ((uint32_t)typed == _sentinel.codepoint) {
@@ -746,15 +775,39 @@ static inline vector_float4 rgba(uint32_t c) {
         _discards++; /* no keyDown, clock skew, or a lost attribution */
     } else {
         [_samples addObject:@(ms)];
-    }
-    if (_nfrRemaining > 0) {
-        _nfrRemaining--;
+        if (_samples.count % 100 == 0) {
+            fprintf(stderr, "T-NFR progress samples=%lu discarded=%u\n",
+                    (unsigned long)_samples.count, _discards);
+            fflush(stderr);
+        }
     }
     [self injectNextSampleIfNeeded];
 }
 
 - (void)injectNextSampleIfNeeded {
-    if (!_nfrRunning || _nfrRemaining == 0) {
+    if (!_nfrRunning) {
+        return;
+    }
+    if (_samples.count >= _nfrTarget) {
+        _nfrRunning = NO;
+        return;
+    }
+    /* Fail-fast: HID never reached AppKit. */
+    if (_samples.count == 0 && _discards >= 20) {
+        fprintf(stderr,
+                "T-NFR: 20 HID keys posted, 0 presented, keyDown=%u. "
+                "Stopping instead of waiting out the 180s deadline.\n",
+                _nfrHidKeyDowns);
+        fflush(stderr);
+        _nfrFailed = YES;
+        _nfrRunning = NO;
+        return;
+    }
+    /* At most 2% discards of a 1000-accept run (ADR 0003 D6). */
+    if (_discards > 20) {
+        fprintf(stderr, "T-NFR: %u discards before 1000 accepts (cap 20).\n", _discards);
+        fflush(stderr);
+        _nfrFailed = YES;
         _nfrRunning = NO;
         return;
     }
@@ -764,6 +817,28 @@ static inline vector_float4 rgba(uint32_t c) {
         _nfrFailed = YES;
         _nfrRunning = NO;
         return;
+    }
+    /* A wrapping line is a discard under D6. Kill the line before the
+     * cursor reaches the last cells so the oracle stays on one row. */
+    if (_cols > 4 && col + 2 >= _cols) {
+        uint8_t u = 0x15; /* Ctrl-U: DATA, not a control RPC */
+        [self sendBytes:&u length:1];
+        for (int i = 0; i < 40; i++) {
+            rill_client_pump(_client);
+            uint16_t c2 = 0, r2 = 0;
+            if (rill_client_cursor(_client, &c2, &r2) == 0 && c2 + 2 < _cols) {
+                col = c2;
+                row = r2;
+                break;
+            }
+            [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
+                                     beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.002]];
+        }
+        if (rill_client_cursor(_client, &col, &row) != 0) {
+            _nfrFailed = YES;
+            _nfrRunning = NO;
+            return;
+        }
     }
     uint32_t existing = rill_client_cell_codepoint(_client, col, row);
 
@@ -778,6 +853,8 @@ static inline vector_float4 rgba(uint32_t c) {
         }
     }
 
+    _nfrSeq++;
+    uint32_t seq = _nfrSeq;
     _sentinel.armed = YES;
     _sentinel.codepoint = cp;
     _sentinel.col = col;
@@ -789,15 +866,16 @@ static inline vector_float4 rgba(uint32_t c) {
     /* If nothing presents within 500ms the sample is discarded, not silently
      * dropped: discards above 2% fail the run (ADR 0003 D6). */
     __weak TerminalView *weakSelf = self;
-    uint32_t at = _nfrRemaining;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
                        TerminalView *s = weakSelf;
-                       if (s && s->_nfrRunning && s->_nfrRemaining == at && s->_sentinel.armed) {
+                       if (s && s->_nfrRunning && s->_nfrSeq == seq && s->_sentinel.armed) {
                            s->_sentinel.armed = NO;
                            s->_discards++;
-                           if (s->_nfrRemaining > 0) {
-                               s->_nfrRemaining--;
+                           if (s->_discards % 10 == 0) {
+                               fprintf(stderr, "T-NFR progress samples=%lu discarded=%u\n",
+                                       (unsigned long)s->_samples.count, s->_discards);
+                               fflush(stderr);
                            }
                            [s injectNextSampleIfNeeded];
                        }
@@ -808,8 +886,13 @@ static inline vector_float4 rgba(uint32_t c) {
     NSString *s = [NSString stringWithFormat:@"%C", (unichar)cp];
 
     if (_nfrMode == RillNfrModeHid) {
-        CGEventRef down = CGEventCreateKeyboardEvent(NULL, 0, true);
-        CGEventRef up = CGEventCreateKeyboardEvent(NULL, 0, false);
+        CGKeyCode vk = rill_vk_ansi_letter(cp);
+        CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
+        CGEventRef down = CGEventCreateKeyboardEvent(src, vk, true);
+        CGEventRef up = CGEventCreateKeyboardEvent(src, vk, false);
+        if (src) {
+            CFRelease(src);
+        }
         if (!down || !up) {
             _nfrFailed = YES;
             _nfrRunning = NO;
@@ -820,15 +903,23 @@ static inline vector_float4 rgba(uint32_t c) {
         UniChar u = (UniChar)cp;
         CGEventKeyboardSetUnicodeString(down, 1, &u);
         CGEventKeyboardSetUnicodeString(up, 1, &u);
-        /* Post to this pid. kCGSessionEventTap delivers to the frontmost app,
-         * which during an agent run is usually the editor, so every sample
-         * timed out (0 accepted / 357 discards). */
-        pid_t me = getpid();
+        /* Session tap only (ADR 0003 D7). PostToPid in the same shot typed
+         * twice, wrapped the shell line, and discarded the late samples. */
         [NSApp activateIgnoringOtherApps:YES];
         [self.window makeKeyAndOrderFront:nil];
-        CGEventPostToPid(me, down);
-        CGEventPostToPid(me, up);
+        [self.window makeFirstResponder:self];
+        CGEventPost(kCGSessionEventTap, down);
         CFRelease(down);
+        NSEvent *queued;
+        while ((queued = [NSApp nextEventMatchingMask:NSEventMaskAny
+                                            untilDate:[NSDate distantPast]
+                                               inMode:NSDefaultRunLoopMode
+                                              dequeue:YES])) {
+            [NSApp sendEvent:queued];
+        }
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
+                                 beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.005]];
+        CGEventPost(kCGSessionEventTap, up);
         CFRelease(up);
         return;
     }
@@ -862,10 +953,20 @@ static inline vector_float4 rgba(uint32_t c) {
 
     [_samples removeAllObjects];
     _discards = 0;
-    _nfrRemaining = count;
+    _nfrTarget = count;
+    _nfrSeq = 0;
     _nfrMode = mode;
     _nfrRunning = YES;
     _nfrFailed = NO;
+    _nfrHidKeyDowns = 0;
+
+    NSInteger savedLevel = self.window.level;
+    if (mode == RillNfrModeHid) {
+        self.window.level = NSFloatingWindowLevel;
+        [NSApp activateIgnoringOtherApps:YES];
+        [self.window makeKeyAndOrderFront:nil];
+        [self.window makeFirstResponder:self];
+    }
 
     rill_client_begin_warm_path_audit(_client);
 
@@ -877,12 +978,28 @@ static inline vector_float4 rgba(uint32_t c) {
 
     [self injectNextSampleIfNeeded];
 
+    fprintf(stderr, "T-NFR measuring mode=%s count=%u\n",
+            mode == RillNfrModeHid ? "hid" : "app", count);
+    fflush(stderr);
+
     NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:180];
     while (_nfrRunning && [deadline timeIntervalSinceNow] > 0) {
+        NSEvent *e = [NSApp nextEventMatchingMask:NSEventMaskAny
+                                        untilDate:[NSDate dateWithTimeIntervalSinceNow:0.004]
+                                           inMode:NSDefaultRunLoopMode
+                                          dequeue:YES];
+        if (e) {
+            [NSApp sendEvent:e];
+        }
+        ptrdiff_t fed = rill_client_pump(_client);
+        if (fed > 0) {
+            [self renderFrame];
+        }
         [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
-                                 beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+                                 beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.001]];
     }
     _nfrRunning = NO;
+    self.window.level = savedLevel;
 
     report.warm_path_violations = rill_client_end_warm_path_audit(_client);
     report.samples = (uint32_t)_samples.count;

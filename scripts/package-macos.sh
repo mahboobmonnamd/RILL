@@ -35,6 +35,16 @@ clang -fobjc-arc -O2 -fmodules \
 # T-SPAWN inspects imports, not exports. Surface the same information here so a
 # packaging change that pulls in a PTY primitive is visible immediately rather
 # than at gate time (PRD FR-SPAWN, docs/TEST-CASES.md).
+# clang leaves a linker-signed Mach-O with Info.plist=not bound. TCC then
+# records a different identity than LaunchServices (`Rill` vs
+# `dev.rill.spike0`), and AXIsProcessTrusted stays false after the user
+# enables Rill in Accessibility. Seal inside-out; no hardened runtime —
+# that flag blocks the HID post T-NFR needs.
+BUNDLE_ID="dev.rill.spike0"
+codesign --force --sign - --identifier "${BUNDLE_ID}.rilld" "$MACOS/rilld"
+codesign --force --sign - --identifier "$BUNDLE_ID" "$MACOS/Rill"
+codesign --force --sign - --identifier "$BUNDLE_ID" "$APP"
+
 echo "-- PTY-creation imports in the packaged GUI (expect none) --"
 nm -u "$MACOS/Rill" \
   | grep -E '_forkpty|_openpty|_posix_openpt|_grantpt|_unlockpt|_ptsname|_login_tty' \
