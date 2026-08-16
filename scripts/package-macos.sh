@@ -20,7 +20,8 @@ HOST_LIB="$TARGET_DIR/release/librill_host.a"
 CHIP0_VT=$(ls -1 "$TARGET_DIR"/release/build/rill-chip0-*/out/librill_chip0_vt.a | head -1)
 GHOSTTY_VT="${RILL_GHOSTTY_DIR:-$ROOT/third_party/ghostty}/zig-out/lib/libghostty-vt.a"
 
-clang -fobjc-arc -O2 \
+clang -fobjc-arc -O2 -fmodules \
+  -Werror=implicit-function-declaration \
   -o "$MACOS/Rill" \
   host/macos/main.m host/macos/TerminalView.m \
   "$HOST_LIB" \
@@ -28,6 +29,15 @@ clang -fobjc-arc -O2 \
   "$GHOSTTY_VT" \
   -I host/macos \
   -framework Cocoa -framework Metal -framework QuartzCore -framework CoreText \
+  -framework CoreGraphics -framework ApplicationServices \
   -lc++ -lSystem
+
+# T-SPAWN inspects imports, not exports. Surface the same information here so a
+# packaging change that pulls in a PTY primitive is visible immediately rather
+# than at gate time (PRD FR-SPAWN, docs/TEST-CASES.md).
+echo "-- PTY-creation imports in the packaged GUI (expect none) --"
+nm -u "$MACOS/Rill" \
+  | grep -E '_forkpty|_openpty|_posix_openpt|_grantpt|_unlockpt|_ptsname|_login_tty' \
+  || echo "  none"
 
 echo "packaged $APP"
