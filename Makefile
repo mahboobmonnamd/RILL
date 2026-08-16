@@ -18,7 +18,7 @@ libghostty-vt: deps
 	sh scripts/fetch-libghostty-vt.sh
 
 test: libghostty-vt
-	. "$$HOME/.cargo/env" 2>/dev/null; cargo test --workspace
+	. "$$HOME/.cargo/env" 2>/dev/null; sh scripts/validate-spike0.sh
 
 package: libghostty-vt
 	sh scripts/package-macos.sh

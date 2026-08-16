@@ -1,0 +1,7 @@
+# Display surface. Production faces must not use NSFont.monospacedSystemFont
+# when a family is configured.
+font-family = "Menlo"
+font-size = 13.0
+font-fallbacks = ["Menlo", "Courier"]
+cols = 80
+rows = 24

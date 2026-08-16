@@ -2,7 +2,7 @@
 
 A session operating system for terminals. macOS first. MIT OR Apache-2.0.
 
-**Spike 0 is not done.** This repository is the charter: product, architecture, contracts, and GitHub process. There is no running window yet. Do not add agents, Blocks, or chrome until Spike 0 is butter.
+**Spike 0 is not closed.** Kernel, attach, Chip 0, and a packaged `Rill.app` exist. T-NFR is Partial (not key-down → first GPU frame, not on battery). Do not add agents, Blocks, or chrome until Spike 0 is butter. Run `sh scripts/validate-spike0.sh`.
 
 ## In one page
 
@@ -51,7 +51,7 @@ Installs or checks Rust (`rustc` ≥ 1.85), Zig (≥ 0.16, for Chip 0 / `libghos
 1. [PRD](docs/PRD.md) — what we ship and what we refuse
 2. [Architecture](docs/ARCHITECTURE.md) — planes, contracts, diagrams
 3. [ADR 0001](docs/adr/0001-session-operating-system.md) — the lock
-4. [Spike 0](docs/SPIKE-0.md) — named gates; **not implemented**
+4. [Spike 0](docs/SPIKE-0.md) — named gates; **not closed** ([validation](docs/SPIKE-0-VALIDATION.md))
 5. [Lanes](docs/LANES.md) — how 3–5 people work in parallel
 6. [CONTRIBUTING](CONTRIBUTING.md) — issues, PRs, TDD
 

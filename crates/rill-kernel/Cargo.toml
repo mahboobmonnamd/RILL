@@ -1,0 +1,10 @@
+[package]
+name = "rill-kernel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "PTY owner, sole writer, bounded byte ring (lane A)"
+
+[dependencies]
+rill-attach.workspace = true
+libc.workspace = true

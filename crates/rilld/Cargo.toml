@@ -1,0 +1,20 @@
+[package]
+name = "rilld"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Session kernel daemon — owns the PTY, survives GUI death"
+
+[lib]
+name = "rilld"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rilld"
+path = "src/main.rs"
+
+[dependencies]
+rill-attach.workspace = true
+rill-kernel.workspace = true
+rill-chip0.workspace = true
+libc.workspace = true

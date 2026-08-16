@@ -1,0 +1,19 @@
+[package]
+name = "rill-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "GUI attach client + Chip 0. Does not spawn the user shell."
+
+[lib]
+name = "rill_host"
+crate-type = ["staticlib", "rlib"]
+
+[[bin]]
+name = "rill-host"
+path = "src/bin/rill_host.rs"
+
+[dependencies]
+rill-attach.workspace = true
+rill-chip0.workspace = true
+libc.workspace = true
