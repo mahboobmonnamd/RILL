@@ -27,7 +27,16 @@ typedef struct {
     uint8_t full_damage;
     uint16_t damage_row0;
     uint16_t damage_row1;
+    /* Grapheme clusters whose codepoint count exceeded RILL_GRAPHEME_MAX and
+     * were rendered from their base codepoint alone. Counted, never silently
+     * dropped (SPEC-CHIP0 §5). */
+    uint32_t grapheme_truncated;
 } RillPodHeader;
+
+/* Clusters longer than this are truncated to the base codepoint. Anything
+ * beyond is a decorative sequence we cannot render in Spike 0 anyway; the
+ * point of the bound is that it is a bound, not that it is exactly 32. */
+#define RILL_GRAPHEME_MAX 32
 
 int rill_vt_new(RillVt **out, uint16_t cols, uint16_t rows);
 void rill_vt_free(RillVt *vt);

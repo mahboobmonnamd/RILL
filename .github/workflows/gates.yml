@@ -1,0 +1,76 @@
+# Spike 0 gates. Requires macOS, Zig, a display, and the pinned libghostty-vt.
+#
+# ADR 0002 D8: a gate that has never run in CI is not evidence, whatever a
+# laptop printed. Until a self-hosted macOS runner exists this is
+# workflow_dispatch, and the uploaded evidence artifact — not a pasted terminal
+# transcript — is what a PR cites.
+name: gates
+
+on:
+  workflow_dispatch:
+    inputs:
+      negative_controls:
+        description: "Also run negative controls (ADR 0002 D3)"
+        type: boolean
+        default: true
+  pull_request:
+    paths:
+      - "crates/**"
+      - "host/**"
+      - "scripts/**"
+      - "third_party/ghostty.pin"
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    # A GitHub-hosted macOS runner has no physical display and no battery, so it
+    # cannot close T-NFR. It can still run every other gate and T-NFR in `app`
+    # mode for regression detection (ADR 0003 D7).
+    runs-on: macos-14
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install zig
+        run: brew install zig
+
+      - name: Build libghostty-vt at the pin
+        run: sh scripts/fetch-libghostty-vt.sh
+
+      - name: Package Rill.app
+        run: sh scripts/package-macos.sh
+
+      - name: Gate suite
+        run: sh scripts/validate-spike0.sh
+
+      - name: Negative controls
+        if: inputs.negative_controls
+        # A gate that stays green under its own mutation is a broken
+        # instrument and fails the run, whatever the unmutated gate did.
+        run: sh scripts/validate-spike0.sh --negative-controls
+
+      - name: ASan over the byte fixtures
+        # SPEC-CHIP0 §5. The grapheme overflow (audit S3-1) is the reason.
+        env:
+          RILL_ASAN: "1"
+        run: cargo test -p rill-chip0 t_bytes -- --nocapture
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: spike0-evidence
+          path: evidence/
+          if-no-files-found: error
+
+      - name: Restate what this run cannot close
+        if: always()
+        run: |
+          echo "This runner has no physical display and no battery."
+          echo "T-NFR here is 'app' mode only and does NOT close the gate."
+          echo "Closure requires --nfr-key=hid on a real Mac on battery (ADR 0003 D7, D8)."

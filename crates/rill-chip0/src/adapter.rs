@@ -13,6 +13,8 @@ struct CHeader {
     full_damage: u8,
     damage_row0: u16,
     damage_row1: u16,
+    /// Must mirror `RillPodHeader` in `adapter/rill_chip0_vt.h`.
+    grapheme_truncated: u32,
 }
 
 #[repr(C)]
@@ -96,6 +98,7 @@ impl Vt {
             full_damage: 0,
             damage_row0: 0,
             damage_row1: 0,
+            grapheme_truncated: 0,
         };
         let mut cells_ptr: *mut CCell = ptr::null_mut();
         let mut n = 0usize;
@@ -130,6 +133,7 @@ impl Vt {
             full_damage: hdr.full_damage != 0,
             damage_row0: hdr.damage_row0,
             damage_row1: hdr.damage_row1,
+            grapheme_truncated: hdr.grapheme_truncated,
             cells,
         })
     }

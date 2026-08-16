@@ -56,7 +56,7 @@ One window. One runtime. One PTY. Chip 0 display. Framed attach. Quit/SIGKILL ke
 
 | ID | Requirement |
 |---|---|
-| NFR-KEY | Key-down → first frame containing the echoed glyph. Packaged app. p95 over ≥1000 keys. Warm and under load. **On battery.** Zero control-plane RPCs during the run. |
+| NFR-KEY | Key-down `NSEvent.timestamp` → `presentedTime` of the drawable first containing the echoed glyph **at the cell the cursor occupied**. Packaged app. p95 < one display refresh interval over ≥1000 accepted samples, discards ≤ 2%. Warm and under load. **On battery.** Zero control-plane RPCs during the run. Superseded definition and measurement procedure: [ADR 0003](adr/0003-display-pipeline.md) D5–D9. |
 | NFR-DROP | `yes` for 10s then `^C`: zero dropped bytes; prompt usable. Per-pane pumps so one flood cannot stall another pane (when panes exist). |
 | NFR-BYTES | Invalid UTF-8 from the child reaches the emulator byte-identical. |
 | NFR-SPAWN | Shipped GUI binary: no `posix_spawn` / `forkpty` / `openpty` used to start the user shell. Link-level test, not a source grep. |
@@ -68,6 +68,13 @@ When a conversation object exists: **Enter → PTY. A distinct submit (⌘Enter)
 
 ## 7. Success / stop
 
-Spike 0 is **Proven** only when every named test in [SPIKE-0](SPIKE-0.md) is green on a packaged build, including NFR-KEY on battery.
+Spike 0 is **Proven** only when every named test in [SPIKE-0](SPIKE-0.md) has
+been demonstrated **red and then green** on a packaged build
+([ADR 0002](adr/0002-falsifiable-evidence.md) D2), including NFR-KEY on battery.
 
-If it is not butter: **stop.** Do not add agents to hide the miss.
+A green test that was never shown to fail is not evidence. The 2026-08-16 run
+that reported eight of nine gates Proven is withdrawn; see
+[SPIKE-0-AUDIT](SPIKE-0-AUDIT.md).
+
+If it is not butter: **stop.** Do not add agents to hide the miss, and do not
+re-cut the instrument to flatter it.

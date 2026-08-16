@@ -1,0 +1,13 @@
+# libghostty-vt pin. ADR 0002 D7.
+#
+# Upstream declares this API unstable:
+#   "WARNING: This is an incomplete, work-in-progress API. It is not yet
+#    stable and is definitely going to change."
+#
+# Moving this pin is its own PR, with the full Spike 0 gate suite re-run and the
+# evidence artifact attached. It is never a side effect of a clean checkout.
+#
+# Verified 2026-08-16: the C adapter in crates/rill-chip0/src/adapter/ matches
+# the headers at this revision, parameter for parameter.
+repo = https://github.com/ghostty-org/ghostty.git
+sha  = 26df373ec83fb1cebb4fee0a8394144ae984a9b8

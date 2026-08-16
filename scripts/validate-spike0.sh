@@ -1,75 +1,241 @@
 #!/bin/sh
-# Named Spike 0 gates. Socket-only tests do not close T-KILL, T-SPAWN, or T-NFR.
-# Evidence: Proven / Partial / Manual / External. Packaged-app gates are not
-# proven by in-process fixtures. T-NFR is Proven only on battery.
+# Spike 0 gate runner. ADR 0002 D5, D10.
+#
+# Rules this script obeys, learned the hard way (see docs/SPIKE-0-AUDIT.md S4-3,
+# where the previous version printed "pass" for three gates and never ran one of
+# them):
+#
+#   1. No summary line is printed without a recorded result.
+#   2. A missing precondition is a FAILURE, never a skip.
+#   3. Every result goes into evidence/spike0-<utc>.json; the human summary is
+#      rendered from that file.
+#   4. --negative-controls asserts each gate goes RED under its own mutation.
+#      A gate that stays green under its mutation is a broken instrument and
+#      fails the run regardless of what the unmutated gate did.
 set -eu
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-fail() {
-  echo "FAIL: $*" >&2
-  exit 1
+NEGATIVE_CONTROLS=0
+[ "${1:-}" = "--negative-controls" ] && NEGATIVE_CONTROLS=1
+
+UTC="$(date -u +%Y%m%dT%H%M%SZ)"
+EVIDENCE_DIR="$ROOT/evidence"
+EVIDENCE="$EVIDENCE_DIR/spike0-$UTC.json"
+mkdir -p "$EVIDENCE_DIR"
+
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"; kill ${RILLD_PID:-} 2>/dev/null || true' EXIT
+
+RESULTS="$TMP/gates.jsonl"
+CONTROLS="$TMP/controls.jsonl"
+: > "$RESULTS"
+: > "$CONTROLS"
+
+ANY_FAIL=0
+
+json_escape() { python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'; }
+
+# run_gate <id> <command...>
+run_gate() {
+  id="$1"; shift
+  echo "== $id =="
+  out="$TMP/$id.out"
+  set +e
+  "$@" > "$out" 2>&1
+  rc=$?
+  set -e
+  cat "$out"
+  cls="Red"
+  [ "$rc" -eq 0 ] && cls="Green-unproven"   # ADR 0002 D2: never "Proven" from a bare pass
+  [ "$rc" -ne 0 ] && ANY_FAIL=1
+  printf '{"id":%s,"command":%s,"exit":%d,"class":%s,"stdout":%s}\n' \
+    "\"$id\"" \
+    "$(printf '%s ' "$@" | json_escape)" \
+    "$rc" \
+    "\"$cls\"" \
+    "$(cat "$out" | json_escape)" >> "$RESULTS"
+  return 0
 }
 
-echo "== T-BYTES / T-DROP / T-RESIZE / T-EXIT / T-ATTACH / T-RESYNC / T-KILL (library + e2e) =="
-cargo test --workspace --offline -- --test-threads=1
+# run_control <gate-id> <mutation> <command...>
+# The mutation MUST turn the gate red. Green here means the gate is blind.
+run_control() {
+  id="$1"; mut="$2"; shift 2
+  echo "== negative control: $id / $mut =="
+  set +e
+  RILL_MUTATE="$mut" "$@" > "$TMP/$id.$mut.out" 2>&1
+  rc=$?
+  set -e
+  if [ "$rc" -eq 0 ]; then
+    echo "BROKEN INSTRUMENT: $id stayed green under mutation '$mut'." >&2
+    echo "  The gate cannot detect the defect it exists to detect (ADR 0002 D3)." >&2
+    ANY_FAIL=1
+    went_red=false
+  else
+    echo "ok: $id went red under '$mut'"
+    went_red=true
+  fi
+  printf '{"gate":"%s","mutation":"%s","went_red":%s}\n' "$id" "$mut" "$went_red" >> "$CONTROLS"
+}
 
+require() {
+  what="$1"; shift
+  if ! "$@"; then
+    echo "PRECONDITION FAILED: $what" >&2
+    echo "  ADR 0002 D5: a missing precondition is a failure, not a skip." >&2
+    exit 1
+  fi
+}
+
+# ---------------------------------------------------------------- preconditions
+echo "== preconditions =="
+require "third_party/ghostty.pin exists" test -f third_party/ghostty.pin
+GHOSTTY_SHA="$(sed -n 's/^sha *= *//p' third_party/ghostty.pin | tr -d '[:space:]')"
+GHOSTTY_DIR="${RILL_GHOSTTY_DIR:-$ROOT/third_party/ghostty}"
+require "libghostty-vt built at the pin (run scripts/fetch-libghostty-vt.sh)" \
+  test -f "$GHOSTTY_DIR/.rill-built-sha"
+require "libghostty-vt provenance matches the pin" \
+  test "$(cat "$GHOSTTY_DIR/.rill-built-sha")" = "$GHOSTTY_SHA"
+echo "libghostty-vt: $GHOSTTY_SHA"
+
+echo "== plane lints =="
+run_gate "LINT-PLANES" sh scripts/lint-planes.sh
+
+# ------------------------------------------------------------------ library tier
+run_gate "T-BYTES-chip"   cargo test -p rill-chip0 --offline t_bytes -- --nocapture
+run_gate "T-BYTES-kernel" cargo test -p rill-kernel --offline t_bytes -- --nocapture
+run_gate "T-DROP"         cargo test -p rill-kernel --offline t_drop -- --test-threads=1 --nocapture
+run_gate "T-RESIZE"       cargo test -p rill-kernel --offline t_resize -- --nocapture
+run_gate "T-EXIT"         cargo test -p rill-kernel --offline t_exit -- --nocapture
+run_gate "T-EXIT-detach"  cargo test -p rilld       --offline t_exit_across_detach -- --nocapture
+run_gate "T-ATTACH"       cargo test -p rilld       --offline t_attach -- --test-threads=1 --nocapture
+run_gate "T-RESYNC"       cargo test -p rilld       --offline t_resync -- --test-threads=1 --nocapture
+
+# ---------------------------------------------------------------------- package
 echo "== package =="
-sh scripts/package-macos.sh
+run_gate "PACKAGE" sh scripts/package-macos.sh
 GUI="$ROOT/dist/Rill.app/Contents/MacOS/Rill"
 RILLD="$ROOT/dist/Rill.app/Contents/MacOS/rilld"
-test -x "$GUI" || fail "packaged GUI missing"
-test -x "$RILLD" || fail "packaged rilld missing"
+require "packaged GUI at $GUI" test -x "$GUI"
+require "packaged rilld at $RILLD" test -x "$RILLD"
 
-echo "== T-SPAWN (packaged GUI) =="
-RILL_REQUIRE_PACKAGE=1 cargo test -p rill-host --offline --test t_spawn -- --nocapture
+# T-SPAWN carries its own permanent positive control: the same check is run
+# against a fixture that DOES create a PTY and must report a violation.
+run_gate "T-SPAWN" cargo test -p rill-host --offline --test t_spawn -- --nocapture
 
-echo "== T-KILL packaged rilld (quit process group) =="
-RILL_RILLD_BIN="$RILLD" cargo test -p rilld --offline --test persist_e2e -- --nocapture
+run_gate "T-KILL" env RILL_RILLD_BIN="$RILLD" RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rilld --offline --test persist_e2e -- --nocapture
 
-echo "== T-NFR packaged Rill --nfr-key =="
-SOCK="/tmp/rill-spike0-validate-$$.sock"
-export RILL_SOCKET="$SOCK"
-"$RILLD" &
+# ------------------------------------------------------------------------ T-NFR
+echo "== T-NFR =="
+SOCK="$TMP/rill-nfr.sock"
+RILL_SOCKET="$SOCK" "$RILLD" &
 RILLD_PID=$!
-cleanup() {
-  kill "$RILLD_PID" 2>/dev/null || true
-  wait "$RILLD_PID" 2>/dev/null || true
-  rm -f "$SOCK"
-}
-trap cleanup EXIT
 i=0
-while [ "$i" -lt 50 ]; do
-  if [ -S "$SOCK" ]; then
-    break
-  fi
-  i=$((i + 1))
-  sleep 0.05
+while [ "$i" -lt 100 ]; do
+  [ -S "$SOCK" ] && break
+  i=$((i + 1)); sleep 0.05
 done
-test -S "$SOCK" || fail "packaged rilld did not bind $SOCK"
+require "packaged rilld bound $SOCK" test -S "$SOCK"
 
-set +e
-NFR_OUT="$("$GUI" --nfr-key 2>&1)"
-NFR_RC=$?
-set -e
-echo "$NFR_OUT"
-echo "$NFR_OUT" | grep -q 'control_rpc=0' || fail "T-NFR control RPC on warm path"
-test "$NFR_RC" -eq 0 || fail "T-NFR packaged --nfr-key failed (rc=$NFR_RC)"
+# ADR 0003 D7: hid mode closes the gate; app mode is a CI diagnostic and is
+# marked as not gate-closing. Neither is skipped.
+NFR_MODE="${RILL_NFR_MODE:-hid}"
+run_gate "T-NFR" env RILL_SOCKET="$SOCK" "$GUI" "--nfr-key=$NFR_MODE"
 
-BATT=$(echo "$NFR_OUT" | sed -n 's/.*battery=\([01]\).*/\1/p' | tail -1)
-echo
-echo "==== Spike 0 validation summary ===="
-echo "T-BYTES   library: run above"
-echo "T-DROP    library: run above"
-echo "T-ATTACH  library: run above"
-echo "T-RESIZE  library: run above"
-echo "T-EXIT    library: run above"
-echo "T-SPAWN   packaged nm: pass"
-echo "T-KILL    persist_e2e cargo + packaged rilld: pass"
-echo "T-RESYNC  library + persist reconnect: pass"
-if [ "$BATT" = "1" ]; then
-  echo "T-NFR     packaged --nfr-key on battery: p95 gate passed (still Partial until key→GPU frame)"
-else
-  echo "T-NFR     packaged --nfr-key on AC: Partial (Proven requires battery + key→first GPU frame)"
+# --------------------------------------------------------------- negative controls
+if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
+  echo
+  echo "== negative controls (ADR 0002 D3) =="
+  # Mutations live behind the `mutate` cargo feature, so shipping builds carry
+  # no mutation code at all (ADR 0002 D3).
+  MUT="--features mutate"
+  # shellcheck disable=SC2086
+  run_control "T-BYTES-chip" lossy_feed \
+    cargo test -p rill-chip0 --offline $MUT t_bytes
+  # shellcheck disable=SC2086
+  run_control "T-DROP" drop_on_full \
+    cargo test -p rill-kernel --offline $MUT t_drop -- --test-threads=1
+  # shellcheck disable=SC2086
+  run_control "T-RESIZE" resize_before_data \
+    cargo test -p rill-kernel --offline $MUT t_resize
+  # shellcheck disable=SC2086
+  run_control "T-EXIT-detach" clear_outbound_on_detach \
+    cargo test -p rilld --offline $MUT t_exit_across_detach
+  # shellcheck disable=SC2086
+  run_control "T-ATTACH" accept_replaces_client \
+    cargo test -p rilld --offline $MUT t_attach -- --test-threads=1
+  # shellcheck disable=SC2086
+  run_control "T-RESYNC" no_resync \
+    cargo test -p rilld --offline $MUT t_resync -- --test-threads=1
+  run_control "T-NFR" timer_pump \
+    env RILL_SOCKET="$SOCK" "$GUI" "--nfr-key=$NFR_MODE"
+  # T-KILL and T-SPAWN mutations require an ObjC rebuild; reviewer applies them
+  # and pastes the red (TEST-CASES). Recorded as manual, not asserted here.
+  printf '{"gate":"T-KILL","mutation":"drop_POSIX_SPAWN_SETSID","went_red":null}\n'  >> "$CONTROLS"
+  printf '{"gate":"T-SPAWN","mutation":"openpty_in_main_m","went_red":null}\n'      >> "$CONTROLS"
 fi
-echo "Stop rule: do not open Milestone 1 until T-NFR is Proven on a packaged build on battery."
+
+# ------------------------------------------------------------------- evidence
+POWER="ac"
+if command -v pmset >/dev/null 2>&1 && pmset -g batt 2>/dev/null | grep -q "Battery Power"; then
+  POWER="battery"
+fi
+REFRESH="$(system_profiler SPDisplaysDataType 2>/dev/null \
+  | sed -n 's/.*UI Looks like:.*@ \([0-9]*\)Hz.*/\1/p' | head -1)"
+[ -n "$REFRESH" ] || REFRESH="null"
+
+{
+  printf '{\n'
+  printf '  "utc": "%s",\n' "$UTC"
+  printf '  "git_sha": "%s",\n' "$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+  printf '  "git_dirty": %s,\n' "$([ -n "$(git status --porcelain 2>/dev/null)" ] && echo true || echo false)"
+  printf '  "ghostty_sha": "%s",\n' "$GHOSTTY_SHA"
+  printf '  "host": {"model": "%s", "macos": "%s", "power": "%s", "refresh_hz": %s},\n' \
+    "$(sysctl -n hw.model 2>/dev/null || uname -m)" \
+    "$(sw_vers -productVersion 2>/dev/null || uname -sr)" \
+    "$POWER" "$REFRESH"
+  printf '  "nfr_mode": "%s",\n' "$NFR_MODE"
+  printf '  "gates": [\n'
+  sed '$!s/$/,/' "$RESULTS" | sed 's/^/    /'
+  printf '  ],\n'
+  printf '  "negative_controls": [\n'
+  sed '$!s/$/,/' "$CONTROLS" | sed 's/^/    /'
+  printf '  ]\n'
+  printf '}\n'
+} > "$EVIDENCE"
+
+# ------------------------------------------------------------------- summary
+# Rendered FROM the evidence file. Nothing is printed that was not measured.
+echo
+echo "==== Spike 0 — $UTC ===="
+python3 - "$EVIDENCE" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+print(f"git {d['git_sha'][:12]}{' (dirty)' if d['git_dirty'] else ''}  "
+      f"ghostty {d['ghostty_sha'][:12]}  power={d['host']['power']}  "
+      f"refresh={d['host']['refresh_hz']}Hz  nfr_mode={d['nfr_mode']}")
+print()
+for g in d["gates"]:
+    mark = "ok " if g["exit"] == 0 else "RED"
+    print(f"  {mark}  {g['id']:<16} {g['class']}")
+nc = [c for c in d["negative_controls"] if c["went_red"] is not None]
+if nc:
+    print()
+    for c in nc:
+        mark = "ok " if c["went_red"] else "BROKEN INSTRUMENT"
+        print(f"  {mark}  {c['gate']} / {c['mutation']}")
+print()
+print("Class 'Green-unproven' is NOT evidence. A gate reaches Proven only after")
+print("being demonstrated red on a build lacking the behaviour (ADR 0002 D2).")
+if d["host"]["power"] != "battery":
+    print("T-NFR did not run on battery and therefore cannot close (PRD NFR-KEY).")
+if d["nfr_mode"] != "hid":
+    print("T-NFR ran in 'app' mode: diagnostic only, not gate-closing (ADR 0003 D7).")
+PY
+
+echo
+echo "evidence: $EVIDENCE"
+[ "$ANY_FAIL" -eq 0 ] || { echo "one or more gates failed" >&2; exit 1; }

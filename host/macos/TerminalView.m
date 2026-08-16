@@ -1,31 +1,168 @@
+/* Chip 0 presenter: glyph atlas + one instanced Metal draw, driven by socket
+ * readiness rather than a timer. ADR 0003, SPEC-DISPLAY.
+ *
+ * What this replaces: a 60 Hz NSTimer that delayed every byte by up to 16.6ms,
+ * per-cell CTFontDrawGlyphs into a CGBitmapContext on the UI thread, a fresh
+ * MTLTexture every frame, and a full-screen blit — with the damage rows the
+ * chip computed thrown away (docs/SPIKE-0-AUDIT.md S3-8b, S3-8h).
+ */
+
 #import "TerminalView.h"
 #import <CoreText/CoreText.h>
-#import <MetalKit/MetalKit.h>
+#import <Metal/Metal.h>
+#import <QuartzCore/QuartzCore.h>
+#include <simd/simd.h>
 
-static NSString *kShader = @"#include <metal_stdlib>\n"
-                            "using namespace metal;\n"
-                            "struct VOut { float4 pos [[position]]; float2 uv; };\n"
-                            "vertex VOut vs(uint vid [[vertex_id]]) {\n"
-                            "  float2 p[6] = { float2(-1,-1), float2(1,-1), float2(-1,1), float2(-1,1), float2(1,-1), float2(1,1) };\n"
-                            "  float2 u[6] = { float2(0,1), float2(1,1), float2(0,0), float2(0,0), float2(1,1), float2(1,0) };\n"
-                            "  VOut o; o.pos = float4(p[vid], 0, 1); o.uv = u[vid]; return o;\n"
-                            "}\n"
-                            "fragment float4 fs(VOut in [[stage_in]], texture2d<float> tex [[texture(0)]]) {\n"
-                            "  constexpr sampler s(address::clamp_to_edge, filter::linear);\n"
-                            "  return tex.sample(s, in.uv);\n"
-                            "}\n";
+// ---------------------------------------------------------------- shaders
+//
+// One instance per cell. The fragment shader returns mix(bg, fg, atlasAlpha),
+// so background and glyph come out of a single pass — instances tile the grid
+// exactly, so nothing overlaps (ADR 0003 D1).
+//
+// Adjacent-literal concatenation: raw string literals are C++/ObjC++ only and
+// this is a .m file.
+
+static NSString *const kShaderSource =
+    @"#include <metal_stdlib>\n"
+    @"using namespace metal;\n"
+    @"struct Uniforms { float2 viewport; float2 cellPx; uint cols; };\n"
+    @"struct Instance {\n"
+    @"  float2 cell; float4 uvRect; float4 fg; float4 bg;\n"
+    @"  float2 glyphOrigin; float2 glyphSize; float flags;\n"
+    @"  float pad0; float pad1; float pad2;\n"
+    @"};\n"
+    @"constant float kUnderline = 2.0;\n"
+    @"constant float kStrike    = 4.0;\n"
+    @"constant float kCursor    = 256.0;\n"
+    @"static inline bool has_flag(float flags, float bit) {\n"
+    @"  return fmod(floor(flags / bit), 2.0) >= 0.5;\n"
+    @"}\n"
+    @"struct VOut {\n"
+    @"  float4 pos [[position]]; float2 local; float4 fg; float4 bg;\n"
+    @"  float4 uvRect; float2 glyphOrigin; float2 glyphSize; float flags;\n"
+    @"};\n"
+    @"vertex VOut vs(uint vid [[vertex_id]], uint iid [[instance_id]],\n"
+    @"               constant Instance *insts [[buffer(0)]],\n"
+    @"               constant Uniforms &u [[buffer(1)]]) {\n"
+    @"  const float2 corners[6] = { float2(0,0), float2(1,0), float2(0,1),\n"
+    @"                              float2(0,1), float2(1,0), float2(1,1) };\n"
+    @"  float2 c = corners[vid];\n"
+    @"  Instance it = insts[iid];\n"
+    @"  float2 px = (it.cell + c) * u.cellPx;\n"
+    @"  float2 ndc = float2(px.x / u.viewport.x * 2.0 - 1.0,\n"
+    @"                      1.0 - px.y / u.viewport.y * 2.0);\n"
+    @"  VOut o;\n"
+    @"  o.pos = float4(ndc, 0.0, 1.0); o.local = c;\n"
+    @"  o.fg = it.fg; o.bg = it.bg; o.uvRect = it.uvRect;\n"
+    @"  o.glyphOrigin = it.glyphOrigin; o.glyphSize = it.glyphSize;\n"
+    @"  o.flags = it.flags;\n"
+    @"  return o;\n"
+    @"}\n"
+    @"fragment float4 fs(VOut in [[stage_in]],\n"
+    @"                   texture2d<float> atlas [[texture(0)]],\n"
+    @"                   constant Uniforms &u [[buffer(1)]]) {\n"
+    @"  constexpr sampler s(address::clamp_to_edge, filter::linear);\n"
+    @"  if (has_flag(in.flags, kCursor)) { return float4(in.fg.rgb, 0.75); }\n"
+    @"  float2 p = in.local * u.cellPx;\n"
+    @"  float alpha = 0.0;\n"
+    @"  if (in.glyphSize.x > 0.0 && in.glyphSize.y > 0.0) {\n"
+    @"    float2 g = (p - in.glyphOrigin) / in.glyphSize;\n"
+    @"    if (g.x >= 0.0 && g.x <= 1.0 && g.y >= 0.0 && g.y <= 1.0) {\n"
+    @"      alpha = atlas.sample(s, in.uvRect.xy + g * in.uvRect.zw).r;\n"
+    @"    }\n"
+    @"  }\n"
+    @"  float4 color = mix(in.bg, float4(in.fg.rgb, 1.0), alpha);\n"
+    @"  float thickness = max(1.0, u.cellPx.y / 16.0);\n"
+    @"  if (has_flag(in.flags, kUnderline)) {\n"
+    @"    float y0 = u.cellPx.y - thickness * 2.0;\n"
+    @"    if (p.y >= y0 && p.y < y0 + thickness) color = float4(in.fg.rgb, 1.0);\n"
+    @"  }\n"
+    @"  if (has_flag(in.flags, kStrike)) {\n"
+    @"    float y0 = u.cellPx.y * 0.5;\n"
+    @"    if (p.y >= y0 && p.y < y0 + thickness) color = float4(in.fg.rgb, 1.0);\n"
+    @"  }\n"
+    @"  return color;\n"
+    @"}\n";
+
+// ---------------------------------------------------------------- structs
+
+typedef struct {
+    vector_float2 viewport;
+    vector_float2 cellPx;
+    uint32_t cols;
+    uint32_t _pad[3];
+} RillUniforms;
+
+typedef struct {
+    vector_float2 cell;
+    vector_float4 uvRect;
+    vector_float4 fg;
+    vector_float4 bg;
+    vector_float2 glyphOrigin;
+    vector_float2 glyphSize;
+    float flags;
+    float _pad0, _pad1, _pad2;
+} RillInstance;
+
+#define RILL_FLAG_UNDERLINE 2u
+#define RILL_FLAG_STRIKE    4u
+#define RILL_FLAG_CURSOR    256u
+
+#define RILL_ATLAS_DIM 2048
+#define RILL_MAX_FRAMES_IN_FLIGHT 3
+
+typedef struct {
+    float u, v, w, h;      /* normalized atlas rect */
+    float originX, originY; /* pixels within the cell, top-left origin */
+    float sizeX, sizeY;     /* pixels */
+    BOOL valid;
+} RillGlyph;
+
+// ---------------------------------------------------------------- sentinel
+
+typedef struct {
+    BOOL armed;
+    uint32_t codepoint;
+    uint16_t col;
+    uint16_t row;
+    double keyTimestamp; /* CACurrentMediaTime timebase */
+} RillSentinel;
 
 @implementation TerminalView {
     RillClient *_client;
+
     id<MTLDevice> _device;
     id<MTLCommandQueue> _queue;
     id<MTLRenderPipelineState> _pipeline;
-    id<MTLTexture> _texture;
+    id<MTLTexture> _atlas;
+    id<MTLBuffer> _instanceBuffers[RILL_MAX_FRAMES_IN_FLIGHT];
+    NSUInteger _frameIndex;
+    dispatch_semaphore_t _inflight;
+
+    NSMutableDictionary<NSNumber *, NSValue *> *_glyphCache;
+    int _atlasPenX, _atlasPenY, _atlasShelfHeight;
+
     CTFontRef _font;
-    NSTimer *_timer;
-    uint16_t _cellW;
-    uint16_t _cellH;
+    CTFontRef _fontBold;
+    CGFloat _cellW, _cellH, _ascent;
+    uint16_t _cols, _rows;
+
+    RillInstance *_instances;   /* persistent CPU mirror; damaged rows only */
+    NSUInteger _instanceCount;
+
+    dispatch_source_t _readSource;
+
+    /* T-NFR */
+    RillSentinel _sentinel;
+    NSMutableArray<NSNumber *> *_samples;
+    uint32_t _discards;
+    uint32_t _nfrRemaining;
+    RillNfrMode _nfrMode;
+    BOOL _nfrRunning;
+    BOOL _nfrFailed;
 }
+
+// ---------------------------------------------------------------- lifecycle
 
 - (instancetype)initWithClient:(RillClient *)client {
     self = [super initWithFrame:NSMakeRect(0, 0, 800, 480)];
@@ -33,173 +170,699 @@ static NSString *kShader = @"#include <metal_stdlib>\n"
         return nil;
     }
     _client = client;
-    _cellW = 8;
-    _cellH = 16;
+    _glyphCache = [NSMutableDictionary dictionary];
+    _samples = [NSMutableArray array];
+    _frameIndex = 0;
+    _inflight = dispatch_semaphore_create(RILL_MAX_FRAMES_IN_FLIGHT);
+
+    if (![self setupFont]) {
+        return nil;
+    }
+    if (![self setupMetal]) {
+        return nil;
+    }
+    [self armSocketSource];
+    return self;
+}
+
+- (void)dealloc {
+    if (_readSource) {
+        dispatch_source_cancel(_readSource);
+    }
+    if (_instances) {
+        free(_instances);
+    }
+    if (_font) {
+        CFRelease(_font);
+    }
+    if (_fontBold) {
+        CFRelease(_fontBold);
+    }
+}
+
+- (BOOL)setupFont {
+    const char *family = rill_client_font_family(_client);
+    NSString *name = family ? @(family) : @"Menlo";
+    CGFloat size = rill_client_font_size(_client);
+    _font = CTFontCreateWithName((__bridge CFStringRef)name, size, NULL);
+    if (!_font) {
+        return NO;
+    }
+    CTFontSymbolicTraits bold = kCTFontTraitBold;
+    _fontBold = CTFontCreateCopyWithSymbolicTraits(_font, size, NULL, bold, bold);
+    if (!_fontBold) {
+        _fontBold = (CTFontRef)CFRetain(_font);
+    }
+
+    /* Cell geometry from the font's own metrics, not a hardcoded 8x16
+     * (SPEC-DISPLAY §5). */
+    UniChar m = 'M';
+    CGGlyph g = 0;
+    CGSize advance = CGSizeZero;
+    if (CTFontGetGlyphsForCharacters(_font, &m, &g, 1)) {
+        CTFontGetAdvancesForGlyphs(_font, kCTFontOrientationHorizontal, &g, &advance, 1);
+    }
+    _cellW = ceil(advance.width > 0 ? advance.width : size * 0.6);
+    _ascent = ceil(CTFontGetAscent(_font));
+    _cellH = ceil(CTFontGetAscent(_font) + CTFontGetDescent(_font) + CTFontGetLeading(_font));
+    if (_cellH < 1) {
+        _cellH = ceil(size * 1.2);
+    }
+    return YES;
+}
+
+- (BOOL)setupMetal {
     self.wantsLayer = YES;
     CAMetalLayer *layer = [CAMetalLayer layer];
     _device = MTLCreateSystemDefaultDevice();
+    if (!_device) {
+        NSLog(@"Rill: no Metal device");
+        return NO;
+    }
     layer.device = _device;
     layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
-    layer.framebufferOnly = NO;
+    layer.framebufferOnly = YES;
+    layer.maximumDrawableCount = RILL_MAX_FRAMES_IN_FLIGHT;
+    layer.displaySyncEnabled = YES; /* the recorded number is what a person sees */
     self.layer = layer;
+
     _queue = [_device newCommandQueue];
+
     NSError *err = nil;
-    id<MTLLibrary> lib = [_device newLibraryWithSource:kShader options:nil error:&err];
+    id<MTLLibrary> lib = [_device newLibraryWithSource:kShaderSource options:nil error:&err];
+    if (!lib) {
+        NSLog(@"Rill: shader compile failed: %@", err);
+        return NO;
+    }
     MTLRenderPipelineDescriptor *desc = [MTLRenderPipelineDescriptor new];
     desc.vertexFunction = [lib newFunctionWithName:@"vs"];
     desc.fragmentFunction = [lib newFunctionWithName:@"fs"];
     desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+    desc.colorAttachments[0].blendingEnabled = YES;
+    desc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
+    desc.colorAttachments[0].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+    desc.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
+    desc.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
     _pipeline = [_device newRenderPipelineStateWithDescriptor:desc error:&err];
-    const char *family = rill_client_font_family(client);
-    NSString *name = family ? [NSString stringWithUTF8String:family] : @"Menlo";
-    CGFloat size = rill_client_font_size(client);
-    _font = CTFontCreateWithName((__bridge CFStringRef)name, size, NULL);
-    _timer = [NSTimer scheduledTimerWithTimeInterval:1.0 / 60.0
-                                              target:self
-                                            selector:@selector(pump)
-                                            userInfo:nil
-                                             repeats:YES];
-    return self;
+    if (!_pipeline) {
+        NSLog(@"Rill: pipeline failed: %@", err);
+        return NO;
+    }
+
+    MTLTextureDescriptor *td =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Unorm
+                                                           width:RILL_ATLAS_DIM
+                                                          height:RILL_ATLAS_DIM
+                                                       mipmapped:NO];
+    td.usage = MTLTextureUsageShaderRead;
+    td.storageMode = MTLStorageModeManaged;
+    _atlas = [_device newTextureWithDescriptor:td];
+    _atlasPenX = 1;
+    _atlasPenY = 1;
+    _atlasShelfHeight = 0;
+    return YES;
 }
+
+/* Event-driven: the socket wakes us, not a clock (ADR 0003 D2). */
+- (void)armSocketSource {
+    int fd = rill_client_socket_fd(_client);
+    if (fd < 0) {
+        return;
+    }
+    _readSource = dispatch_source_create(DISPATCH_SOURCE_TYPE_READ, (uintptr_t)fd, 0,
+                                         dispatch_get_main_queue());
+    __weak TerminalView *weakSelf = self;
+    dispatch_source_set_event_handler(_readSource, ^{
+        [weakSelf onSocketReadable];
+    });
+    dispatch_resume(_readSource);
+}
+
+- (void)onSocketReadable {
+    ptrdiff_t fed = rill_client_pump(_client);
+    if (fed < 0) {
+        NSLog(@"Rill: pump: %s", rill_client_last_error() ?: "error");
+        return;
+    }
+    if (fed > 0) {
+        [self renderFrame];
+    }
+}
+
+// ---------------------------------------------------------------- atlas
+
+- (RillGlyph)glyphForCodepoint:(uint32_t)cp bold:(BOOL)bold {
+    NSNumber *key = @(((uint64_t)cp << 1) | (bold ? 1u : 0u));
+    NSValue *cached = _glyphCache[key];
+    if (cached) {
+        RillGlyph g;
+        [cached getValue:&g];
+        return g;
+    }
+
+    RillGlyph out = {0};
+    CTFontRef font = bold ? _fontBold : _font;
+
+    UniChar uc[2];
+    CFIndex n = 0;
+    if (cp <= 0xFFFF) {
+        uc[0] = (UniChar)cp;
+        n = 1;
+    } else {
+        uint32_t v = cp - 0x10000;
+        uc[0] = (UniChar)(0xD800 + (v >> 10));
+        uc[1] = (UniChar)(0xDC00 + (v & 0x3FF));
+        n = 2;
+    }
+    CGGlyph glyphs[2] = {0, 0};
+    if (!CTFontGetGlyphsForCharacters(font, uc, glyphs, n) || glyphs[0] == 0) {
+        /* Colour emoji and anything the family cannot render become an explicit
+         * empty cell, counted by the caller. Silent mis-rendering is not
+         * acceptable (ADR 0003 D1). */
+        out.valid = YES;
+        _glyphCache[key] = [NSValue valueWithBytes:&out objCType:@encode(RillGlyph)];
+        return out;
+    }
+
+    CGRect bounds =
+        CTFontGetBoundingRectsForGlyphs(font, kCTFontOrientationHorizontal, glyphs, NULL, 1);
+    int w = (int)ceil(CGRectGetWidth(bounds)) + 2;
+    int h = (int)ceil(CGRectGetHeight(bounds)) + 2;
+    if (w <= 2 || h <= 2) {
+        out.valid = YES; /* whitespace */
+        _glyphCache[key] = [NSValue valueWithBytes:&out objCType:@encode(RillGlyph)];
+        return out;
+    }
+
+    /* Shelf packing. On exhaustion we stop caching rather than corrupt the
+     * atlas; a real LRU/repack is Milestone 1. */
+    if (_atlasPenX + w + 1 >= RILL_ATLAS_DIM) {
+        _atlasPenX = 1;
+        _atlasPenY += _atlasShelfHeight + 1;
+        _atlasShelfHeight = 0;
+    }
+    if (_atlasPenY + h + 1 >= RILL_ATLAS_DIM) {
+        NSLog(@"Rill: glyph atlas full; U+%04X not cached", cp);
+        out.valid = NO;
+        return out;
+    }
+
+    size_t stride = (size_t)w;
+    uint8_t *bitmap = calloc(stride * (size_t)h, 1);
+    if (!bitmap) {
+        out.valid = NO;
+        return out;
+    }
+    CGColorSpaceRef gray = CGColorSpaceCreateDeviceGray();
+    CGContextRef ctx = CGBitmapContextCreate(bitmap, (size_t)w, (size_t)h, 8, stride, gray,
+                                             (CGBitmapInfo)kCGImageAlphaNone);
+    CGColorSpaceRelease(gray);
+    if (!ctx) {
+        free(bitmap);
+        out.valid = NO;
+        return out;
+    }
+    CGContextSetShouldAntialias(ctx, true);
+    CGContextSetShouldSmoothFonts(ctx, false); /* grayscale AA; R8 atlas */
+    CGContextSetGrayFillColor(ctx, 1.0, 1.0);
+    CGContextSetTextMatrix(ctx, CGAffineTransformIdentity);
+    CGPoint at = CGPointMake(1 - bounds.origin.x, 1 - bounds.origin.y);
+    CTFontDrawGlyphs(font, glyphs, &at, 1, ctx);
+    CGContextRelease(ctx);
+
+    [_atlas replaceRegion:MTLRegionMake2D((NSUInteger)_atlasPenX, (NSUInteger)_atlasPenY,
+                                          (NSUInteger)w, (NSUInteger)h)
+              mipmapLevel:0
+                withBytes:bitmap
+              bytesPerRow:stride];
+    free(bitmap);
+
+    out.u = (float)_atlasPenX / (float)RILL_ATLAS_DIM;
+    out.v = (float)_atlasPenY / (float)RILL_ATLAS_DIM;
+    out.w = (float)w / (float)RILL_ATLAS_DIM;
+    out.h = (float)h / (float)RILL_ATLAS_DIM;
+    out.sizeX = (float)w;
+    out.sizeY = (float)h;
+    /* Cell-local, top-left origin: baseline sits at _ascent from the top. */
+    out.originX = (float)(bounds.origin.x - 1);
+    out.originY = (float)(_ascent - (bounds.origin.y + CGRectGetHeight(bounds)) - 1);
+    out.valid = YES;
+
+    _atlasPenX += w + 1;
+    if (h > _atlasShelfHeight) {
+        _atlasShelfHeight = h;
+    }
+    _glyphCache[key] = [NSValue valueWithBytes:&out objCType:@encode(RillGlyph)];
+    return out;
+}
+
+// ---------------------------------------------------------------- rendering
+
+static inline vector_float4 rgba(uint32_t c) {
+    return (vector_float4){((c >> 24) & 0xff) / 255.0f, ((c >> 16) & 0xff) / 255.0f,
+                           ((c >> 8) & 0xff) / 255.0f, 1.0f};
+}
+
+- (void)ensureInstanceCapacityForCols:(uint16_t)cols rows:(uint16_t)rows {
+    NSUInteger needed = (NSUInteger)cols * (NSUInteger)rows + 1; /* +1 cursor */
+    if (_cols == cols && _rows == rows && _instances) {
+        return;
+    }
+    _cols = cols;
+    _rows = rows;
+    free(_instances);
+    _instances = calloc(needed, sizeof(RillInstance));
+    _instanceCount = needed;
+    size_t bytes = needed * sizeof(RillInstance);
+    for (int i = 0; i < RILL_MAX_FRAMES_IN_FLIGHT; i++) {
+        _instanceBuffers[i] = [_device newBufferWithLength:bytes
+                                                   options:MTLResourceStorageModeShared];
+    }
+}
+
+- (void)renderFrame {
+    RillPodGrid grid = {0};
+    if (rill_client_snapshot(_client, &grid) != 0 || grid.cells == NULL || grid.ncells == 0) {
+        return;
+    }
+    [self ensureInstanceCapacityForCols:grid.cols rows:grid.rows];
+    if (!_instances) {
+        return;
+    }
+
+    /* Only damaged rows are rebuilt; the rest of the mirror persists across
+     * frames (ADR 0003 D3). The old path re-rasterised every cell every frame
+     * and ignored the damage range entirely. */
+    uint16_t r0 = grid.full_damage ? 0 : grid.damage_row0;
+    uint16_t r1 = grid.full_damage ? (grid.rows ? grid.rows - 1 : 0) : grid.damage_row1;
+    if (r1 >= grid.rows) {
+        r1 = grid.rows ? grid.rows - 1 : 0;
+    }
+
+    for (uint16_t y = r0; y <= r1 && y < grid.rows; y++) {
+        for (uint16_t x = 0; x < grid.cols; x++) {
+            size_t i = (size_t)y * grid.cols + x;
+            if (i >= grid.ncells || i >= _instanceCount) {
+                continue;
+            }
+            RillPodCell cell = grid.cells[i];
+            BOOL bold = (cell.attrs & 1u) != 0;
+            BOOL inverse = (cell.attrs & 4u) != 0;
+
+            vector_float4 fg = rgba(cell.fg);
+            vector_float4 bg = rgba(cell.bg);
+            if (inverse) {
+                vector_float4 t = fg;
+                fg = bg;
+                bg = t;
+            }
+
+            uint32_t cp = cell.codepoint ? cell.codepoint : 32;
+            RillGlyph g = (cp <= 32) ? (RillGlyph){0} : [self glyphForCodepoint:cp bold:bold];
+
+            float flags = 0.0f;
+            if (cell.attrs & 2u) {
+                flags += (float)RILL_FLAG_UNDERLINE;
+            }
+
+            RillInstance *inst = &_instances[i];
+            inst->cell = (vector_float2){(float)x, (float)y};
+            inst->uvRect = (vector_float4){g.u, g.v, g.w, g.h};
+            inst->fg = fg;
+            inst->bg = bg;
+            inst->glyphOrigin = (vector_float2){g.originX, g.originY};
+            inst->glyphSize = (vector_float2){g.sizeX, g.sizeY};
+            inst->flags = flags;
+        }
+    }
+
+    /* Cursor as one extra instance, drawn last so blending puts it on top. */
+    NSUInteger drawCount = (NSUInteger)grid.cols * (NSUInteger)grid.rows;
+    if (grid.cursor_visible && drawCount < _instanceCount) {
+        RillInstance *cur = &_instances[drawCount];
+        memset(cur, 0, sizeof(*cur));
+        cur->cell = (vector_float2){(float)grid.cursor_col, (float)grid.cursor_row};
+        cur->fg = (vector_float4){0.85f, 0.85f, 0.85f, 1.0f};
+        cur->flags = (float)RILL_FLAG_CURSOR;
+        drawCount += 1;
+    }
+
+    [self presentInstances:drawCount cols:grid.cols rows:grid.rows grid:&grid];
+}
+
+- (void)presentInstances:(NSUInteger)count
+                    cols:(uint16_t)cols
+                    rows:(uint16_t)rows
+                    grid:(const RillPodGrid *)grid {
+    CAMetalLayer *layer = (CAMetalLayer *)self.layer;
+    CGFloat scale = self.window.backingScaleFactor > 0 ? self.window.backingScaleFactor : 1.0;
+    CGSize drawableSize = CGSizeMake(cols * _cellW * scale, rows * _cellH * scale);
+    if (drawableSize.width < 1 || drawableSize.height < 1) {
+        return;
+    }
+    if (!CGSizeEqualToSize(layer.drawableSize, drawableSize)) {
+        layer.drawableSize = drawableSize;
+    }
+
+    dispatch_semaphore_wait(_inflight, DISPATCH_TIME_FOREVER);
+    id<MTLBuffer> buf = _instanceBuffers[_frameIndex % RILL_MAX_FRAMES_IN_FLIGHT];
+    _frameIndex++;
+    memcpy(buf.contents, _instances, count * sizeof(RillInstance));
+
+    id<CAMetalDrawable> drawable = [layer nextDrawable];
+    if (!drawable) {
+        dispatch_semaphore_signal(_inflight);
+        return;
+    }
+
+    RillUniforms u;
+    u.viewport = (vector_float2){(float)drawableSize.width, (float)drawableSize.height};
+    u.cellPx = (vector_float2){(float)(_cellW * scale), (float)(_cellH * scale)};
+    u.cols = cols;
+
+    MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
+    pass.colorAttachments[0].texture = drawable.texture;
+    pass.colorAttachments[0].loadAction = MTLLoadActionClear;
+    pass.colorAttachments[0].clearColor = MTLClearColorMake(0.07, 0.07, 0.07, 1.0);
+    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+
+    id<MTLCommandBuffer> cmd = [_queue commandBuffer];
+    id<MTLRenderCommandEncoder> enc = [cmd renderCommandEncoderWithDescriptor:pass];
+    [enc setRenderPipelineState:_pipeline];
+    [enc setVertexBuffer:buf offset:0 atIndex:0];
+    [enc setVertexBytes:&u length:sizeof(u) atIndex:1];
+    [enc setFragmentBytes:&u length:sizeof(u) atIndex:1];
+    [enc setFragmentTexture:_atlas atIndex:0];
+    [enc drawPrimitives:MTLPrimitiveTypeTriangle
+            vertexStart:0
+            vertexCount:6
+          instanceCount:count];
+    [enc endEncoding];
+
+    /* T-NFR's end timestamp. If this frame carries the sentinel glyph at the
+     * cell the cursor occupied, attribute its presentation to that keystroke
+     * (ADR 0003 D5). Measuring to `commit` instead would exclude the
+     * compositor — the part the user actually sees. */
+    BOOL carriesSentinel = NO;
+    if (_sentinel.armed && grid) {
+        size_t idx = (size_t)_sentinel.row * grid->cols + _sentinel.col;
+        if (idx < grid->ncells && grid->cells[idx].codepoint == _sentinel.codepoint) {
+            carriesSentinel = YES;
+        }
+    }
+    if (carriesSentinel) {
+        double keyTs = _sentinel.keyTimestamp;
+        __weak TerminalView *weakSelf = self;
+        [drawable addPresentedHandler:^(id<MTLDrawable> d) {
+            double presented = d.presentedTime;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [weakSelf sentinelPresentedAt:presented forKeyAt:keyTs];
+            });
+        }];
+        _sentinel.armed = NO; /* one attribution per keystroke */
+    }
+
+    __weak TerminalView *weakSelf = self;
+    [cmd addCompletedHandler:^(id<MTLCommandBuffer> _Nonnull b) {
+        (void)b;
+        TerminalView *s = weakSelf;
+        if (s) {
+            dispatch_semaphore_signal(s->_inflight);
+        }
+    }];
+    [cmd presentDrawable:drawable];
+    [cmd commit];
+}
+
+- (void)setFrameSize:(NSSize)newSize {
+    [super setFrameSize:newSize];
+    if (_cellW < 1 || _cellH < 1) {
+        return;
+    }
+    uint16_t cols = (uint16_t)MAX(20, (int)(newSize.width / _cellW));
+    uint16_t rows = (uint16_t)MAX(8, (int)(newSize.height / _cellH));
+    rill_client_resize(_client, cols, rows, (uint16_t)newSize.width, (uint16_t)newSize.height);
+    [self renderFrame];
+}
+
+// ---------------------------------------------------------------- input
 
 - (BOOL)acceptsFirstResponder {
     return YES;
 }
 
+- (void)sendBytes:(const uint8_t *)bytes length:(size_t)len {
+    if (len == 0) {
+        return;
+    }
+    if (rill_client_send_input(_client, bytes, len) != 0) {
+        NSLog(@"Rill: send_input: %s", rill_client_last_error() ?: "error");
+    }
+}
+
+/* ^C was untypeable in the previous build, which also made T-DROP unreachable
+ * through the GUI (docs/SPIKE-0-AUDIT.md S3-8g). */
 - (void)keyDown:(NSEvent *)event {
-    NSString *chars = event.charactersIgnoringModifiers;
-    if (event.keyCode == 36) {
-        uint8_t b = '\r';
-        rill_client_send_input(_client, &b, 1);
-        return;
+    NSEventModifierFlags mods = event.modifierFlags;
+    NSString *plain = event.charactersIgnoringModifiers;
+
+    switch (event.keyCode) {
+        case 36: { uint8_t b = '\r'; [self sendBytes:&b length:1]; return; }
+        case 51: { uint8_t b = 0x7f; [self sendBytes:&b length:1]; return; }
+        case 53: { uint8_t b = 0x1b; [self sendBytes:&b length:1]; return; }
+        case 48: { uint8_t b = '\t'; [self sendBytes:&b length:1]; return; }
+        case 126: { const uint8_t s[] = {0x1b, '[', 'A'}; [self sendBytes:s length:3]; return; }
+        case 125: { const uint8_t s[] = {0x1b, '[', 'B'}; [self sendBytes:s length:3]; return; }
+        case 124: { const uint8_t s[] = {0x1b, '[', 'C'}; [self sendBytes:s length:3]; return; }
+        case 123: { const uint8_t s[] = {0x1b, '[', 'D'}; [self sendBytes:s length:3]; return; }
+        default: break;
     }
-    if (event.keyCode == 51) {
-        uint8_t b = 0x7f;
-        rill_client_send_input(_client, &b, 1);
-        return;
+
+    if ((mods & NSEventModifierFlagControl) && plain.length == 1) {
+        unichar c = [plain characterAtIndex:0];
+        uint8_t b = 0;
+        if (c >= 'a' && c <= 'z') {
+            b = (uint8_t)(c - 'a' + 1);
+        } else if (c >= 'A' && c <= 'Z') {
+            b = (uint8_t)(c - 'A' + 1);
+        } else if (c == '[') {
+            b = 0x1b;
+        } else if (c == '\\') {
+            b = 0x1c;
+        } else if (c == ']') {
+            b = 0x1d;
+        } else if (c == ' ' || c == '@') {
+            b = 0x00;
+        }
+        if (b || c == ' ' || c == '@') {
+            [self sendBytes:&b length:1];
+            return;
+        }
     }
+
+    NSString *chars = event.characters;
     if (chars.length == 0) {
         return;
     }
+    if (mods & NSEventModifierFlagOption) {
+        uint8_t esc = 0x1b;
+        [self sendBytes:&esc length:1];
+    }
     NSData *data = [chars dataUsingEncoding:NSUTF8StringEncoding];
-    rill_client_send_input(_client, data.bytes, data.length);
+    [self sendBytes:data.bytes length:data.length];
 }
 
-- (void)setFrameSize:(NSSize)newSize {
-    [super setFrameSize:newSize];
-    uint16_t cols = (uint16_t)MAX(20, (int)(newSize.width / _cellW));
-    uint16_t rows = (uint16_t)MAX(8, (int)(newSize.height / _cellH));
-    rill_client_resize(_client, cols, rows, (uint16_t)newSize.width, (uint16_t)newSize.height);
+/* NSTextInputClient: minimal conformance so the responder chain is correct.
+ * Full IME (marked text rendered in-cell, candidate positioning) is
+ * SPEC-DISPLAY §6 and is NOT implemented — recorded here rather than left to
+ * look finished. */
+- (void)insertText:(id)string replacementRange:(NSRange)r {
+    (void)r;
+    NSString *s = [string isKindOfClass:[NSAttributedString class]] ? [string string] : string;
+    NSData *d = [s dataUsingEncoding:NSUTF8StringEncoding];
+    [self sendBytes:d.bytes length:d.length];
+}
+- (void)doCommandBySelector:(SEL)s { (void)s; }
+- (void)setMarkedText:(id)t selectedRange:(NSRange)a replacementRange:(NSRange)b {
+    (void)t; (void)a; (void)b;
+}
+- (void)unmarkText {}
+- (NSRange)selectedRange { return NSMakeRange(NSNotFound, 0); }
+- (NSRange)markedRange { return NSMakeRange(NSNotFound, 0); }
+- (BOOL)hasMarkedText { return NO; }
+- (NSAttributedString *)attributedSubstringForProposedRange:(NSRange)r actualRange:(NSRangePointer)a {
+    (void)r; (void)a; return nil;
+}
+- (NSArray<NSAttributedStringKey> *)validAttributesForMarkedText { return @[]; }
+- (NSRect)firstRectForCharacterRange:(NSRange)r actualRange:(NSRangePointer)a {
+    (void)r; (void)a; return NSZeroRect;
+}
+- (NSUInteger)characterIndexForPoint:(NSPoint)p { (void)p; return NSNotFound; }
+
+// ---------------------------------------------------------------- T-NFR
+
+- (void)sentinelPresentedAt:(double)presented forKeyAt:(double)keyTs {
+    if (!_nfrRunning) {
+        return;
+    }
+    double ms = (presented - keyTs) * 1000.0;
+    if (ms <= 0 || ms > 5000) {
+        _discards++; /* clock skew or a lost attribution; never a 0ms sample */
+    } else {
+        [_samples addObject:@(ms)];
+    }
+    if (_nfrRemaining > 0) {
+        _nfrRemaining--;
+    }
+    [self injectNextSampleIfNeeded];
 }
 
-- (void)pump {
-    rill_client_pump(_client);
-    RillPodGrid grid = {0};
-    if (rill_client_snapshot(_client, &grid) != 0 || grid.cells == NULL || grid.ncells == 0) {
+- (void)injectNextSampleIfNeeded {
+    if (!_nfrRunning || _nfrRemaining == 0) {
+        _nfrRunning = NO;
         return;
     }
-    [self paintGrid:&grid];
-}
 
-- (void)paintGrid:(RillPodGrid *)grid {
-    int w = (int)grid->cols * _cellW;
-    int h = (int)grid->rows * _cellH;
-    if (w <= 0 || h <= 0) {
+    uint16_t col = 0, row = 0;
+    if (rill_client_cursor(_client, &col, &row) != 0) {
+        _nfrFailed = YES;
+        _nfrRunning = NO;
         return;
     }
-    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-    CGContextRef ctx = CGBitmapContextCreate(
-        NULL, w, h, 8, w * 4, space, kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
-    CGColorSpaceRelease(space);
-    if (!ctx) {
-        return;
-    }
-    CGContextSetTextMatrix(ctx, CGAffineTransformIdentity);
-    for (uint16_t y = 0; y < grid->rows; y++) {
-        for (uint16_t x = 0; x < grid->cols; x++) {
-            size_t i = (size_t)y * grid->cols + x;
-            if (i >= grid->ncells) {
-                continue;
-            }
-            RillPodCell cell = grid->cells[i];
-            float bgr = ((cell.bg >> 24) & 0xff) / 255.0f;
-            float bgg = ((cell.bg >> 16) & 0xff) / 255.0f;
-            float bgb = ((cell.bg >> 8) & 0xff) / 255.0f;
-            CGContextSetRGBFillColor(ctx, bgr, bgg, bgb, 1);
-            CGContextFillRect(ctx, CGRectMake(x * _cellW, (grid->rows - 1 - y) * _cellH, _cellW, _cellH));
-            UTF32Char cp = cell.codepoint ? cell.codepoint : 32;
-            if (cp < 32) {
-                continue;
-            }
-            UniChar uc[2];
-            UniCharCount n = 0;
-            if (cp <= 0xffff) {
-                uc[0] = (UniChar)cp;
-                n = 1;
-            } else {
-                cp -= 0x10000;
-                uc[0] = (UniChar)(0xd800 + (cp >> 10));
-                uc[1] = (UniChar)(0xdc00 + (cp & 0x3ff));
-                n = 2;
-            }
-            CGGlyph glyphs[2];
-            if (!CTFontGetGlyphsForCharacters(_font, uc, glyphs, n)) {
-                continue;
-            }
-            float fgr = ((cell.fg >> 24) & 0xff) / 255.0f;
-            float fgg = ((cell.fg >> 16) & 0xff) / 255.0f;
-            float fgb = ((cell.fg >> 8) & 0xff) / 255.0f;
-            CGContextSetRGBFillColor(ctx, fgr, fgg, fgb, 1);
-            CGPoint pos = CGPointMake(x * _cellW, (grid->rows - 1 - y) * _cellH + 3);
-            CTFontDrawGlyphs(_font, glyphs, &pos, 1, ctx);
+    uint32_t existing = rill_client_cell_codepoint(_client, col, row);
+
+    /* A sentinel that could already be on screen is what made the old gate
+     * unable to fail. Pick a printable codepoint the target cell does not
+     * already hold (ADR 0003 D6). */
+    uint32_t cp = 'a';
+    for (uint32_t candidate = 'a'; candidate <= 'z'; candidate++) {
+        if (candidate != existing) {
+            cp = candidate;
+            break;
         }
     }
-    if (grid->cursor_visible) {
-        CGContextSetRGBFillColor(ctx, 0.8, 0.8, 0.8, 0.8);
-        CGContextFillRect(
-            ctx,
-            CGRectMake(grid->cursor_col * _cellW, (grid->rows - 1 - grid->cursor_row) * _cellH, 2, _cellH));
-    }
-    uint8_t *src = CGBitmapContextGetData(ctx);
-    MTLTextureDescriptor *td = [MTLTextureDescriptor
-        texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
-                                     width:w
-                                    height:h
-                                 mipmapped:NO];
-    td.usage = MTLTextureUsageShaderRead;
-    _texture = [_device newTextureWithDescriptor:td];
-    [_texture replaceRegion:MTLRegionMake2D(0, 0, w, h)
-                mipmapLevel:0
-                  withBytes:src
-                bytesPerRow:w * 4];
-    CGContextRelease(ctx);
 
-    CAMetalLayer *layer = (CAMetalLayer *)self.layer;
-    layer.drawableSize = CGSizeMake(w, h);
-    id<CAMetalDrawable> drawable = [layer nextDrawable];
-    if (!drawable) {
-        return;
-    }
-    MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
-    pass.colorAttachments[0].texture = drawable.texture;
-    pass.colorAttachments[0].loadAction = MTLLoadActionClear;
-    pass.colorAttachments[0].clearColor = MTLClearColorMake(0.07, 0.07, 0.07, 1);
-    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
-    id<MTLCommandBuffer> cmd = [_queue commandBuffer];
-    id<MTLRenderCommandEncoder> enc = [cmd renderCommandEncoderWithDescriptor:pass];
-    [enc setRenderPipelineState:_pipeline];
-    [enc setFragmentTexture:_texture atIndex:0];
-    [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
-    [enc endEncoding];
-    [cmd presentDrawable:drawable];
-    [cmd commit];
+    _sentinel.armed = YES;
+    _sentinel.codepoint = cp;
+    _sentinel.col = col;
+    _sentinel.row = row;
+    _sentinel.keyTimestamp = 0;
+
+    [self injectCodepoint:cp];
+
+    /* If nothing presents within 500ms the sample is discarded, not silently
+     * dropped: discards above 2% fail the run (ADR 0003 D6). */
+    __weak TerminalView *weakSelf = self;
+    uint32_t at = _nfrRemaining;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+                       TerminalView *s = weakSelf;
+                       if (s && s->_nfrRunning && s->_nfrRemaining == at && s->_sentinel.armed) {
+                           s->_sentinel.armed = NO;
+                           s->_discards++;
+                           if (s->_nfrRemaining > 0) {
+                               s->_nfrRemaining--;
+                           }
+                           [s injectNextSampleIfNeeded];
+                       }
+                   });
 }
 
-- (void)dealloc {
-    [_timer invalidate];
-    if (_font) {
-        CFRelease(_font);
+- (void)injectCodepoint:(uint32_t)cp {
+    NSString *s = [NSString stringWithFormat:@"%C", (unichar)cp];
+
+    if (_nfrMode == RillNfrModeHid) {
+        CGEventRef down = CGEventCreateKeyboardEvent(NULL, 0, true);
+        CGEventRef up = CGEventCreateKeyboardEvent(NULL, 0, false);
+        if (!down || !up) {
+            _nfrFailed = YES;
+            _nfrRunning = NO;
+            if (down) CFRelease(down);
+            if (up) CFRelease(up);
+            return;
+        }
+        UniChar u = (UniChar)cp;
+        CGEventKeyboardSetUnicodeString(down, 1, &u);
+        CGEventKeyboardSetUnicodeString(up, 1, &u);
+        /* Start timestamp: when the window server created the event, not when
+         * our code first saw it. */
+        _sentinel.keyTimestamp = (double)CGEventGetTimestamp(down) / 1e9;
+        CGEventPost(kCGSessionEventTap, down);
+        CGEventPost(kCGSessionEventTap, up);
+        CFRelease(down);
+        CFRelease(up);
+        return;
     }
+
+    NSEvent *ev = [NSEvent keyEventWithType:NSEventTypeKeyDown
+                                   location:NSZeroPoint
+                              modifierFlags:0
+                                  timestamp:CACurrentMediaTime()
+                               windowNumber:self.window.windowNumber
+                                    context:nil
+                                 characters:s
+                charactersIgnoringModifiers:s
+                                  isARepeat:NO
+                                    keyCode:0];
+    _sentinel.keyTimestamp = ev.timestamp;
+    [NSApp sendEvent:ev];
+}
+
+- (RillNfrReport)runNfrKeyWithMode:(RillNfrMode)mode count:(uint32_t)count {
+    RillNfrReport report = {0};
+    report.mode = (int)mode;
+    report.vsync = 1;
+
+    CAMetalLayer *layer = (CAMetalLayer *)self.layer;
+    report.refresh_hz = 0;
+    if (@available(macOS 12.0, *)) {
+        NSScreen *screen = self.window.screen ?: NSScreen.mainScreen;
+        report.refresh_hz = screen.maximumFramesPerSecond;
+    }
+    (void)layer;
+
+    [_samples removeAllObjects];
+    _discards = 0;
+    _nfrRemaining = count;
+    _nfrMode = mode;
+    _nfrRunning = YES;
+    _nfrFailed = NO;
+
+    rill_client_begin_warm_path_audit(_client);
+
+    /* Let the shell settle before the first sample. */
+    for (int i = 0; i < 20; i++) {
+        rill_client_pump(_client);
+    }
+    [self renderFrame];
+
+    [self injectNextSampleIfNeeded];
+
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:180];
+    while (_nfrRunning && [deadline timeIntervalSinceNow] > 0) {
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
+                                 beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    }
+    _nfrRunning = NO;
+
+    report.warm_path_violations = rill_client_end_warm_path_audit(_client);
+    report.samples = (uint32_t)_samples.count;
+    report.discarded = _discards;
+
+    if (_nfrFailed || _samples.count == 0) {
+        report.ok = 0;
+        return report;
+    }
+
+    NSArray<NSNumber *> *sorted =
+        [_samples sortedArrayUsingSelector:@selector(compare:)];
+    NSUInteger n = sorted.count;
+    report.p50_ms = sorted[(NSUInteger)((n - 1) * 0.50)].doubleValue;
+    report.p95_ms = sorted[(NSUInteger)((n - 1) * 0.95)].doubleValue;
+    report.p99_ms = sorted[(NSUInteger)((n - 1) * 0.99)].doubleValue;
+    report.max_ms = sorted[n - 1].doubleValue;
+    report.ok = 1;
+    return report;
 }
 
 @end

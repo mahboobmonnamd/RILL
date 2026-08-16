@@ -14,3 +14,7 @@ DerivedData/
 # Packaged app
 /dist
 *.app
+# Gate evidence artifacts (ADR 0002 D10). Generated per run; PRs attach the
+# artifact rather than committing it. Commit one deliberately only when it is
+# the record that closes a gate.
+/evidence

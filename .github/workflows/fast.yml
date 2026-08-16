@@ -1,0 +1,88 @@
+# Fast tier. No Zig, no macOS, no libghostty-vt.
+#
+# LANES says Lane A and Lane B can work before Lane C. That is only true if
+# their tests run without Lane C's toolchain, so this job must never grow a
+# dependency on rill-chip0. ADR 0002 D8.
+name: fast
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-planes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Plane invariants (AGENTS.md §5, ADR 0002 D9)
+        run: sh scripts/lint-planes.sh
+
+  codec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      # Only the crates that do not link libghostty-vt. If this list ever needs
+      # rill-chip0, SPEC-CHIP0 §9 has been violated.
+      - name: Clippy (fast tier)
+        run: cargo clippy -p rill-attach -p rill-kernel --all-targets -- -D warnings
+
+      - name: Attach codec tests
+        run: cargo test -p rill-attach -- --nocapture
+
+      - name: Kernel tests that do not need a display chip
+        run: cargo test -p rill-kernel -- --test-threads=1 --nocapture
+
+  fuzz-codec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+      # SPEC-ATTACH §9. Bounded here; longer runs nightly.
+      - name: Fuzz the frame decoder
+        run: cargo fuzz run decoder -- -max_total_time=60 -runs=200000
+
+  pin-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: libghostty-vt pin is a full commit id and resolves upstream
+        run: |
+          set -eu
+          SHA="$(sed -n 's/^sha *= *//p' third_party/ghostty.pin | tr -d '[:space:]')"
+          REPO="$(sed -n 's/^repo *= *//p' third_party/ghostty.pin | tr -d '[:space:]')"
+          echo "pin: $SHA"
+          case "$SHA" in
+            ????????????????????????????????????????) : ;;
+            *) echo "pin is not a full 40-char commit id" >&2; exit 1 ;;
+          esac
+          git ls-remote "$REPO" | grep -q "$SHA" \
+            || git -c protocol.version=2 ls-remote "$REPO" "$SHA" | grep -q . \
+            || { echo "pinned commit not reachable from $REPO" >&2; exit 1; }
+
+  docs-consistency:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # ADR 0002 D1: nothing claims Proven until the gate suite says so.
+      # Delete this step in the PR that legitimately closes a gate.
+      - name: No unearned Proven claims in status docs
+        run: |
+          set -eu
+          if grep -rn '\*\*Proven\*\*' docs/SPIKE-0.md docs/SPIKE-0-VALIDATION.md; then
+            echo "A gate is marked Proven. It must cite an evidence artifact and a demonstrated red (ADR 0002 D2)." >&2
+            exit 1
+          fi
