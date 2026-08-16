@@ -36,7 +36,7 @@ demonstrated **red** on a build where the behaviour is absent (ADR 0002 D2).
 
 | ID | Test | Fails while… | Status |
 |---|---|---|---|
-| T-BYTES | invalid UTF-8 corpus through the VT's own re-emission | emulator sees `U+FFFD` where the fixture did not encode it | **Red** — old test compared the input to our own copy of the input |
+| T-BYTES | invalid UTF-8 through the kernel ring and Chip 0 feed | kernel history drops bytes, or Chip 0 never shows a non-ASCII cell for a high-byte fixture | **Red** — old test compared the input to our own copy of the input |
 | T-DROP | unbounded `yes`, finite credit, `^C`, keep typing | any sequence number missing, or the kernel never stalls its reads | **Red** — old test granted infinite credit and asserted `head` works |
 | T-ATTACH | attach → detach → attach; cell-by-cell grid compare | grids diverge, or a bare connection displaces the attached client | **Red** — connect-without-attach hole fails today |
 | T-RESIZE | child's own `TIOCGWINSZ` after `SIGWINCH`, with pending input | child's size ≠ display geometry, or resize overtakes queued input | **Red** — old test round-tripped our own ioctl |
@@ -46,9 +46,9 @@ demonstrated **red** on a build where the behaviour is absent (ADR 0002 D2).
 | T-RESYNC | reopen idle `zsh` and alt-screen `vim` | blank window over a live process, or resync touches the warm path | **Red** — old test asserted on a prefix it prepended itself |
 | T-NFR | key-down `NSEvent.timestamp` → drawable `presentedTime`, on battery | p95 over one refresh interval, discards > 2%, or any control RPC | **Red** — old test found glyphs the shell had already echoed, and stopped at the POD snapshot |
 
-Two gates fail against `main` with no mutation applied — T-EXIT's detach case
-and T-ATTACH's connect-without-attaching case. They are the first tests to
-write.
+T-EXIT across detach and T-ATTACH's connect-without-attaching hole were
+fixed in-tree; their tests pass. That is **Green-unproven**, not Proven — no
+negative-control artifact exists yet (ADR 0002 D2).
 
 ## Blocking defects found by the audit
 

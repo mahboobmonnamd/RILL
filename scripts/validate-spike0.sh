@@ -153,7 +153,7 @@ if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
   # no mutation code at all (ADR 0002 D3).
   MUT="--features mutate"
   # shellcheck disable=SC2086
-  run_control "T-BYTES-chip" lossy_feed \
+  run_control "T-BYTES-chip" drop_high_bytes \
     cargo test -p rill-chip0 --offline $MUT t_bytes
   # shellcheck disable=SC2086
   run_control "T-DROP" drop_on_full \

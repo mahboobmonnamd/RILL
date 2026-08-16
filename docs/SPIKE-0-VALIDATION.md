@@ -83,13 +83,10 @@ for three gates, one of which it never ran (audit S4-3).
 
 ## Current state — 2026-08-16
 
-All gates **Red**. No evidence artifact exists.
+All gates **Red** or **Green-unproven**. No evidence artifact exists that
+closes a gate. T-NFR has not run on battery.
 
-The 2026-08-16 run (`p95=0.032ms control_rpc=0 battery=0`, workspace tests
-green, packaged T-SPAWN "pass") is **withdrawn**. It measured `Instant::now()`
-overhead, a JSON grep against a binary protocol, and a symbol class the command
-excluded.
+The withdrawn 2026-08-16 run (`p95=0.032ms control_rpc=0`) must not be cited.
 
-Two gates are expected to fail against `main` before any mutation: T-EXIT across
-detach, and T-ATTACH's connect-without-attaching case. Their red is the first
-real evidence this repository will have produced.
+T-EXIT across detach and T-ATTACH's connect-without-attaching hole have
+passing tests. Record a negative-control red before marking them Proven.

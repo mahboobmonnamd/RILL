@@ -232,12 +232,8 @@ impl Decoder {
                 break;
             }
             let tag = Tag::from_u8(self.buf[0])?;
-            let len = u32::from_le_bytes([
-                self.buf[1],
-                self.buf[2],
-                self.buf[3],
-                self.buf[4],
-            ]) as usize;
+            let len =
+                u32::from_le_bytes([self.buf[1], self.buf[2], self.buf[3], self.buf[4]]) as usize;
             if len > MAX_FRAME {
                 return Err(Error::TooLarge(len));
             }
@@ -282,11 +278,7 @@ mod tests {
     fn t_resize_frame_is_ordered_with_data_on_the_stream() {
         let mut d = Decoder::new();
         let mut stream = Vec::new();
-        stream.extend(
-            Frame::Data(b"partial".to_vec())
-                .encode()
-                .expect("data"),
-        );
+        stream.extend(Frame::Data(b"partial".to_vec()).encode().expect("data"));
         stream.extend(
             Frame::Resize {
                 cols: 100,
@@ -321,9 +313,7 @@ mod tests {
 
     #[test]
     fn sock_stream_partial_reads_reassemble() {
-        let full = Frame::Attach { generation: 7 }
-            .encode()
-            .expect("encode");
+        let full = Frame::Attach { generation: 7 }.encode().expect("encode");
         let mut d = Decoder::new();
         assert!(d.push(&full[..3]).expect("p1").is_empty());
         let rest = d.push(&full[3..]).expect("p2");
@@ -360,7 +350,9 @@ mod tests {
     #[test]
     fn unknown_tag_is_a_protocol_error_not_a_skip() {
         let mut d = Decoder::new();
-        let err = d.push(&[99, 0, 0, 0, 0]).expect_err("unknown tag must fail");
+        let err = d
+            .push(&[99, 0, 0, 0, 0])
+            .expect_err("unknown tag must fail");
         assert!(matches!(err, Error::UnknownTag(99)));
     }
 

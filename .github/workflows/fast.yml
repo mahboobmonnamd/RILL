@@ -53,6 +53,7 @@ jobs:
         run: cargo install cargo-fuzz --locked
       # SPEC-ATTACH §9. Bounded here; longer runs nightly.
       - name: Fuzz the frame decoder
+        working-directory: crates/rill-attach
         run: cargo fuzz run decoder -- -max_total_time=60 -runs=200000
 
   pin-integrity:
@@ -69,9 +70,14 @@ jobs:
             ????????????????????????????????????????) : ;;
             *) echo "pin is not a full 40-char commit id" >&2; exit 1 ;;
           esac
-          git ls-remote "$REPO" | grep -q "$SHA" \
-            || git -c protocol.version=2 ls-remote "$REPO" "$SHA" | grep -q . \
-            || { echo "pinned commit not reachable from $REPO" >&2; exit 1; }
+          # ls-remote lists refs, not arbitrary commits. Fetch the object.
+          TMP="$(mktemp -d)"
+          git init -q "$TMP"
+          git -C "$TMP" remote add origin "$REPO"
+          git -C "$TMP" fetch --depth 1 origin "$SHA"
+          GOT="$(git -C "$TMP" rev-parse FETCH_HEAD)"
+          rm -rf "$TMP"
+          [ "$GOT" = "$SHA" ] || { echo "fetched $GOT, wanted $SHA" >&2; exit 1; }
 
   docs-consistency:
     runs-on: ubuntu-latest
@@ -82,7 +88,8 @@ jobs:
       - name: No unearned Proven claims in status docs
         run: |
           set -eu
-          if grep -rn '\*\*Proven\*\*' docs/SPIKE-0.md docs/SPIKE-0-VALIDATION.md; then
+          # Vocabulary tables may name the class. A gate row marked Proven is the leak.
+          if grep -E '^\| T-[A-Z]+ .*\| \*\*Proven\*\*' docs/SPIKE-0.md docs/TEST-CASES.md; then
             echo "A gate is marked Proven. It must cite an evidence artifact and a demonstrated red (ADR 0002 D2)." >&2
             exit 1
           fi

@@ -12,6 +12,8 @@
 #import <Metal/Metal.h>
 #import <QuartzCore/QuartzCore.h>
 #include <simd/simd.h>
+#include <stdlib.h>
+#include <string.h>
 
 // ---------------------------------------------------------------- shaders
 //
@@ -151,6 +153,7 @@ typedef struct {
     NSUInteger _instanceCount;
 
     dispatch_source_t _readSource;
+    NSTimer *_pumpTimer;
 
     /* T-NFR */
     RillSentinel _sentinel;
@@ -188,6 +191,10 @@ typedef struct {
 - (void)dealloc {
     if (_readSource) {
         dispatch_source_cancel(_readSource);
+    }
+    if (_pumpTimer) {
+        [_pumpTimer invalidate];
+        _pumpTimer = nil;
     }
     if (_instances) {
         free(_instances);
@@ -283,8 +290,18 @@ typedef struct {
     return YES;
 }
 
-/* Event-driven: the socket wakes us, not a clock (ADR 0003 D2). */
+/* Event-driven: the socket wakes us, not a clock (ADR 0003 D2).
+ * Negative control T-NFR / timer_pump restores the 60 Hz NSTimer. */
 - (void)armSocketSource {
+    const char *mut = getenv("RILL_MUTATE");
+    if (mut && strcmp(mut, "timer_pump") == 0) {
+        _pumpTimer = [NSTimer scheduledTimerWithTimeInterval:(1.0 / 60.0)
+                                                      target:self
+                                                    selector:@selector(onSocketReadable)
+                                                    userInfo:nil
+                                                     repeats:YES];
+        return;
+    }
     int fd = rill_client_socket_fd(_client);
     if (fd < 0) {
         return;

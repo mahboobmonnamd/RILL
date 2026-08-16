@@ -93,8 +93,9 @@ history lives in the kernel's byte ring (ADR 0001 §4).
 pub fn resync_from_history(&mut self, history: &[u8]) -> Result<Vec<u8>, Error>;
 ```
 
-- Cold path only, once per attach. `Session::resync_count()` MUST be 1 after
-  100 keystrokes (TEST-CASES T-RESYNC).
+- Cold path only, once per attach. After a reattach, `Session::resync_count()`
+  MUST NOT increase during 100 subsequent keystrokes (TEST-CASES T-RESYNC).
+  Attach→detach→attach is two resyncs; the absolute count is not 1.
 - Resets, feeds history, and emits VT bytes via
   `ghostty_formatter_terminal_new` + `GHOSTTY_FORMATTER_FORMAT_VT`.
 - The window MUST NOT be able to distinguish resync bytes from live bytes: they

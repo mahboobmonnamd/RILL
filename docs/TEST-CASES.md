@@ -24,46 +24,47 @@ All gates are currently **Red** per ADR 0002 D1.
 
 ---
 
-## T-BYTES — invalid UTF-8 reaches the emulator byte-identical
+## T-BYTES — invalid UTF-8 reaches the emulator
 
 Spec: PRD NFR-BYTES. Replaces the tautologies in audit S2-2.
 
-**Oracle.** Not our own copy of the input. Two independent observations:
+**Oracle.** Two independent observations, neither of which is our copy of the
+input:
 
-1. `Chip0::repaint_bytes()` — the VT's own re-emission of screen state —
-   contains the original byte sequence. This goes through libghostty-vt's
-   parser and formatter, so a lossy conversion anywhere inside cannot survive.
-2. The `PodCell.codepoint` at the affected cells matches what a conforming
-   emulator produces for those bytes, and is **never** `U+FFFD` where the
-   fixture did not encode `U+FFFD`.
+1. **Kernel.** `Session::history()` contains the fixture verbatim. The child
+   *emits* the bytes with the PTY in raw mode, so the line discipline cannot
+   rewrite them. This is NFR-BYTES.
+2. **Chip 0.** After `feed(fixture)`, the snapshot grid still shows the ASCII
+   that was in the fixture, and any high byte that was not a CSI parameter
+   produces a non-ASCII cell (U+FFFD or C1). libghostty-vt **may** substitute
+   U+FFFD — that is decoding, not dropping. Forbidding U+FFFD made the gate
+   unsatisfiable against this VT.
 
 **Procedure.**
 
-- Fixtures in `fixtures/bytes/`, each a `.bin` plus a `.expect` naming the
-  required cell codepoints:
-  - `lone_continuation.bin` — `80 41`
-  - `truncated_3byte.bin` — `e2 82` then EOF
-  - `overlong_slash.bin` — `c0 af`
-  - `lone_surrogate.bin` — `ed a0 80`
-  - `bom_then_high.bin` — `ff fe 80 41` (the current fixture, kept)
-  - `csi_high_param.bin` — `1b 5b 80 6d 41` (high byte inside a CSI parameter)
-  - `c1_in_utf8.bin` — `c2 9b 41` (C1 CSI as UTF-8)
-- Chip 0 path: `feed(fixture)` → `repaint_bytes()` → assert; then `snapshot()`
-  → assert cell codepoints against `.expect`.
-- Kernel path: the child must **emit** the bytes, not receive them. Spawn
-  `/bin/sh -c 'cat fixture.bin'` with the PTY in **raw mode** (`ISIG`, `ICANON`,
-  `ECHO`, `OPOST`, `IXON` cleared, `ISTRIP` cleared) so the line discipline
-  cannot rewrite the stream. Assert `Session::history()` contains the fixture
-  verbatim.
+- Fixtures (inline in the tests, same corpus):
+  - `lone_continuation` — `80 41`
+  - `truncated_3byte` — `e2 82 41` (incomplete 3-byte sequence then ASCII, so
+    the VT must flush)
+  - `overlong_slash` — `c0 af`
+  - `lone_surrogate` — `ed a0 80`
+  - `bom_then_high` — `ff fe 80 41`
+  - `csi_high_param` — `1b 5b 80 6d 41` (chip 0 only)
+  - `c1_in_utf8` — `c2 9b 41` (chip 0 only)
+- Kernel path: spawn `/bin/sh -c 'cat fixture.bin'` with `Discipline::Raw`.
+- Chip 0 path: `feed` → `snapshot` → ASCII present; high bytes left a non-ASCII
+  cell (except CSI, which may consume the high byte without a cell).
 
-**Required mutation.** In `Chip0::feed`, replace `self.vt.feed(bytes)` with
-`self.vt.feed(String::from_utf8_lossy(bytes).as_bytes())`.
+**Required mutation.** In `Chip0::feed`, drop bytes `>= 0x80` before
+`vt_write`. `from_utf8_lossy` is a no-op against this VT (it already emits
+U+FFFD) and cannot turn the gate red.
 
-**Negative control.** `RILL_MUTATE=lossy_feed` — automated.
+**Negative control.** `RILL_MUTATE=drop_high_bytes` — automated.
 
 **Why the old test could not fail.** It compared `Chip0.fed` — a `Vec` the
 function filled by `extend_from_slice` before touching the VT — to the input.
-`Chip0.fed` is deleted (ADR 0002 D4).
+The rewrite then forbade U+FFFD in `repaint_bytes()`, which this emulator
+produces for illegal UTF-8, so the gate was red for the wrong reason.
 
 ---
 
@@ -208,7 +209,7 @@ for an idle shell **and** for a full-screen alt-screen application.
   cursor is at the pre-detach position.
 - Assert the resync consumed **zero** warm-path budget: the resync bytes arrive
   in response to `ATTACH`, and no resync work occurs on any subsequent keystroke
-  (`Session::resync_count()` is 1 after 100 keys).
+  (`Session::resync_count()` is unchanged after 100 keys).
 - Assert the window cannot distinguish resync bytes from live bytes: the client
   receives only `DATA` frames, with no resync-specific tag.
 
@@ -327,7 +328,7 @@ snapshot, inside the Rust client, never reaching the host or the GPU.
 
 | ID | Status | Automated negative control | Blocking defect it also covers |
 |---|---|---|---|
-| T-BYTES | Red | `lossy_feed` | S3-1 (overflow) via the emoji fixture |
+| T-BYTES | Red | `drop_high_bytes` | S3-1 (overflow) via the emoji fixture |
 | T-DROP | Red | `drop_on_full` | S3-5 (nominal backpressure) |
 | T-RESIZE | Red | `resize_before_data` | — |
 | T-EXIT | Red | `clear_outbound_on_detach` | **S3-2 (EXIT lost on detach)** |
@@ -337,6 +338,6 @@ snapshot, inside the Rust client, never reaching the host or the GPU.
 | T-SPAWN | Red | permanent positive control | S1-1 |
 | T-NFR | Red | `timer_pump` | S3-8b, S3-8g, S3-8h |
 
-Two gates — T-EXIT case B and T-ATTACH's connect-without-attaching case — fail
-against `main` with no mutation applied. They are the first tests to write, and
-their red is the first evidence this process produces.
+T-EXIT across detach and T-ATTACH's connect-without-attaching hole were
+production defects; both have tests that now pass. They are **Green-unproven**
+until a negative-control run records them going red (ADR 0002 D2).

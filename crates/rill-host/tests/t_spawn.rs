@@ -94,10 +94,7 @@ fn pty_imports(bin: &Path) -> Vec<String> {
 #[test]
 fn t_spawn_the_check_itself_detects_a_binary_that_creates_a_pty() {
     let src = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/spawner.c");
-    let out = std::env::temp_dir().join(format!(
-        "rill-spawner-{}",
-        std::process::id()
-    ));
+    let out = std::env::temp_dir().join(format!("rill-spawner-{}", std::process::id()));
 
     let cc = Command::new("cc")
         .arg(&src)

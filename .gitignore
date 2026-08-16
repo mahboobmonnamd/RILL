@@ -18,3 +18,6 @@ DerivedData/
 # artifact rather than committing it. Commit one deliberately only when it is
 # the record that closes a gate.
 /evidence
+# cargo-fuzz scratch (separate workspace under crates/rill-attach/fuzz)
+/crates/rill-attach/fuzz/target
+/crates/rill-attach/fuzz/Cargo.lock
