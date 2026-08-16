@@ -1,0 +1,16 @@
+---
+description: Production bar — fail closed, honest evidence, no second product
+alwaysApply: true
+---
+
+# Production bar
+
+Fortune-scale PTYs and secrets. Not a demo.
+
+- Library/daemon paths return `Result`. No `unwrap`/`expect` on reachable request handling.
+- Secrets: refuse to persist if redaction cannot parse. Never write the original bytes.
+- Missing platform backend → compile-error or `UnsupportedPlatform`, not a silent macOS path.
+- Shutdown reaps attached PTYs. Kill-wait is bounded.
+- Evidence: Proven / Partial / Manual / External only. Packaged-app gates are not proven by unit fixtures.
+- Do not invent a second VT for cards. Do not dump the live grid into `Text`.
+- Proposed ADRs do not authorize implementation.

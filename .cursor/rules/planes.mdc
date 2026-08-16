@@ -1,0 +1,16 @@
+---
+description: Four planes — kernel, attach, display, orchestration
+alwaysApply: true
+---
+
+# Planes
+
+Warm path: key → Chip 0 → framed SOCK_STREAM → kernel PTY → bytes back → POD damage paint.
+
+Forbidden on that path: JSON, cell dumps, per-cell String snapshots, SwiftUI Observation of the PTY buffer, SOCK_SEQPACKET, SCM_RIGHTS of the master, GUI posix_spawn of the user shell, drop-on-full PTY reads.
+
+Kernel owns the PTY master and the byte history. Display dies on quit. Attach may classify; it must not paint. Orchestration JSON is cold.
+
+Chip 0 is libghostty-vt + our Metal. Chip 1 is a later isolated crate. Do not link Chip 1 as the live chip until Spike 0 is Proven. Do not take full libghostty exec as an intermediate.
+
+Domain sources must not name Ghostty FFI types. Adapter files only.

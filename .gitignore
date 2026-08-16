@@ -1,0 +1,11 @@
+# Byte compile artifacts
+/target
+/.build
+*.o
+.DS_Store
+# Xcode
+xcuserdata/
+DerivedData/
+# Secrets
+.env
+*.pem

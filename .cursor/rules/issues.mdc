@@ -1,0 +1,12 @@
+---
+description: TDD and GitHub issue gates
+alwaysApply: true
+---
+
+# Issues and tests
+
+- Claim a GitHub issue in an open milestone before coding. Set lane A–E.
+- Named SPEC-style test first. For a user-reported bug, the test name states the bug and fails for that reason.
+- Close an issue only with files, named tests, commands, and results in the PR.
+- Spike 0 stop: if T-NFR is not Proven on a packaged build, do not merge Milestone 1 UI.
+- This repo is self-contained. Do not cite another application tree as authority.
