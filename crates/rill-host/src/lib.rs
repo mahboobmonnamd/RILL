@@ -1,11 +1,25 @@
 //! GUI attach client. Does not spawn the user shell. Does not own a PTY.
+//!
+//! SPEC-DISPLAY §3, SPEC-ATTACH §5, §8.
+//!
+//! The T-NFR *measurement* is not here. It cannot be: the segment being timed
+//! starts at an `NSEvent` and ends at a `CAMetalDrawable` presentation
+//! (ADR 0003 D5), neither of which exists in Rust. This module exposes the
+//! oracle primitives the host needs — cursor cell, cell contents, warm-path
+//! frame accounting — and the host does the timing. The old `nfr_key` here
+//! measured to a POD snapshot and never left the client, which is why it
+//! reported 32 microseconds (docs/SPIKE-0-AUDIT.md S1-2).
 
 use rill_attach::{Decoder, Frame};
 use rill_chip0::{load_host_surface, Chip0, HostSurface, PodGrid, TerminalEmulation};
+use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+
+/// Initial credit window. Not `u32::MAX`: the client replenishes as it feeds,
+/// so the kernel can actually apply backpressure (SPEC-ATTACH §5, audit S3-5).
+const CREDIT_WINDOW: u32 = 256 * 1024;
 
 pub struct Client {
     stream: UnixStream,
@@ -13,12 +27,24 @@ pub struct Client {
     chip: Chip0,
     surface: HostSurface,
     alive: bool,
-    saw_json: bool,
-    last_paint: Instant,
+    exit_status: Option<i32>,
+    /// Bytes written but not yet accepted by the socket. Keeps `send` from
+    /// blocking the UI thread (audit S3-8d).
+    outbox: VecDeque<u8>,
+    /// Credit granted but not yet consumed by our own feed.
+    outstanding_credit: u64,
+    /// Frames we sent that are not `DATA`/`CREDIT`, and non-`DATA` frames we
+    /// received, since the last `reset_warm_path_audit`. The real oracle for
+    /// "zero control RPCs on the warm path" (SPEC-ATTACH §8, ADR 0003 D9).
+    warm_path_violations: u32,
+    auditing: bool,
 }
 
 impl Client {
-    pub fn connect(socket: impl AsRef<Path>, surface: HostSurface) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn connect(
+        socket: impl AsRef<Path>,
+        surface: HostSurface,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let stream = UnixStream::connect(socket.as_ref())?;
         stream.set_nonblocking(true)?;
         let chip = Chip0::new(surface.cols, surface.rows)?;
@@ -28,11 +54,14 @@ impl Client {
             chip,
             surface,
             alive: true,
-            saw_json: false,
-            last_paint: Instant::now(),
+            exit_status: None,
+            outbox: VecDeque::new(),
+            outstanding_credit: 0,
+            warm_path_violations: 0,
+            auditing: false,
         };
         client.send(Frame::Attach { generation: 1 })?;
-        client.send(Frame::Credit(u32::MAX))?;
+        client.grant_credit(CREDIT_WINDOW)?;
         Ok(client)
     }
 
@@ -44,11 +73,42 @@ impl Client {
         self.surface.font_size
     }
 
+    pub fn alive(&self) -> bool {
+        self.alive
+    }
+
+    pub fn exit_status(&self) -> Option<i32> {
+        self.exit_status
+    }
+
+    /// The attach socket, so the host can arm a `dispatch_source` on it.
+    /// Event-driven, not polled — the 60 Hz `NSTimer` was the largest single
+    /// term in the old latency budget (ADR 0003 D2).
+    pub fn socket_fd(&self) -> std::os::fd::RawFd {
+        use std::os::fd::AsRawFd;
+        self.stream.as_raw_fd()
+    }
+
+    // ------------------------------------------------------------- warm path
+
+    pub fn begin_warm_path_audit(&mut self) {
+        self.warm_path_violations = 0;
+        self.auditing = true;
+    }
+
+    pub fn end_warm_path_audit(&mut self) -> u32 {
+        self.auditing = false;
+        self.warm_path_violations
+    }
+
+    pub fn warm_path_violations(&self) -> u32 {
+        self.warm_path_violations
+    }
+
     pub fn send_input(&mut self, bytes: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
         if !self.alive {
             return Err("pane is dead".into());
         }
-        self.last_paint = Instant::now();
         self.send(Frame::Data(bytes.to_vec()))
     }
 
@@ -59,7 +119,9 @@ impl Client {
         px_w: u16,
         px_h: u16,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.chip.resize(cols, rows, 8, 16)?;
+        let cell_w = u32::from(px_w) / u32::from(cols.max(1));
+        let cell_h = u32::from(px_h) / u32::from(rows.max(1));
+        self.chip.resize(cols, rows, cell_w, cell_h)?;
         self.send(Frame::Resize {
             cols,
             rows,
@@ -68,69 +130,102 @@ impl Client {
         })
     }
 
-    pub fn pump(&mut self) -> Result<bool, Box<dyn std::error::Error>> {
+    /// Drain everything readable, feed it, replenish exactly what we consumed.
+    /// Returns bytes fed this turn.
+    pub fn pump(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
+        self.flush_outbox()?;
+
         let mut buf = [0u8; 65536];
-        match self.stream.read(&mut buf) {
-            Ok(0) => Ok(false),
-            Ok(n) => {
-                if buf[..n].contains(&b'{') && looks_like_json(&buf[..n]) {
-                    self.saw_json = true;
-                }
-                let frames = self.decoder.push(&buf[..n])?;
-                for frame in frames {
-                    match frame {
-                        Frame::Data(bytes) => {
-                            self.chip.feed(&bytes)?;
-                            self.last_paint = Instant::now();
+        let mut fed = 0usize;
+        loop {
+            match self.stream.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    for frame in self.decoder.push(&buf[..n])? {
+                        match frame {
+                            Frame::Data(bytes) => {
+                                fed += bytes.len();
+                                self.chip.feed(&bytes)?;
+                            }
+                            Frame::Exit { status } => {
+                                self.alive = false;
+                                self.exit_status = Some(status);
+                                if self.auditing {
+                                    self.warm_path_violations += 1;
+                                }
+                            }
+                            other => {
+                                if self.auditing {
+                                    self.warm_path_violations += 1;
+                                }
+                                if matches!(other, Frame::Refused { .. }) {
+                                    return Err("attach refused".into());
+                                }
+                            }
                         }
-                        Frame::Exit { .. } => {
-                            self.alive = false;
-                        }
-                        Frame::Refused { .. } => {
-                            return Err("attach refused".into());
-                        }
-                        _ => {}
                     }
                 }
-                let _ = self.send(Frame::Credit(65536));
-                Ok(true)
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(e) => return Err(e.into()),
             }
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(true),
-            Err(e) => Err(e.into()),
         }
+
+        // Replenish only what we actually consumed. Granting a fixed amount per
+        // pump — or `u32::MAX` at connect — makes credit outrun delivery and
+        // turns backpressure into decoration (audit S3-5).
+        if fed > 0 {
+            let give = u32::try_from(fed).unwrap_or(u32::MAX);
+            self.grant_credit(give)?;
+        }
+        Ok(fed)
+    }
+
+    fn grant_credit(&mut self, n: u32) -> Result<(), Box<dyn std::error::Error>> {
+        self.outstanding_credit = self.outstanding_credit.saturating_add(u64::from(n));
+        self.send(Frame::Credit(n))
     }
 
     pub fn snapshot(&mut self) -> Result<PodGrid, rill_chip0::Error> {
         self.chip.snapshot()
     }
 
-    pub fn alive(&self) -> bool {
-        self.alive
-    }
-
-    pub fn saw_control_rpc(&self) -> bool {
-        self.saw_json
-    }
-
+    /// Non-blocking. A partial write is queued and completed on the next pump;
+    /// the socket's blocking mode is never toggled (audit S3-8d).
     fn send(&mut self, frame: Frame) -> Result<(), Box<dyn std::error::Error>> {
+        if self.auditing && !frame.is_warm_path() {
+            self.warm_path_violations += 1;
+        }
         let bytes = frame.encode()?;
-        // Blocking write of a complete frame; keys are small.
-        self.stream.set_nonblocking(false)?;
-        self.stream.write_all(&bytes)?;
-        self.stream.set_nonblocking(true)?;
+        self.outbox.extend(bytes);
+        self.flush_outbox()
+    }
+
+    fn flush_outbox(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        while !self.outbox.is_empty() {
+            let (front, _) = self.outbox.as_slices();
+            let chunk: Vec<u8> = if front.is_empty() {
+                self.outbox.iter().copied().collect()
+            } else {
+                front.to_vec()
+            };
+            match self.stream.write(&chunk) {
+                Ok(0) => break,
+                Ok(n) => {
+                    self.outbox.drain(..n);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(e) => return Err(e.into()),
+            }
+        }
         Ok(())
     }
-}
-
-fn looks_like_json(buf: &[u8]) -> bool {
-    let s = String::from_utf8_lossy(buf);
-    s.contains("pane_replay") || s.contains("\"cells\"")
 }
 
 pub fn default_socket() -> PathBuf {
     if let Ok(p) = std::env::var("RILL_SOCKET") {
         return PathBuf::from(p);
     }
+    // SAFETY: getuid is always safe.
     let uid = unsafe { libc::getuid() };
     PathBuf::from(format!("/tmp/rill-{uid}.sock"))
 }
@@ -152,56 +247,20 @@ pub fn load_surface() -> Result<HostSurface, rill_chip0::Error> {
     load_host_surface("host-surface.toml")
 }
 
-/// NFR-KEY: key-down → first POD snapshot containing the glyph. No control RPC.
-pub fn nfr_key(client: &mut Client, count: u32) -> Result<NfrReport, Box<dyn std::error::Error>> {
-    let mut samples = Vec::with_capacity(count as usize);
-    client.pump()?;
-    for i in 0..count {
-        let ch = b'a' + (i % 26) as u8;
-        let t0 = Instant::now();
-        client.send_input(&[ch])?;
-        let deadline = Instant::now() + Duration::from_millis(100);
-        let mut seen = false;
-        while Instant::now() < deadline {
-            let _ = client.pump()?;
-            if let Ok(grid) = client.snapshot() {
-                if grid.cells.iter().any(|c| c.codepoint == u32::from(ch)) {
-                    seen = true;
-                    break;
-                }
-            }
-        }
-        if !seen {
-            return Err("glyph did not paint".into());
-        }
-        samples.push(t0.elapsed().as_secs_f64() * 1000.0);
+/// Percentile over an already-sorted slice, 0-indexed and without the
+/// off-by-one the previous `ceil()` introduced (audit S3-8e).
+pub fn percentile(sorted: &[f64], q: f64) -> f64 {
+    if sorted.is_empty() {
+        return f64::NAN;
     }
-    samples.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let idx = ((samples.len() as f64) * 0.95).ceil() as usize;
-    let p95 = samples[idx.min(samples.len() - 1)];
-    Ok(NfrReport {
-        p95_ms: p95,
-        count: samples.len() as u32,
-        control_rpc: client.saw_control_rpc(),
-        on_battery: on_battery(),
-    })
-}
-
-#[derive(Debug)]
-pub struct NfrReport {
-    pub p95_ms: f64,
-    pub count: u32,
-    pub control_rpc: bool,
-    pub on_battery: bool,
-}
-
-fn on_battery() -> bool {
-    let out = std::process::Command::new("pmset")
-        .args(["-g", "batt"])
-        .output();
-    match out {
-        Ok(o) => String::from_utf8_lossy(&o.stdout).contains("Battery Power"),
-        Err(_) => false,
+    let rank = q * (sorted.len() - 1) as f64;
+    let lo = rank.floor() as usize;
+    let hi = rank.ceil() as usize;
+    if lo == hi {
+        sorted[lo]
+    } else {
+        let frac = rank - lo as f64;
+        sorted[lo] * (1.0 - frac) + sorted[hi] * frac
     }
 }
 
@@ -212,29 +271,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn t_nfr_key_paints_without_control_rpc() {
-        if std::env::var("RILL_REQUIRE_NFR").is_err() {
-            eprintln!("skipping T-NFR in-process: set RILL_REQUIRE_NFR=1 with a dedicated socket");
-            return;
-        }
-        let socket = default_socket();
-        if UnixStream::connect(&socket).is_err() {
-            panic!("T-NFR: rilld not running at {}", socket.display());
-        }
-        let surface = load_surface().expect("surface");
-        let mut client = Client::connect(&socket, surface).expect("connect");
-        for _ in 0..20 {
-            let _ = client.pump();
-        }
-        let report = nfr_key(&mut client, 1000).expect("nfr");
-        assert!(!report.control_rpc, "control RPC on the warm path");
-        assert!(
-            report.p95_ms < 16.7,
-            "p95 {}ms missed one-frame budget",
-            report.p95_ms
-        );
-        if std::env::var("RILL_REQUIRE_BATTERY").ok().as_deref() == Some("1") {
-            assert!(report.on_battery, "NFR-KEY must run on battery");
-        }
+    fn percentile_is_zero_indexed_and_interpolates() {
+        let v: Vec<f64> = (1..=100).map(|i| i as f64).collect();
+        assert_eq!(percentile(&v, 0.0), 1.0);
+        assert_eq!(percentile(&v, 1.0), 100.0);
+        // 95th percentile of 1..=100 sits between 95 and 96, not at 96.
+        let p95 = percentile(&v, 0.95);
+        assert!((94.9..=96.1).contains(&p95), "p95 = {p95}");
+    }
+
+    #[test]
+    fn percentile_of_one_sample_is_that_sample() {
+        assert_eq!(percentile(&[7.0], 0.95), 7.0);
     }
 }
