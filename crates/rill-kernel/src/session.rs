@@ -7,6 +7,7 @@ use crate::pty::{Discipline, Pty, Winsize};
 use crate::ring::ByteRing;
 use rill_attach::{Frame, RefuseReason};
 use std::collections::VecDeque;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 const RING_CAP: usize = 4 * 1024 * 1024;
@@ -40,6 +41,7 @@ pub struct Session {
     journal: VecDeque<(u64, IoEvent)>,
     seq: u64,
     size: Winsize,
+    last_cwd: Option<PathBuf>,
 }
 
 impl Session {
@@ -73,6 +75,7 @@ impl Session {
             journal: VecDeque::new(),
             seq: 0,
             size,
+            last_cwd: None,
         })
     }
 
@@ -143,6 +146,42 @@ impl Session {
 
     pub fn terminate(&mut self) -> Result<(), Error> {
         self.pty.terminate()
+    }
+
+    /// Foreground process cwd (ADR 0013). Cold. Not an attach frame.
+    pub fn cwd(&mut self) -> Result<PathBuf, Error> {
+        #[cfg(feature = "mutate")]
+        if std::env::var("RILL_MUTATE").as_deref() == Ok("cwd_fail_open") {
+            if self.pty.fg_cwd().is_err() {
+                return Ok(PathBuf::new());
+            }
+        }
+        #[cfg(feature = "mutate")]
+        if std::env::var("RILL_MUTATE").as_deref() == Ok("osc7_only") {
+            let hist = self.ring.snapshot();
+            if !hist.windows(3).any(|w| w == b"\x1b]7") {
+                if let Some(path) = &self.last_cwd {
+                    return Ok(path.clone());
+                }
+                let path = self.pty.fg_cwd()?;
+                self.last_cwd = Some(path.clone());
+                return Ok(path);
+            }
+        }
+        #[cfg(feature = "mutate")]
+        if std::env::var("RILL_MUTATE").as_deref() == Ok("leader_cwd") {
+            let path = self.pty.leader_cwd()?;
+            self.last_cwd = Some(path.clone());
+            return Ok(path);
+        }
+
+        let path = self.pty.fg_cwd()?;
+        self.last_cwd = Some(path.clone());
+        Ok(path)
+    }
+
+    pub fn last_cwd(&self) -> Option<&Path> {
+        self.last_cwd.as_deref()
     }
 
     // ---------------------------------------------------------------- outbound

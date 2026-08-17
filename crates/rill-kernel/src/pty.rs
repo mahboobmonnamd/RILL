@@ -220,6 +220,35 @@ impl Pty {
         get_winsize(self.master.as_raw_fd())
     }
 
+    /// Foreground-pgrp vnode path (ADR 0013 D2). Master fd stays here.
+    pub fn fg_cwd(&self) -> Result<std::path::PathBuf, Error> {
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = self.master.as_raw_fd();
+            Err(Error::UnsupportedPlatform("cwd tap is Darwin-only"))
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let fg = unsafe { libc::tcgetpgrp(self.master.as_raw_fd()) };
+            if fg <= 0 {
+                return Err(Error::CwdUnreadable);
+            }
+            vnode_cwd(fg)
+        }
+    }
+
+    #[cfg(feature = "mutate")]
+    pub(crate) fn leader_cwd(&self) -> Result<std::path::PathBuf, Error> {
+        #[cfg(not(target_os = "macos"))]
+        {
+            Err(Error::UnsupportedPlatform("cwd tap is Darwin-only"))
+        }
+        #[cfg(target_os = "macos")]
+        {
+            vnode_cwd(self.child.id() as i32)
+        }
+    }
+
     /// Intentional teardown. Nothing else may kill the child — in particular
     /// not `Drop` (SPEC-KERNEL §2, audit S3-3).
     ///
@@ -381,4 +410,33 @@ fn get_winsize(fd: RawFd) -> Result<Winsize, Error> {
         px_w: ws.ws_xpixel,
         px_h: ws.ws_ypixel,
     })
+}
+
+#[cfg(target_os = "macos")]
+fn vnode_cwd(pid: libc::pid_t) -> Result<std::path::PathBuf, Error> {
+    use std::os::unix::ffi::OsStrExt;
+    let mut info = std::mem::MaybeUninit::<libc::proc_vnodepathinfo>::zeroed();
+    // SAFETY: buffer is a proc_vnodepathinfo we own for this call.
+    let n = unsafe {
+        libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDVNODEPATHINFO,
+            0,
+            info.as_mut_ptr() as *mut libc::c_void,
+            std::mem::size_of::<libc::proc_vnodepathinfo>() as libc::c_int,
+        )
+    };
+    if n <= 0 {
+        return Err(Error::CwdUnreadable);
+    }
+    let info = unsafe { info.assume_init() };
+    let flat =
+        unsafe { std::slice::from_raw_parts(info.pvi_cdir.vip_path.as_ptr() as *const u8, 1024) };
+    let end = flat.iter().position(|&b| b == 0).unwrap_or(0);
+    if end == 0 {
+        return Err(Error::CwdUnreadable);
+    }
+    Ok(std::path::PathBuf::from(std::ffi::OsStr::from_bytes(
+        &flat[..end],
+    )))
 }

@@ -8,6 +8,8 @@ pub enum Error {
     Dead,
     AttachRefused,
     UnknownSession,
+    CwdUnreadable,
+    UnsupportedPlatform(&'static str),
 }
 
 impl fmt::Display for Error {
@@ -19,6 +21,8 @@ impl fmt::Display for Error {
             Self::Dead => write!(f, "child has exited"),
             Self::AttachRefused => write!(f, "second attach refused"),
             Self::UnknownSession => write!(f, "unknown session id"),
+            Self::CwdUnreadable => write!(f, "cwd unreadable"),
+            Self::UnsupportedPlatform(s) => write!(f, "unsupported platform: {s}"),
         }
     }
 }
