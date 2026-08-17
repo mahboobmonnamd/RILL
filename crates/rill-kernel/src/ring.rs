@@ -23,10 +23,15 @@ impl ByteRing {
         }
         if bytes.len() >= self.cap {
             self.data.clear();
-            self.data.extend(bytes[bytes.len() - self.cap..].iter().copied());
+            self.data
+                .extend(bytes[bytes.len() - self.cap..].iter().copied());
             return;
         }
-        let overflow = self.data.len().saturating_add(bytes.len()).saturating_sub(self.cap);
+        let overflow = self
+            .data
+            .len()
+            .saturating_add(bytes.len())
+            .saturating_sub(self.cap);
         if overflow > 0 {
             self.data.drain(..overflow);
         }
@@ -60,7 +65,10 @@ mod tests {
         let fixture = include_bytes!("../../../fixtures/invalid_utf8.bin");
         ring.append(fixture);
         let got = ring.snapshot();
-        assert_eq!(got, fixture, "ring must keep original bytes, not UTF-8 replacement");
+        assert_eq!(
+            got, fixture,
+            "ring must keep original bytes, not UTF-8 replacement"
+        );
         assert!(!got.windows(3).any(|w| w == [0xef, 0xbf, 0xbd]));
     }
 

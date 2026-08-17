@@ -172,9 +172,7 @@ fn t_drop_flood_then_interrupt_loses_no_bytes_and_leaves_a_usable_shell() {
     );
 
     // Interrupt.
-    session
-        .on_frame(Frame::Data(vec![0x03]))
-        .expect("send ^C");
+    session.on_frame(Frame::Data(vec![0x03])).expect("send ^C");
 
     // The oracle for "usable" is the shell's own pid, reported by the shell.
     let marker = pump_until(&mut session, 256 * 1024, Duration::from_secs(5), |acc| {
@@ -260,8 +258,8 @@ fn t_resize_child_reports_the_new_winsize_after_pending_input() {
         "trap 'stty size > {r} 2>/dev/null' WINCH; while :; do sleep 0.05; done",
         r = report.display()
     );
-    let mut session = Session::spawn("/bin/sh", &["-c", &script], Winsize::default())
-        .expect("spawn winch trap");
+    let mut session =
+        Session::spawn("/bin/sh", &["-c", &script], Winsize::default()).expect("spawn winch trap");
     session
         .on_frame(Frame::Attach { generation: 1 })
         .expect("attach");
@@ -367,8 +365,8 @@ fn t_exit_dead_pane_rejects_input_and_reports_status() {
 /// Required mutation: `RILL_MUTATE=clear_outbound_on_detach`.
 #[test]
 fn t_exit_child_death_while_detached_is_reported_on_reattach() {
-    let mut session = Session::spawn("/bin/sh", &["-c", "sleep 0.3; exit 3"], Winsize::default())
-        .expect("spawn");
+    let mut session =
+        Session::spawn("/bin/sh", &["-c", "sleep 0.3; exit 3"], Winsize::default()).expect("spawn");
     session
         .on_frame(Frame::Attach { generation: 1 })
         .expect("attach");
@@ -405,8 +403,8 @@ fn t_exit_child_death_while_detached_is_reported_on_reattach() {
 
 #[test]
 fn t_attach_second_attach_is_refused_and_the_first_keeps_working() {
-    let mut session = Session::spawn("/bin/sh", &["-c", "sleep 5"], Winsize::default())
-        .expect("spawn");
+    let mut session =
+        Session::spawn("/bin/sh", &["-c", "sleep 5"], Winsize::default()).expect("spawn");
     session
         .on_frame(Frame::Attach { generation: 1 })
         .expect("a1");
@@ -437,8 +435,8 @@ fn t_attach_second_attach_is_refused_and_the_first_keeps_working() {
 /// gate is `rilld`'s packaged `persist_e2e` (ADR 0002 D6, audit S2 row 2).
 #[test]
 fn t_kill_detach_does_not_signal_the_child() {
-    let mut session = Session::spawn("/bin/sh", &["-c", "exec sleep 30"], Winsize::default())
-        .expect("spawn");
+    let mut session =
+        Session::spawn("/bin/sh", &["-c", "exec sleep 30"], Winsize::default()).expect("spawn");
     session
         .on_frame(Frame::Attach { generation: 1 })
         .expect("attach");
@@ -460,8 +458,8 @@ fn t_kill_detach_does_not_signal_the_child() {
 /// shell.
 #[test]
 fn t_kill_dropping_the_session_does_not_kill_the_child() {
-    let session = Session::spawn("/bin/sh", &["-c", "exec sleep 30"], Winsize::default())
-        .expect("spawn");
+    let session =
+        Session::spawn("/bin/sh", &["-c", "exec sleep 30"], Winsize::default()).expect("spawn");
     let pid = session.child_pid();
     drop(session);
     std::thread::sleep(Duration::from_millis(150));

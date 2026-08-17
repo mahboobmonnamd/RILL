@@ -2,13 +2,14 @@
 
 A session operating system for terminals. macOS first. MIT OR Apache-2.0.
 
-**Spike 0 is RED.** Kernel, attach, Chip 0, and a packaged `Rill.app` exist. Every
-previous `Proven` mark was revoked on 2026-08-16: three gates were structurally
-incapable of failing, and five more had names that asserted behaviour their
-bodies never exercised. Read [SPIKE-0-AUDIT](docs/SPIKE-0-AUDIT.md) before
-trusting any green in this repository.
+**Spike 0 is GREEN** ([ADR 0010](docs/adr/0010-spike-0-closes.md)). Kernel,
+attach, Chip 0, and a packaged `Rill.app` exist. Every named gate is Proven:
+library suite in [run 31993832263](https://github.com/mahboobmonnamd/RILL/actions/runs/31993832263),
+T-NFR on packaged battery hid. The 2026-08-16 marks remain withdrawn; read
+[SPIKE-0-AUDIT](docs/SPIKE-0-AUDIT.md) before citing that day's numbers.
 
-Do not add agents, Blocks, or chrome until Spike 0 is butter. Run `make gates`.
+Milestone 1 may open. Do not add agents, Blocks, or chrome to hide a later NFR
+miss. Run `make gates` for regression.
 
 ## In one page
 
@@ -60,7 +61,7 @@ Installs or checks Rust (`rustc` ≥ 1.85), Zig (≥ 0.16, for Chip 0 / `libghos
 4. [ADR 0001](docs/adr/0001-session-operating-system.md) — the lock
 5. [ADR 0002](docs/adr/0002-falsifiable-evidence.md) — what counts as evidence
 6. [ADR 0003](docs/adr/0003-display-pipeline.md) — renderer and key→present
-7. [Spike 0](docs/SPIKE-0.md) — named gates, **Red** ([validation](docs/SPIKE-0-VALIDATION.md), [test cases](docs/TEST-CASES.md))
+7. [Spike 0](docs/SPIKE-0.md) — named gates, **Proven** ([validation](docs/SPIKE-0-VALIDATION.md), [test cases](docs/TEST-CASES.md), [ADR 0010](docs/adr/0010-spike-0-closes.md))
 8. [Specs](docs/spec/) — [kernel](docs/spec/SPEC-KERNEL.md), [attach](docs/spec/SPEC-ATTACH.md), [chip 0](docs/spec/SPEC-CHIP0.md), [display](docs/spec/SPEC-DISPLAY.md)
 9. [Lanes](docs/LANES.md) — how 3–5 people work in parallel
 10. [CONTRIBUTING](CONTRIBUTING.md) — issues, PRs, TDD

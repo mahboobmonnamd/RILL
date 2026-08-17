@@ -1,17 +1,38 @@
-/* Chip 0 presenter: glyph atlas + one instanced Metal draw, driven by socket
- * readiness rather than a timer. ADR 0003, SPEC-DISPLAY.
- *
- * What this replaces: a 60 Hz NSTimer that delayed every byte by up to 16.6ms,
- * per-cell CTFontDrawGlyphs into a CGBitmapContext on the UI thread, a fresh
- * MTLTexture every frame, and a full-screen blit — with the damage rows the
- * chip computed thrown away (docs/SPIKE-0-AUDIT.md S3-8b, S3-8h).
+/* Chip 0 presenter: glyph atlas + one instanced Metal draw. Socket readiness
+ * feeds the VT (ADR 0003 D2). Surface is toggleFullScreen + opaque CAMetalLayer
+ * (direct-to-display). Present is echo-only, one in flight. A CADisplayLink
+ * supplies targetTimestamp so the echo can late-latch this vsync; it does not
+ * take a drawable. Keystrokes pump+present on the same stack as keyDown so
+ * the echo does not wait for a second runloop turn. No CAMetalDisplayLink.
  */
 
 #import "TerminalView.h"
 #import <CoreText/CoreText.h>
 #import <Metal/Metal.h>
+#import <MetalKit/MetalKit.h>
 #import <QuartzCore/QuartzCore.h>
+#import <ApplicationServices/ApplicationServices.h>
 #include <simd/simd.h>
+#include <math.h>
+#include <poll.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+/* US ANSI virtual keycodes for a–z. CGEventCreateKeyboardEvent(NULL, 0, …)
+ * always posts 'a'; CGEventKeyboardSetUnicodeString did not populate
+ * NSEvent.characters on PostToPid, so T-NFR hid discarded every sample
+ * while --nfr-key=app (NSEvent sendEvent) painted 999/1000. */
+static CGKeyCode rill_vk_ansi_letter(uint32_t cp) {
+    static const CGKeyCode kVk[26] = {0,  11, 8,  2,  14, 3,  5,  4,  34, 38, 40,
+                                      37, 46, 45, 31, 35, 12, 15, 1,  17, 32, 9,
+                                      13, 7,  16, 6};
+    if (cp < 'a' || cp > 'z') {
+        return 0;
+    }
+    return kVk[cp - 'a'];
+}
 
 // ---------------------------------------------------------------- shaders
 //
@@ -109,7 +130,8 @@ typedef struct {
 #define RILL_FLAG_CURSOR    256u
 
 #define RILL_ATLAS_DIM 2048
-#define RILL_MAX_FRAMES_IN_FLIGHT 3
+#define RILL_MAX_FRAMES_IN_FLIGHT 1
+#define RILL_MAX_DRAWABLES 2
 
 typedef struct {
     float u, v, w, h;      /* normalized atlas rect */
@@ -126,6 +148,7 @@ typedef struct {
     uint16_t col;
     uint16_t row;
     double keyTimestamp; /* CACurrentMediaTime timebase */
+    double commitTime;
 } RillSentinel;
 
 @implementation TerminalView {
@@ -151,27 +174,47 @@ typedef struct {
     NSUInteger _instanceCount;
 
     dispatch_source_t _readSource;
+    NSTimer *_pumpTimer;
+    CADisplayLink *_displayLink;
+    CFTimeInterval _targetPresentTime;
 
     /* T-NFR */
     RillSentinel _sentinel;
     NSMutableArray<NSNumber *> *_samples;
+    NSMutableArray<NSNumber *> *_presentCadence;
     uint32_t _discards;
-    uint32_t _nfrRemaining;
+    uint32_t _nfrTarget;
+    uint32_t _nfrSeq;
     RillNfrMode _nfrMode;
     BOOL _nfrRunning;
     BOOL _nfrFailed;
+    uint32_t _nfrHidKeyDowns;
+    BOOL _timerPump;
+
+    NSUInteger _lastDrawCount;
+    uint16_t _lastDrawCols;
+    uint16_t _lastDrawRows;
+    BOOL _sentinelInMirror;
+    double _lastAnyPresented;
 }
 
 // ---------------------------------------------------------------- lifecycle
 
 - (instancetype)initWithClient:(RillClient *)client {
-    self = [super initWithFrame:NSMakeRect(0, 0, 800, 480)];
+    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+    if (!device) {
+        NSLog(@"Rill: no Metal device");
+        return nil;
+    }
+    self = [super initWithFrame:NSMakeRect(0, 0, 800, 480) device:device];
     if (!self) {
         return nil;
     }
+    _device = device;
     _client = client;
     _glyphCache = [NSMutableDictionary dictionary];
     _samples = [NSMutableArray array];
+    _presentCadence = [NSMutableArray array];
     _frameIndex = 0;
     _inflight = dispatch_semaphore_create(RILL_MAX_FRAMES_IN_FLIGHT);
 
@@ -188,6 +231,14 @@ typedef struct {
 - (void)dealloc {
     if (_readSource) {
         dispatch_source_cancel(_readSource);
+    }
+    if (_pumpTimer) {
+        [_pumpTimer invalidate];
+        _pumpTimer = nil;
+    }
+    if (_displayLink) {
+        [_displayLink invalidate];
+        _displayLink = nil;
     }
     if (_instances) {
         free(_instances);
@@ -232,19 +283,22 @@ typedef struct {
 }
 
 - (BOOL)setupMetal {
-    self.wantsLayer = YES;
-    CAMetalLayer *layer = [CAMetalLayer layer];
-    _device = MTLCreateSystemDefaultDevice();
-    if (!_device) {
-        NSLog(@"Rill: no Metal device");
-        return NO;
-    }
-    layer.device = _device;
-    layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
-    layer.framebufferOnly = YES;
-    layer.maximumDrawableCount = RILL_MAX_FRAMES_IN_FLIGHT;
+    /* ADR 0006: MTKView is the layer host only. drawInMTKView does not present. */
+    self.colorPixelFormat = MTLPixelFormatBGRA8Unorm;
+    self.clearColor = MTLClearColorMake(0.07, 0.07, 0.07, 1.0);
+    self.framebufferOnly = YES;
+    self.paused = YES;
+    self.enableSetNeedsDisplay = NO;
+    self.autoResizeDrawable = YES;
+    self.preferredFramesPerSecond = 120;
+    self.delegate = self;
+
+    CAMetalLayer *layer = (CAMetalLayer *)self.layer;
+    layer.opaque = YES;
+    layer.maximumDrawableCount = RILL_MAX_DRAWABLES;
     layer.displaySyncEnabled = YES; /* the recorded number is what a person sees */
-    self.layer = layer;
+    layer.allowsNextDrawableTimeout = YES;
+    layer.presentsWithTransaction = NO;
 
     _queue = [_device newCommandQueue];
 
@@ -283,8 +337,19 @@ typedef struct {
     return YES;
 }
 
-/* Event-driven: the socket wakes us, not a clock (ADR 0003 D2). */
+/* Event-driven: the socket wakes us, not a clock (ADR 0003 D2).
+ * Negative control T-NFR / timer_pump restores the 60 Hz NSTimer. */
 - (void)armSocketSource {
+    const char *mut = getenv("RILL_MUTATE");
+    if (mut && strcmp(mut, "timer_pump") == 0) {
+        _timerPump = YES;
+        _pumpTimer = [NSTimer scheduledTimerWithTimeInterval:(1.0 / 60.0)
+                                                      target:self
+                                                    selector:@selector(onSocketReadable)
+                                                    userInfo:nil
+                                                     repeats:YES];
+        return;
+    }
     int fd = rill_client_socket_fd(_client);
     if (fd < 0) {
         return;
@@ -307,6 +372,68 @@ typedef struct {
     if (fed > 0) {
         [self renderFrame];
     }
+}
+
+- (void)viewDidMoveToWindow {
+    [super viewDidMoveToWindow];
+    self.paused = YES;
+    if (self.window) {
+        [self pinPresentRefresh];
+        CAMetalLayer *layer = (CAMetalLayer *)self.layer;
+        layer.opaque = YES;
+        [self armDisplayLink];
+    } else if (_displayLink) {
+        _displayLink.paused = YES;
+    }
+}
+
+- (void)pinPresentRefresh {
+    NSInteger hz = 60;
+    if (@available(macOS 12.0, *)) {
+        NSScreen *screen = self.window.screen ?: NSScreen.mainScreen;
+        NSInteger max = (NSInteger)screen.maximumFramesPerSecond;
+        if (max > 0) {
+            hz = max;
+        }
+    }
+    self.preferredFramesPerSecond = hz;
+    if (@available(macOS 14.0, *)) {
+        if (_displayLink) {
+            float f = (float)hz;
+            _displayLink.preferredFrameRateRange = CAFrameRateRangeMake(f, f, f);
+        }
+    }
+}
+
+- (void)armDisplayLink {
+    if (_displayLink) {
+        _displayLink.paused = NO;
+        return;
+    }
+    if (@available(macOS 14.0, *)) {
+        _displayLink = [self displayLinkWithTarget:self selector:@selector(onDisplayLink:)];
+        NSInteger hz = self.preferredFramesPerSecond > 0 ? self.preferredFramesPerSecond : 120;
+        float f = (float)hz;
+        _displayLink.preferredFrameRateRange = CAFrameRateRangeMake(f, f, f);
+        [_displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+    }
+}
+
+- (void)onDisplayLink:(CADisplayLink *)link {
+    _targetPresentTime = link.targetTimestamp;
+}
+
+/* Same-stack echo: the key event is the wake. A second dispatch_source turn
+ * is what made key_to_commit ~2.5ms. poll is bounded and only waits for the
+ * attach socket, not a clock. */
+
+- (void)drawInMTKView:(MTKView *)view {
+    (void)view;
+}
+
+- (void)mtkView:(MTKView *)view drawableSizeWillChange:(CGSize)size {
+    (void)view;
+    (void)size;
 }
 
 // ---------------------------------------------------------------- atlas
@@ -496,7 +623,6 @@ static inline vector_float4 rgba(uint32_t c) {
         }
     }
 
-    /* Cursor as one extra instance, drawn last so blending puts it on top. */
     NSUInteger drawCount = (NSUInteger)grid.cols * (NSUInteger)grid.rows;
     if (grid.cursor_visible && drawCount < _instanceCount) {
         RillInstance *cur = &_instances[drawCount];
@@ -507,33 +633,76 @@ static inline vector_float4 rgba(uint32_t c) {
         drawCount += 1;
     }
 
-    [self presentInstances:drawCount cols:grid.cols rows:grid.rows grid:&grid];
+    _lastDrawCount = drawCount;
+    _lastDrawCols = grid.cols;
+    _lastDrawRows = grid.rows;
+    _sentinelInMirror = NO;
+    if (_sentinel.armed && grid.cells && grid.ncells > 0) {
+        size_t idx = (size_t)_sentinel.row * grid.cols + _sentinel.col;
+        if (idx < grid.ncells && grid.cells[idx].codepoint == _sentinel.codepoint) {
+            _sentinelInMirror = YES;
+        }
+    }
+    [self presentEcho];
 }
 
-- (void)presentInstances:(NSUInteger)count
-                    cols:(uint16_t)cols
-                    rows:(uint16_t)rows
-                    grid:(const RillPodGrid *)grid {
+- (void)presentEcho {
     CAMetalLayer *layer = (CAMetalLayer *)self.layer;
-    CGFloat scale = self.window.backingScaleFactor > 0 ? self.window.backingScaleFactor : 1.0;
-    CGSize drawableSize = CGSizeMake(cols * _cellW * scale, rows * _cellH * scale);
-    if (drawableSize.width < 1 || drawableSize.height < 1) {
+    if (!layer || _lastDrawCount == 0) {
         return;
     }
-    if (!CGSizeEqualToSize(layer.drawableSize, drawableSize)) {
-        layer.drawableSize = drawableSize;
+    layer.opaque = YES;
+    CGFloat scale = self.window.backingScaleFactor > 0 ? self.window.backingScaleFactor : 1.0;
+    if (layer.contentsScale != scale) {
+        layer.contentsScale = scale;
     }
-
+    CGSize backing = [self convertSizeToBacking:self.bounds.size];
+    if (backing.width >= 1 && backing.height >= 1 &&
+        !CGSizeEqualToSize(layer.drawableSize, backing)) {
+        layer.drawableSize = backing;
+        self.drawableSize = backing;
+    }
     dispatch_semaphore_wait(_inflight, DISPATCH_TIME_FOREVER);
-    id<MTLBuffer> buf = _instanceBuffers[_frameIndex % RILL_MAX_FRAMES_IN_FLIGHT];
-    _frameIndex++;
-    memcpy(buf.contents, _instances, count * sizeof(RillInstance));
-
     id<CAMetalDrawable> drawable = [layer nextDrawable];
     if (!drawable) {
         dispatch_semaphore_signal(_inflight);
         return;
     }
+    [self presentOnDrawable:drawable];
+}
+
+- (void)noteDrawablePresented:(double)presented {
+    if (!_nfrRunning || presented <= 0) {
+        return;
+    }
+    if (_lastAnyPresented > 0) {
+        double dt = (presented - _lastAnyPresented) * 1000.0;
+        if (dt > 0 && dt < 500) {
+            [_presentCadence addObject:@(dt)];
+        }
+    }
+    _lastAnyPresented = presented;
+}
+
+- (void)presentOnDrawable:(id<CAMetalDrawable>)drawable {
+    NSUInteger count = _lastDrawCount;
+    uint16_t cols = _lastDrawCols;
+    BOOL carriesSentinel = _sentinelInMirror;
+    if (!drawable || count == 0 || !_instances || !_instanceBuffers[0]) {
+        dispatch_semaphore_signal(_inflight);
+        return;
+    }
+
+    CGFloat scale = self.window.backingScaleFactor > 0 ? self.window.backingScaleFactor : 1.0;
+    CGSize drawableSize = CGSizeMake(drawable.texture.width, drawable.texture.height);
+    if (drawableSize.width < 1 || drawableSize.height < 1) {
+        dispatch_semaphore_signal(_inflight);
+        return;
+    }
+
+    id<MTLBuffer> buf = _instanceBuffers[_frameIndex % RILL_MAX_FRAMES_IN_FLIGHT];
+    _frameIndex++;
+    memcpy(buf.contents, _instances, count * sizeof(RillInstance));
 
     RillUniforms u;
     u.viewport = (vector_float2){(float)drawableSize.width, (float)drawableSize.height};
@@ -559,38 +728,52 @@ static inline vector_float4 rgba(uint32_t c) {
           instanceCount:count];
     [enc endEncoding];
 
-    /* T-NFR's end timestamp. If this frame carries the sentinel glyph at the
-     * cell the cursor occupied, attribute its presentation to that keystroke
-     * (ADR 0003 D5). Measuring to `commit` instead would exclude the
-     * compositor — the part the user actually sees. */
-    BOOL carriesSentinel = NO;
-    if (_sentinel.armed && grid) {
-        size_t idx = (size_t)_sentinel.row * grid->cols + _sentinel.col;
-        if (idx < grid->ncells && grid->cells[idx].codepoint == _sentinel.codepoint) {
-            carriesSentinel = YES;
-        }
+    double keyTs = 0;
+    double commitTs = CACurrentMediaTime();
+    BOOL sample = carriesSentinel && _sentinel.armed;
+    if (sample) {
+        keyTs = _sentinel.keyTimestamp;
+        _sentinel.commitTime = commitTs;
+        _sentinel.armed = NO;
+        _sentinelInMirror = NO;
     }
-    if (carriesSentinel) {
-        double keyTs = _sentinel.keyTimestamp;
-        __weak TerminalView *weakSelf = self;
-        [drawable addPresentedHandler:^(id<MTLDrawable> d) {
-            double presented = d.presentedTime;
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [weakSelf sentinelPresentedAt:presented forKeyAt:keyTs];
-            });
-        }];
-        _sentinel.armed = NO; /* one attribution per keystroke */
-    }
-
     __weak TerminalView *weakSelf = self;
-    [cmd addCompletedHandler:^(id<MTLCommandBuffer> _Nonnull b) {
-        (void)b;
+    [drawable addPresentedHandler:^(id<MTLDrawable> d) {
+        double presented = d.presentedTime;
         TerminalView *s = weakSelf;
         if (s) {
             dispatch_semaphore_signal(s->_inflight);
         }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            TerminalView *view = weakSelf;
+            if (!view) {
+                return;
+            }
+            double prev = view->_lastAnyPresented;
+            [view noteDrawablePresented:presented];
+            if (sample) {
+                if (view->_samples.count < 8 && keyTs > 0) {
+                    double delta = prev > 0 ? (presented - prev) * 1000.0 : 0;
+                    fprintf(stderr,
+                            "T-NFR seg n=%lu key_to_commit=%.2fms "
+                            "commit_to_presented=%.2fms present_delta=%.2fms total=%.2fms\n",
+                            (unsigned long)view->_samples.count + 1,
+                            (commitTs - keyTs) * 1000.0,
+                            (presented - commitTs) * 1000.0,
+                            delta,
+                            (presented - keyTs) * 1000.0);
+                    fflush(stderr);
+                }
+                [view sentinelPresentedAt:presented forKeyAt:keyTs];
+            }
+        });
     }];
-    [cmd presentDrawable:drawable];
+    CFTimeInterval at = _targetPresentTime;
+    if (at > CACurrentMediaTime() + 0.0002) {
+        [cmd presentDrawable:drawable atTime:at];
+    } else {
+        [cmd presentDrawable:drawable];
+    }
     [cmd commit];
 }
 
@@ -617,12 +800,63 @@ static inline vector_float4 rgba(uint32_t c) {
     }
     if (rill_client_send_input(_client, bytes, len) != 0) {
         NSLog(@"Rill: send_input: %s", rill_client_last_error() ?: "error");
+        return;
+    }
+    [self paintEchoAfterInput];
+}
+
+- (void)paintEchoAfterInput {
+    if (_timerPump) {
+        return;
+    }
+    int fd = rill_client_socket_fd(_client);
+    CFTimeInterval deadline = CACurrentMediaTime() + 0.002;
+    for (;;) {
+        ptrdiff_t fed = rill_client_pump(_client);
+        if (fed < 0) {
+            return;
+        }
+        if (fed > 0) {
+            [self renderFrame];
+            return;
+        }
+        CFTimeInterval left = deadline - CACurrentMediaTime();
+        if (left <= 0 || fd < 0) {
+            return;
+        }
+        struct pollfd pfd = {.fd = fd, .events = POLLIN, .revents = 0};
+        int ms = (int)ceil(left * 1000.0);
+        if (ms < 1) {
+            ms = 0;
+        }
+        if (poll(&pfd, 1, ms) <= 0) {
+            return;
+        }
     }
 }
 
 /* ^C was untypeable in the previous build, which also made T-DROP unreachable
  * through the GUI (docs/SPIKE-0-AUDIT.md S3-8g). */
 - (void)keyDown:(NSEvent *)event {
+    if (_nfrRunning && _nfrMode == RillNfrModeHid) {
+        _nfrHidKeyDowns++;
+        if (_nfrHidKeyDowns == 1) {
+            fprintf(stderr, "T-NFR hid keyDown characters=%s keyCode=%u\n",
+                    event.characters.UTF8String ?: "", (unsigned)event.keyCode);
+            fflush(stderr);
+        }
+    }
+    if (_nfrRunning && _sentinel.armed && _sentinel.keyTimestamp == 0 && event.characters.length) {
+        unichar typed = [event.characters characterAtIndex:0];
+        if ((uint32_t)typed == _sentinel.codepoint) {
+            /* Map NSEvent.timestamp onto the presentedTime timebase
+             * (CACurrentMediaTime). Mixing boot-uptime with mach time produced
+             * negative intervals and a 100% discard run. */
+            NSTimeInterval uptime = NSProcessInfo.processInfo.systemUptime;
+            NSTimeInterval ca = CACurrentMediaTime();
+            _sentinel.keyTimestamp = event.timestamp + (ca - uptime);
+        }
+    }
     NSEventModifierFlags mods = event.modifierFlags;
     NSString *plain = event.charactersIgnoringModifiers;
 
@@ -679,6 +913,12 @@ static inline vector_float4 rgba(uint32_t c) {
 - (void)insertText:(id)string replacementRange:(NSRange)r {
     (void)r;
     NSString *s = [string isKindOfClass:[NSAttributedString class]] ? [string string] : string;
+    if (_nfrRunning && _sentinel.armed && _sentinel.keyTimestamp == 0 && s.length) {
+        unichar typed = [s characterAtIndex:0];
+        if ((uint32_t)typed == _sentinel.codepoint) {
+            _sentinel.keyTimestamp = CACurrentMediaTime();
+        }
+    }
     NSData *d = [s dataUsingEncoding:NSUTF8StringEncoding];
     [self sendBytes:d.bytes length:d.length];
 }
@@ -706,19 +946,43 @@ static inline vector_float4 rgba(uint32_t c) {
         return;
     }
     double ms = (presented - keyTs) * 1000.0;
-    if (ms <= 0 || ms > 5000) {
-        _discards++; /* clock skew or a lost attribution; never a 0ms sample */
+    if (keyTs <= 0 || ms <= 0 || ms > 5000) {
+        _discards++; /* no keyDown, clock skew, or a lost attribution */
     } else {
         [_samples addObject:@(ms)];
-    }
-    if (_nfrRemaining > 0) {
-        _nfrRemaining--;
+        if (_samples.count % 100 == 0) {
+            fprintf(stderr, "T-NFR progress samples=%lu discarded=%u\n",
+                    (unsigned long)_samples.count, _discards);
+            fflush(stderr);
+        }
     }
     [self injectNextSampleIfNeeded];
 }
 
 - (void)injectNextSampleIfNeeded {
-    if (!_nfrRunning || _nfrRemaining == 0) {
+    if (!_nfrRunning) {
+        return;
+    }
+    if (_samples.count >= _nfrTarget) {
+        _nfrRunning = NO;
+        return;
+    }
+    /* Fail-fast: HID never reached AppKit. */
+    if (_samples.count == 0 && _discards >= 20) {
+        fprintf(stderr,
+                "T-NFR: 20 HID keys posted, 0 presented, keyDown=%u. "
+                "Stopping instead of waiting out the 180s deadline.\n",
+                _nfrHidKeyDowns);
+        fflush(stderr);
+        _nfrFailed = YES;
+        _nfrRunning = NO;
+        return;
+    }
+    /* At most 2% discards of a 1000-accept run (ADR 0003 D6). */
+    if (_discards > 20) {
+        fprintf(stderr, "T-NFR: %u discards before 1000 accepts (cap 20).\n", _discards);
+        fflush(stderr);
+        _nfrFailed = YES;
         _nfrRunning = NO;
         return;
     }
@@ -728,6 +992,28 @@ static inline vector_float4 rgba(uint32_t c) {
         _nfrFailed = YES;
         _nfrRunning = NO;
         return;
+    }
+    /* A wrapping line is a discard under D6. Kill the line before the
+     * cursor reaches the last cells so the oracle stays on one row. */
+    if (_cols > 4 && col + 2 >= _cols) {
+        uint8_t u = 0x15; /* Ctrl-U: DATA, not a control RPC */
+        [self sendBytes:&u length:1];
+        for (int i = 0; i < 40; i++) {
+            rill_client_pump(_client);
+            uint16_t c2 = 0, r2 = 0;
+            if (rill_client_cursor(_client, &c2, &r2) == 0 && c2 + 2 < _cols) {
+                col = c2;
+                row = r2;
+                break;
+            }
+            [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
+                                     beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.002]];
+        }
+        if (rill_client_cursor(_client, &col, &row) != 0) {
+            _nfrFailed = YES;
+            _nfrRunning = NO;
+            return;
+        }
     }
     uint32_t existing = rill_client_cell_codepoint(_client, col, row);
 
@@ -742,26 +1028,30 @@ static inline vector_float4 rgba(uint32_t c) {
         }
     }
 
+    _nfrSeq++;
+    uint32_t seq = _nfrSeq;
     _sentinel.armed = YES;
     _sentinel.codepoint = cp;
     _sentinel.col = col;
     _sentinel.row = row;
     _sentinel.keyTimestamp = 0;
+    _sentinelInMirror = NO;
 
     [self injectCodepoint:cp];
 
     /* If nothing presents within 500ms the sample is discarded, not silently
      * dropped: discards above 2% fail the run (ADR 0003 D6). */
     __weak TerminalView *weakSelf = self;
-    uint32_t at = _nfrRemaining;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
                        TerminalView *s = weakSelf;
-                       if (s && s->_nfrRunning && s->_nfrRemaining == at && s->_sentinel.armed) {
+                       if (s && s->_nfrRunning && s->_nfrSeq == seq && s->_sentinel.armed) {
                            s->_sentinel.armed = NO;
                            s->_discards++;
-                           if (s->_nfrRemaining > 0) {
-                               s->_nfrRemaining--;
+                           if (s->_discards % 10 == 0) {
+                               fprintf(stderr, "T-NFR progress samples=%lu discarded=%u\n",
+                                       (unsigned long)s->_samples.count, s->_discards);
+                               fflush(stderr);
                            }
                            [s injectNextSampleIfNeeded];
                        }
@@ -772,8 +1062,13 @@ static inline vector_float4 rgba(uint32_t c) {
     NSString *s = [NSString stringWithFormat:@"%C", (unichar)cp];
 
     if (_nfrMode == RillNfrModeHid) {
-        CGEventRef down = CGEventCreateKeyboardEvent(NULL, 0, true);
-        CGEventRef up = CGEventCreateKeyboardEvent(NULL, 0, false);
+        CGKeyCode vk = rill_vk_ansi_letter(cp);
+        CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
+        CGEventRef down = CGEventCreateKeyboardEvent(src, vk, true);
+        CGEventRef up = CGEventCreateKeyboardEvent(src, vk, false);
+        if (src) {
+            CFRelease(src);
+        }
         if (!down || !up) {
             _nfrFailed = YES;
             _nfrRunning = NO;
@@ -784,12 +1079,24 @@ static inline vector_float4 rgba(uint32_t c) {
         UniChar u = (UniChar)cp;
         CGEventKeyboardSetUnicodeString(down, 1, &u);
         CGEventKeyboardSetUnicodeString(up, 1, &u);
-        /* Start timestamp: when the window server created the event, not when
-         * our code first saw it. */
-        _sentinel.keyTimestamp = (double)CGEventGetTimestamp(down) / 1e9;
+        /* Session tap only (ADR 0003 D7). PostToPid in the same shot typed
+         * twice, wrapped the shell line, and discarded the late samples. */
+        [NSApp activateIgnoringOtherApps:YES];
+        [self.window makeKeyAndOrderFront:nil];
+        [self.window makeFirstResponder:self];
         CGEventPost(kCGSessionEventTap, down);
-        CGEventPost(kCGSessionEventTap, up);
         CFRelease(down);
+        NSDate *until = [NSDate dateWithTimeIntervalSinceNow:0.002];
+        while (_sentinel.keyTimestamp == 0 && [until timeIntervalSinceNow] > 0) {
+            NSEvent *queued = [NSApp nextEventMatchingMask:NSEventMaskAny
+                                                 untilDate:until
+                                                    inMode:NSDefaultRunLoopMode
+                                                   dequeue:YES];
+            if (queued) {
+                [NSApp sendEvent:queued];
+            }
+        }
+        CGEventPost(kCGSessionEventTap, up);
         CFRelease(up);
         return;
     }
@@ -822,32 +1129,85 @@ static inline vector_float4 rgba(uint32_t c) {
     (void)layer;
 
     [_samples removeAllObjects];
+    [_presentCadence removeAllObjects];
+    _lastAnyPresented = 0;
     _discards = 0;
-    _nfrRemaining = count;
+    _nfrTarget = count;
+    _nfrSeq = 0;
     _nfrMode = mode;
     _nfrRunning = YES;
     _nfrFailed = NO;
+    _nfrHidKeyDowns = 0;
+
+    if (mode == RillNfrModeHid) {
+        [NSApp activateIgnoringOtherApps:YES];
+        [self.window makeKeyAndOrderFront:nil];
+        [self.window makeFirstResponder:self];
+    }
 
     rill_client_begin_warm_path_audit(_client);
 
-    /* Let the shell settle before the first sample. */
+    CAMetalLayer *metal = (CAMetalLayer *)self.layer;
+    fprintf(stderr,
+            "present: toggleFullScreen + opaque echo + same-stack pump "
+            "fullscreen=%d opaque=%d drawable=%.0fx%.0f timer_pump=%d\n",
+            (self.window.styleMask & NSWindowStyleMaskFullScreen) ? 1 : 0,
+            metal.opaque ? 1 : 0, metal.drawableSize.width, metal.drawableSize.height,
+            _timerPump ? 1 : 0);
+    fflush(stderr);
+    [self pinPresentRefresh];
+    self.paused = YES;
+    [NSCursor hide];
+
+    /* Let the shell settle, then serialize ~36 vsync presents so ProMotion is
+     * at 120 Hz before the first HID sample (early segs were 16.67ms). */
     for (int i = 0; i < 20; i++) {
         rill_client_pump(_client);
     }
-    [self renderFrame];
+    for (int i = 0; i < 36; i++) {
+        [self renderFrame];
+    }
 
     [self injectNextSampleIfNeeded];
 
+    fprintf(stderr, "T-NFR measuring mode=%s count=%u\n",
+            mode == RillNfrModeHid ? "hid" : "app", count);
+    fflush(stderr);
+
     NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:180];
     while (_nfrRunning && [deadline timeIntervalSinceNow] > 0) {
-        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
-                                 beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+        NSEvent *e = [NSApp nextEventMatchingMask:NSEventMaskAny
+                                        untilDate:[NSDate dateWithTimeIntervalSinceNow:0.0005]
+                                           inMode:NSDefaultRunLoopMode
+                                          dequeue:YES];
+        if (e) {
+            [NSApp sendEvent:e];
+        }
+        if (_timerPump) {
+            continue;
+        }
+        ptrdiff_t fed = rill_client_pump(_client);
+        if (fed > 0) {
+            [self renderFrame];
+        }
     }
     _nfrRunning = NO;
+    [NSCursor unhide];
 
     report.warm_path_violations = rill_client_end_warm_path_audit(_client);
     report.samples = (uint32_t)_samples.count;
     report.discarded = _discards;
+
+    if (_presentCadence.count > 0) {
+        NSArray<NSNumber *> *cadence =
+            [_presentCadence sortedArrayUsingSelector:@selector(compare:)];
+        NSUInteger cn = cadence.count;
+        double p50 = cadence[(NSUInteger)((cn - 1) * 0.50)].doubleValue;
+        double p95 = cadence[(NSUInteger)((cn - 1) * 0.95)].doubleValue;
+        fprintf(stderr, "T-NFR present_cadence p50=%.2fms (~%.0fHz) p95=%.2fms n=%lu\n",
+                p50, p50 > 0 ? 1000.0 / p50 : 0, p95, (unsigned long)cn);
+        fflush(stderr);
+    }
 
     if (_nfrFailed || _samples.count == 0) {
         report.ok = 0;

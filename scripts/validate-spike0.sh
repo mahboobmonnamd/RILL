@@ -105,6 +105,10 @@ run_gate "LINT-PLANES" sh scripts/lint-planes.sh
 
 # ------------------------------------------------------------------ library tier
 run_gate "T-BYTES-chip"   cargo test -p rill-chip0 --offline t_bytes -- --nocapture
+# Isolate ASan: instrumented C objects in the default target dir break later
+# rilld / persist_e2e links (rustc -nodefaultlibs does not pull clang_rt).
+run_gate "T-BYTES-asan"   env CARGO_TARGET_DIR="$TMP/asan-target" RILL_ASAN=1 \
+  cargo test -p rill-chip0 --offline t_bytes -- --nocapture
 run_gate "T-BYTES-kernel" cargo test -p rill-kernel --offline t_bytes -- --nocapture
 run_gate "T-DROP"         cargo test -p rill-kernel --offline t_drop -- --test-threads=1 --nocapture
 run_gate "T-RESIZE"       cargo test -p rill-kernel --offline t_resize -- --nocapture
@@ -142,40 +146,105 @@ require "packaged rilld bound $SOCK" test -S "$SOCK"
 
 # ADR 0003 D7: hid mode closes the gate; app mode is a CI diagnostic and is
 # marked as not gate-closing. Neither is skipped.
+# Launch the .app through LaunchServices so TCC Accessibility attaches to
+# the bundle. Direct `Contents/MacOS/Rill` is not the identity the user
+# enabled; `open` exits 0 even when the app does not, so grade the report.
 NFR_MODE="${RILL_NFR_MODE:-hid}"
-run_gate "T-NFR" env RILL_SOCKET="$SOCK" "$GUI" "--nfr-key=$NFR_MODE"
+APP="$ROOT/dist/Rill.app"
+run_t_nfr() {
+  nfr_out="$TMP/T-NFR.app.out"
+  nfr_err="$TMP/T-NFR.app.err"
+  : > "$nfr_out"
+  : > "$nfr_err"
+  # Never `open -W`. On GitHub-hosted macos-14, CAMetalLayer nextDrawable can
+  # block forever and -W then never returns, so the job sits until the 90
+  # minute timeout — after every gate CI can actually close already passed
+  # (ADR 0009 D4). Poll the report files; reap the app at the deadline.
+  timeout_sec="${RILL_NFR_TIMEOUT_SEC:-200}"
+  if [ "${RILL_NFR_OPTIONAL:-}" = 1 ]; then
+    timeout_sec="${RILL_NFR_TIMEOUT_SEC:-45}"
+  fi
+  echo "T-NFR: launching $APP --nfr-key=$NFR_MODE (bound ${timeout_sec}s)"
+  if [ -n "${RILL_MUTATE:-}" ]; then
+    open -n --stdout "$nfr_out" --stderr "$nfr_err" \
+      --env "RILL_SOCKET=$SOCK" --env "RILL_MUTATE=$RILL_MUTATE" \
+      "$APP" --args "--nfr-key=$NFR_MODE"
+  else
+    open -n --stdout "$nfr_out" --stderr "$nfr_err" \
+      --env "RILL_SOCKET=$SOCK" "$APP" --args "--nfr-key=$NFR_MODE"
+  fi
+  elapsed=0
+  while [ "$elapsed" -lt "$timeout_sec" ]; do
+    if grep -q '^T-NFR mode=' "$nfr_out" 2>/dev/null; then
+      break
+    fi
+    if grep -q '^T-NFR: ' "$nfr_err" 2>/dev/null; then
+      sleep 1
+      break
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+    if [ $((elapsed % 10)) -eq 0 ]; then
+      echo "T-NFR: still waiting (${elapsed}s/${timeout_sec}s)"
+    fi
+  done
+  if [ "$elapsed" -ge "$timeout_sec" ]; then
+    echo "T-NFR: timed out after ${timeout_sec}s (no panel or nextDrawable blocked)" >&2
+  fi
+  killall -TERM Rill 2>/dev/null || true
+  sleep 1
+  killall -KILL Rill 2>/dev/null || true
+  cat "$nfr_out"
+  cat "$nfr_err" >&2
+  if grep -q '^T-NFR: ' "$nfr_err"; then
+    return 1
+  fi
+  grep -q '^T-NFR mode=' "$nfr_out"
+}
+nfr_fail_before=$ANY_FAIL
+run_gate "T-NFR" run_t_nfr
+# GitHub-hosted macos-14 has no panel. Record T-NFR but do not fail the suite
+# for it (ADR 0009 D4). Other gates still fail the job.
+if [ "${RILL_NFR_OPTIONAL:-}" = 1 ]; then
+  ANY_FAIL=$nfr_fail_before
+fi
 
 # --------------------------------------------------------------- negative controls
 if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
   echo
   echo "== negative controls (ADR 0002 D3) =="
   # Mutations live behind the `mutate` cargo feature, so shipping builds carry
-  # no mutation code at all (ADR 0002 D3).
-  MUT="--features mutate"
-  # shellcheck disable=SC2086
-  run_control "T-BYTES-chip" lossy_feed \
-    cargo test -p rill-chip0 --offline $MUT t_bytes
-  # shellcheck disable=SC2086
+  # no mutation code at all (ADR 0002 D3). Pass `--features` and `mutate` as
+  # separate argv words: a single `--features mutate` token is a cargo error
+  # (zsh does not split `$MUT`, and that red is not a demonstrated mutation).
+  run_control "T-BYTES-chip" drop_high_bytes \
+    cargo test -p rill-chip0 --offline --features mutate t_bytes
   run_control "T-DROP" drop_on_full \
-    cargo test -p rill-kernel --offline $MUT t_drop -- --test-threads=1
-  # shellcheck disable=SC2086
+    cargo test -p rill-kernel --offline --features mutate t_drop -- --test-threads=1
   run_control "T-RESIZE" resize_before_data \
-    cargo test -p rill-kernel --offline $MUT t_resize
-  # shellcheck disable=SC2086
+    cargo test -p rill-kernel --offline --features mutate t_resize
   run_control "T-EXIT-detach" clear_outbound_on_detach \
-    cargo test -p rilld --offline $MUT t_exit_across_detach
-  # shellcheck disable=SC2086
+    cargo test -p rilld --offline --features mutate t_exit_across_detach
   run_control "T-ATTACH" accept_replaces_client \
-    cargo test -p rilld --offline $MUT t_attach -- --test-threads=1
-  # shellcheck disable=SC2086
+    cargo test -p rilld --offline --features mutate t_attach -- --test-threads=1
   run_control "T-RESYNC" no_resync \
-    cargo test -p rilld --offline $MUT t_resync -- --test-threads=1
-  run_control "T-NFR" timer_pump \
-    env RILL_SOCKET="$SOCK" "$GUI" "--nfr-key=$NFR_MODE"
-  # T-KILL and T-SPAWN mutations require an ObjC rebuild; reviewer applies them
-  # and pastes the red (TEST-CASES). Recorded as manual, not asserted here.
-  printf '{"gate":"T-KILL","mutation":"drop_POSIX_SPAWN_SETSID","went_red":null}\n'  >> "$CONTROLS"
-  printf '{"gate":"T-SPAWN","mutation":"openpty_in_main_m","went_red":null}\n'      >> "$CONTROLS"
+    cargo test -p rilld --offline --features mutate t_resync -- --test-threads=1
+  if [ "${RILL_NFR_OPTIONAL:-}" = 1 ]; then
+    printf '{"gate":"T-NFR","mutation":"timer_pump","went_red":null}\n' >> "$CONTROLS"
+  else
+    run_control "T-NFR" timer_pump run_t_nfr
+  fi
+  run_control "T-KILL" drop_POSIX_SPAWN_SETSID \
+    env RILL_RILLD_BIN="$RILLD" RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rilld --offline --test persist_e2e -- --nocapture
+  run_t_spawn_openpty() {
+    mut_app="$TMP/Rill-openpty.app"
+    RILL_MUTATE=openpty_in_main_m RILL_APP="$mut_app" sh scripts/package-macos.sh
+    RILL_GUI_BIN="$mut_app/Contents/MacOS/Rill" \
+      cargo test -p rill-host --offline --test t_spawn \
+      t_spawn_gui_binary_does_not_import_pty_creation_symbols -- --nocapture
+  }
+  run_control "T-SPAWN" openpty_in_main_m run_t_spawn_openpty
 fi
 
 # ------------------------------------------------------------------- evidence

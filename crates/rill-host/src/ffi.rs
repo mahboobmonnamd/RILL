@@ -172,7 +172,10 @@ pub unsafe extern "C" fn rill_client_font_family(client: *const Client) -> *cons
     }
     BUF.with(|b| {
         *b.borrow_mut() = CString::new(c.font_family()).ok();
-        b.borrow().as_ref().map(|s| s.as_ptr()).unwrap_or(ptr::null())
+        b.borrow()
+            .as_ref()
+            .map(|s| s.as_ptr())
+            .unwrap_or(ptr::null())
     })
 }
 

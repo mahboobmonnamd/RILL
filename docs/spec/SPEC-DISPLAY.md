@@ -1,7 +1,8 @@
 # SPEC-DISPLAY — host window and renderer (Lane D)
 
-- **Status:** Draft for Spike 0 remediation — 2026-08-16
-- **Authority:** [ADR 0003](../adr/0003-display-pipeline.md)
+- **Status:** Draft for Spike 0 remediation — 2026-08-17
+- **Authority:** [ADR 0003](../adr/0003-display-pipeline.md),
+  [ADR 0009](../adr/0009-direct-to-display-echo.md)
 - **Code:** `host/macos/`, `crates/rill-host`
 - **Gates:** T-NFR, T-SPAWN, T-KILL, T-RESIZE
 
@@ -27,14 +28,21 @@
 
 ## 3. Warm path
 
-- Event-driven. A `DISPATCH_SOURCE_TYPE_READ` on the attach socket drives
-  read → feed → damaged-instance rebuild → present.
-- No `NSTimer`. No polling interval anywhere on the keystroke path
-  (ADR 0003 D2).
+- Event-driven feed. A `DISPATCH_SOURCE_TYPE_READ` on the attach socket drives
+  read → feed → damaged-instance rebuild (ADR 0003 D2).
+- The Spike 0 window is titled and enters a fullscreen Space via
+  `toggleFullScreen:` (ADR 0009). The layer is opaque. A borderless cover of
+  `screen.frame` is not this surface.
+- Present is echo-only `nextDrawable`, one in flight until `presentedTime`.
+  A `CADisplayLink` supplies `targetTimestamp` and does not take a drawable.
+  After `send_input`, the host may `poll` the attach socket for ≤2 ms and
+  paint on that stack (ADR 0009 D1).
+- No `NSTimer`. No 60 Hz polling interval on the keystroke path.
 - `Client::send` MUST NOT toggle socket blocking mode per call (audit S3-8d).
   The socket stays non-blocking; a partial write queues the remainder and
   completes on writability.
-- Keystroke writes MUST NOT block the UI thread.
+- Keystroke writes MUST NOT block the UI thread. The ≤2 ms attach-socket
+  `poll` after send (ADR 0009 D1) waits for echo, not for the write.
 
 ## 4. Renderer
 
@@ -48,12 +56,12 @@ Per ADR 0003 D1:
 - A single instanced draw. Fragment shader returns
   `mix(bg, fg, atlas.r)`; underline and strikethrough derive from cell-local UV
   and `flags`. Cursor is one extra instance.
-- Triple-buffered instance buffers behind a semaphore of 3. **No allocation on
-  the render path** — no per-frame `MTLTexture`, no per-frame `CGBitmapContext`
-  (audit S3-8h).
+- One instance buffer in flight behind a semaphore of 1 (ADR 0009). **No
+  allocation on the render path** — no per-frame `MTLTexture`, no per-frame
+  `CGBitmapContext` (audit S3-8h).
 - Only damaged rows are rewritten (ADR 0003 D3).
-- `CAMetalLayer.maximumDrawableCount = 3`; `displaySyncEnabled` on for gate
-  runs.
+- `CAMetalLayer.maximumDrawableCount = 2`; `displaySyncEnabled` on for gate
+  runs. At most one present outstanding (ADR 0009). Do not keep-alive present.
 - Colour emoji render as an explicit tofu box and are **counted and reported**.
   Silent mis-rendering is not acceptable; a BGRA atlas is Milestone 1.
 
@@ -106,3 +114,7 @@ exists in a test build is not measuring the shipped app.
 
 Tabs, splits, sidebar, Blocks, themes, scrollback UI, mouse reporting, selection,
 search, ligatures, colour emoji, and any second window.
+
+ASAP keep-alive presents, CA pin, `CAMetalDisplayLink`, and a borderless
+cover of `screen.frame` are not the closer (ADR 0004–0008). The closer is
+ADR 0009. Do not flatten the oracle (ADR 0003 D5–D8).

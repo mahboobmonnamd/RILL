@@ -26,7 +26,7 @@ RILL starts from the lock, not from that composition. This repo does not depend 
 
 One window. One runtime. One PTY. Chip 0 display. Framed attach. Quit/SIGKILL keeps the child. Reopen paints via a cold-path resync. Named tests in [SPIKE-0](SPIKE-0.md).
 
-## 4. Out of scope until Spike 0 is Proven
+## 4. Out of scope until Milestone 1+ (Spike 0 is Proven)
 
 - Sidebar, tabs, splits, Blocks, themes
 - Agents, conversations, scheduler, natural-language routing
@@ -76,5 +76,5 @@ A green test that was never shown to fail is not evidence. The 2026-08-16 run
 that reported eight of nine gates Proven is withdrawn; see
 [SPIKE-0-AUDIT](SPIKE-0-AUDIT.md).
 
-If it is not butter: **stop.** Do not add agents to hide the miss, and do not
-re-cut the instrument to flatter it.
+If a later NFR-KEY run misses: **stop that surface.** Do not add agents to hide
+the miss, and do not re-cut the instrument to flatter it.

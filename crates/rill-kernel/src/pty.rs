@@ -47,10 +47,6 @@ pub struct Pty {
 }
 
 impl Pty {
-    pub fn spawn(shell: &str, args: &[&str], size: Winsize) -> Result<Self, Error> {
-        Self::spawn_with(shell, args, size, Discipline::Interactive)
-    }
-
     pub fn spawn_with(
         shell: &str,
         args: &[&str],
@@ -155,8 +151,13 @@ impl Pty {
             return Ok(0);
         }
         // SAFETY: fd is owned; buf is a valid mutable slice.
-        let n =
-            unsafe { libc::read(self.master.as_raw_fd(), buf.as_mut_ptr() as *mut _, buf.len()) };
+        let n = unsafe {
+            libc::read(
+                self.master.as_raw_fd(),
+                buf.as_mut_ptr() as *mut _,
+                buf.len(),
+            )
+        };
         if n < 0 {
             let err = std::io::Error::last_os_error();
             if err.kind() == std::io::ErrorKind::WouldBlock
@@ -188,14 +189,42 @@ impl Pty {
 
     /// Intentional teardown. Nothing else may kill the child — in particular
     /// not `Drop` (SPEC-KERNEL §2, audit S3-3).
+    ///
+    /// Kill-wait is bounded (production bar). An unbounded `Child::wait` after
+    /// `kill` hung T-RESIZE for minutes: the child had `setsid`, and a stopped
+    /// or already-reaped pid made `wait` a parking lot. `try_wait` is WNOHANG.
     pub fn terminate(&mut self) -> Result<(), Error> {
         if self.reaped.is_some() {
             return Ok(());
         }
-        self.child.kill().map_err(Error::Io)?;
-        let st = self.child.wait().map_err(Error::Io)?;
-        self.reaped = Some(st.into_raw());
-        Ok(())
+        let pid = self.child.id() as i32;
+        // SAFETY: pid is the session leader we created in pre_exec; killing the
+        // group reaps grandchildren (`sleep` in a `while` loop) as well.
+        unsafe {
+            libc::kill(-pid, libc::SIGKILL);
+            libc::kill(pid, libc::SIGKILL);
+        }
+        // Hangup the slave. A child blocked on the PTY can sit in D-state
+        // through SIGKILL until the master is gone.
+        let _closed = std::mem::replace(
+            &mut self.master,
+            File::open("/dev/null").map_err(Error::Io)?,
+        );
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            match self.child.try_wait()? {
+                Some(st) => {
+                    self.reaped = Some(st.into_raw());
+                    return Ok(());
+                }
+                None => {
+                    if std::time::Instant::now() >= deadline {
+                        return Err(Error::Pty("terminate wait timed out"));
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+            }
+        }
     }
 }
 
