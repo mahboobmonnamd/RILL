@@ -11,7 +11,7 @@ mod ring;
 mod session;
 
 pub use error::Error;
-pub use kernel::{Kernel, SessionId};
+pub use kernel::{GraphEvent, GraphEventKind, Kernel, LeafLayout, SessionId};
 pub use pty::{Discipline, Winsize};
 pub use ring::ByteRing;
-pub use session::{IoEvent, Session};
+pub use session::{InputDelivery, IoEvent, Session};

@@ -60,7 +60,8 @@ so. Fixing the instrument and fixing the renderer are the same decision.
 
 Colour emoji (`sbix`/`CBDT`) do not fit an R8 atlas. Spike 0 renders them as an
 explicit tofu box and **records the limitation in the gate output**. Silent
-mis-rendering is not acceptable; a second BGRA atlas is Milestone 1 work.
+mis-rendering is not acceptable; a second BGRA atlas is later display work,
+not the M1 session-graph slice ([ADR 0014](0014-m1-first-slice-closes.md) D4).
 
 ### D2 — The warm path is event-driven, not polled
 

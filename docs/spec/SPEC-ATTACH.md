@@ -3,10 +3,11 @@
 - **Status:** Accepted for Spike 0 Proven clauses — 2026-08-17
   ([ADR 0010](../adr/0010-spike-0-closes.md)). Written 2026-08-16 as the
   remediation draft.
-- **Authority:** [ADR 0001](../adr/0001-session-operating-system.md) §2, §5, §6
+- **Authority:** [ADR 0001](../adr/0001-session-operating-system.md) §2, §5, §6,
+  [ADR 0015](../adr/0015-m1-persist-remainder.md) (protocol + observe)
 - **Crate:** `crates/rill-attach`
 - **Gates:** T-ATTACH, T-EXIT, T-RESIZE, T-DROP, T-NFR (control-RPC clause) —
-  **Proven**
+  **Proven**. T-ATTACH-PROTO, T-GRAPH-OBSERVE — persist remainder.
 
 ## 1. Transport
 
@@ -34,10 +35,14 @@
 | `CREDIT` | 2 | GUI → kernel | `u32` bytes granted |
 | `RESIZE` | 3 | GUI → kernel | `cols u16, rows u16, px_w u16, px_h u16` |
 | `EXIT` | 4 | kernel → GUI | `i32` raw wait status |
-| `ATTACH` | 5 | GUI → kernel | `generation u64`; optional `session_id u64` (16-byte payload). 8 bytes is Spike 0: default leaf. |
+| `ATTACH` | 5 | GUI → kernel | `generation u64`; optional `session_id u64`; optional `protocol u8` + `flags u8` (18-byte). 8 bytes is Spike 0: default leaf. |
 | `REFUSED` | 6 | kernel → GUI | `u8` reason |
 
-Reasons: `1 AlreadyAttached`, `2 Invalid`.
+Reasons: `1 AlreadyAttached`, `2 Invalid`, `3 ProtocolMismatch` (ADR 0015 D1).
+
+ATTACH payloads: 8 bytes generation (Spike 0, protocol 1 implied); 16 bytes
+generation + session_id; 18 bytes generation + session_id + protocol u8 +
+flags u8 (bit 0 = observe). Packaged host still sends 8-byte.
 
 ## 3. Decoder
 
@@ -67,15 +72,19 @@ Reasons: `1 AlreadyAttached`, `2 Invalid`.
 
 ## 6. Attach identity
 
-- Exactly one attach per session. A second `ATTACH` while attached MUST receive
-  `REFUSED{AlreadyAttached}` and MUST NOT disturb the first client.
+- Exactly one **writer** attach per session. A second writer `ATTACH` MUST
+  receive `REFUSED{AlreadyAttached}` and MUST NOT disturb the first client.
+  A second connection MAY `ATTACH` with observe (flags bit 0) and MUST NOT
+  write the PTY (ADR 0015 D7).
 - A connection that has not sent `ATTACH` holds no claim, but MUST NOT be able
   to displace an attached client by connecting (audit S3-6). The daemon tracks
   connections and the attach claim separately; the attached connection is
   replaced only when it closes.
 - 8-byte ATTACH (generation only) MUST attach the default leaf. 16-byte ATTACH
-  MUST name a `SessionId`. Unknown id → `REFUSED{Invalid}` on that connection.
-  A second connection MAY attach a different live id (ADR 0011 D3).
+  MUST name a `SessionId`. 18-byte ATTACH carries protocol and flags. Protocol
+  other than 1 → `REFUSED{ProtocolMismatch}`. Unknown id → `REFUSED{Invalid}`
+  on that connection. A second connection MAY attach a different live id
+  (ADR 0011 D3) or observe the same id (ADR 0015 D7).
 - `generation` is opaque to the kernel in Spike 0 and reserved for reconnect
   tokens under a later ADR.
 

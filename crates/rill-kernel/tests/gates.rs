@@ -70,12 +70,7 @@ fn t_bytes_child_output_reaches_history_byte_identical() {
             Discipline::Raw,
         )
         .expect("spawn cat");
-        session
-            .on_frame(Frame::Attach {
-                generation: 1,
-                session_id: None,
-            })
-            .expect("attach");
+        session.on_frame(Frame::attach(1, None)).expect("attach");
 
         let want = fixture.clone();
         let got = pump_until(&mut session, 64 * 1024, Duration::from_secs(3), |acc| {
@@ -134,12 +129,7 @@ fn t_drop_flood_then_interrupt_loses_no_bytes_and_leaves_a_usable_shell() {
         Discipline::Interactive,
     )
     .expect("spawn sh -i");
-    session
-        .on_frame(Frame::Attach {
-            generation: 1,
-            session_id: None,
-        })
-        .expect("attach");
+    session.on_frame(Frame::attach(1, None)).expect("attach");
     let pid_before = session.child_pid();
 
     // Unbounded producer. Nothing about this terminates on its own.
@@ -220,12 +210,7 @@ fn t_drop_numbered_flood_has_no_gaps_under_finite_credit() {
         Discipline::Raw,
     )
     .expect("spawn seq");
-    session
-        .on_frame(Frame::Attach {
-            generation: 1,
-            session_id: None,
-        })
-        .expect("attach");
+    session.on_frame(Frame::attach(1, None)).expect("attach");
 
     let out = pump_until(&mut session, 16 * 1024, Duration::from_secs(30), |acc| {
         acc.windows(6).any(|w| w == format!("\n{N}\n").as_bytes())
@@ -269,12 +254,7 @@ fn t_resize_child_reports_the_new_winsize_after_pending_input() {
     );
     let mut session =
         Session::spawn("/bin/sh", &["-c", &script], Winsize::default()).expect("spawn winch trap");
-    session
-        .on_frame(Frame::Attach {
-            generation: 1,
-            session_id: None,
-        })
-        .expect("attach");
+    session.on_frame(Frame::attach(1, None)).expect("attach");
     std::thread::sleep(Duration::from_millis(200));
 
     // Input queued before the resize, with no drain in between.
@@ -335,12 +315,7 @@ fn t_resize_child_reports_the_new_winsize_after_pending_input() {
 fn t_exit_dead_pane_rejects_input_and_reports_status() {
     let mut session =
         Session::spawn("/bin/sh", &["-c", "exit 7"], Winsize::default()).expect("spawn");
-    session
-        .on_frame(Frame::Attach {
-            generation: 1,
-            session_id: None,
-        })
-        .expect("attach");
+    session.on_frame(Frame::attach(1, None)).expect("attach");
 
     let deadline = Instant::now() + Duration::from_secs(3);
     while Instant::now() < deadline && session.child_alive() {
@@ -382,12 +357,7 @@ fn t_exit_dead_pane_rejects_input_and_reports_status() {
 fn t_exit_child_death_while_detached_is_reported_on_reattach() {
     let mut session =
         Session::spawn("/bin/sh", &["-c", "sleep 0.3; exit 3"], Winsize::default()).expect("spawn");
-    session
-        .on_frame(Frame::Attach {
-            generation: 1,
-            session_id: None,
-        })
-        .expect("attach");
+    session.on_frame(Frame::attach(1, None)).expect("attach");
 
     session.detach();
     assert!(!session.attached());
@@ -399,12 +369,7 @@ fn t_exit_child_death_while_detached_is_reported_on_reattach() {
     }
     assert!(!session.child_alive(), "child never exited while detached");
 
-    session
-        .on_frame(Frame::Attach {
-            generation: 2,
-            session_id: None,
-        })
-        .expect("reattach");
+    session.on_frame(Frame::attach(2, None)).expect("reattach");
 
     let mut saw_exit = false;
     while let Some(f) = session.pop_outbound() {
@@ -426,18 +391,8 @@ fn t_exit_child_death_while_detached_is_reported_on_reattach() {
 fn t_attach_second_attach_is_refused_and_the_first_keeps_working() {
     let mut session =
         Session::spawn("/bin/sh", &["-c", "sleep 5"], Winsize::default()).expect("spawn");
-    session
-        .on_frame(Frame::Attach {
-            generation: 1,
-            session_id: None,
-        })
-        .expect("a1");
-    session
-        .on_frame(Frame::Attach {
-            generation: 2,
-            session_id: None,
-        })
-        .expect("a2");
+    session.on_frame(Frame::attach(1, None)).expect("a1");
+    session.on_frame(Frame::attach(2, None)).expect("a2");
 
     let mut refused = false;
     while let Some(f) = session.pop_outbound() {
@@ -464,12 +419,7 @@ fn t_attach_second_attach_is_refused_and_the_first_keeps_working() {
 fn t_kill_detach_does_not_signal_the_child() {
     let mut session =
         Session::spawn("/bin/sh", &["-c", "exec sleep 30"], Winsize::default()).expect("spawn");
-    session
-        .on_frame(Frame::Attach {
-            generation: 1,
-            session_id: None,
-        })
-        .expect("attach");
+    session.on_frame(Frame::attach(1, None)).expect("attach");
     let pid = session.child_pid();
 
     session.detach();
@@ -659,22 +609,10 @@ fn t_graph_histories_do_not_mix() {
         .expect("spawn B");
 
     kernel
-        .on_frame(
-            a,
-            Frame::Attach {
-                generation: 1,
-                session_id: None,
-            },
-        )
+        .on_frame(a, Frame::attach(1, None))
         .expect("attach A");
     kernel
-        .on_frame(
-            b,
-            Frame::Attach {
-                generation: 1,
-                session_id: None,
-            },
-        )
+        .on_frame(b, Frame::attach(1, None))
         .expect("attach B");
 
     let _ = pump_leaf(&mut kernel, a, 64 * 1024, Duration::from_secs(3), |acc| {
@@ -734,15 +672,7 @@ fn t_graph_second_attach_to_same_id_is_refused() {
             Winsize::default(),
         )
         .expect("spawn A");
-    kernel
-        .on_frame(
-            a,
-            Frame::Attach {
-                generation: 1,
-                session_id: None,
-            },
-        )
-        .expect("a1");
+    kernel.on_frame(a, Frame::attach(1, None)).expect("a1");
 
     let first = pump_leaf(&mut kernel, a, 64 * 1024, Duration::from_secs(3), |acc| {
         acc.windows(7).any(|w| w == b"FIRST-A")
@@ -752,15 +682,7 @@ fn t_graph_second_attach_to_same_id_is_refused() {
         "first client never saw FIRST-A from the child"
     );
 
-    kernel
-        .on_frame(
-            a,
-            Frame::Attach {
-                generation: 2,
-                session_id: None,
-            },
-        )
-        .expect("a2");
+    kernel.on_frame(a, Frame::attach(2, None)).expect("a2");
     let mut refused = false;
     if let Some(session) = kernel.session_mut(a) {
         while let Some(f) = session.pop_outbound() {
@@ -806,22 +728,10 @@ fn t_graph_attach_to_a_second_id_is_accepted() {
         .expect("spawn B");
 
     kernel
-        .on_frame(
-            a,
-            Frame::Attach {
-                generation: 1,
-                session_id: None,
-            },
-        )
+        .on_frame(a, Frame::attach(1, None))
         .expect("attach A");
     kernel
-        .on_frame(
-            b,
-            Frame::Attach {
-                generation: 1,
-                session_id: None,
-            },
-        )
+        .on_frame(b, Frame::attach(1, None))
         .expect("attach B");
 
     let mut refused_b = false;
@@ -904,12 +814,7 @@ fn t_cwd_foreground_job_chdir_is_visible() {
         ..Winsize::default()
     };
     let mut session = Session::spawn("/bin/zsh", &["-f", "-i"], size).expect("zsh");
-    session
-        .on_frame(Frame::Attach {
-            generation: 1,
-            session_id: None,
-        })
-        .expect("attach");
+    session.on_frame(Frame::attach(1, None)).expect("attach");
     let leader = session.child_pid();
     let start_dir = os_vnode_cwd(leader);
 
@@ -972,12 +877,7 @@ fn t_cwd_tui_chdir_without_osc7_is_visible() {
         Discipline::Interactive,
     )
     .expect("python leaf");
-    session
-        .on_frame(Frame::Attach {
-            generation: 1,
-            session_id: None,
-        })
-        .expect("attach");
+    session.on_frame(Frame::attach(1, None)).expect("attach");
     let before = pump_until(&mut session, 64 * 1024, Duration::from_secs(5), |acc| {
         acc.windows(6).any(|w| w == b"BEFORE")
     });
@@ -1054,4 +954,149 @@ fn t_bytes_ring_keeps_the_tail_and_never_transcodes() {
     let raw: &[u8] = &[0xff, 0xfe, 0x80, 0x41];
     ring.append(raw);
     assert_eq!(ring.snapshot(), raw);
+}
+
+/// T-GRAPH-DELIVERY. Oracle is a PTY write (io_journal PtyWrite), not a
+/// buffer the session copied. Required mutation: `always_pending`.
+#[test]
+fn t_graph_input_write_is_dispatched() {
+    let mut session =
+        Session::spawn("/bin/sh", &["-c", "exec sleep 30"], Winsize::default()).expect("spawn");
+    session.on_frame(Frame::attach(1, None)).expect("attach");
+    session
+        .on_frame(Frame::Data(b"echo hi\n".to_vec()))
+        .expect("data");
+    assert_eq!(
+        session.last_delivery(),
+        rill_kernel::InputDelivery::Dispatched
+    );
+    assert!(
+        session
+            .io_journal()
+            .iter()
+            .any(|(_, e)| matches!(e, rill_kernel::IoEvent::PtyWrite(_))),
+        "DATA never reached the PTY master"
+    );
+    let _ = session.terminate();
+}
+
+/// T-GRAPH-EVENTS. Terminate of a dead leaf is a no-op. Required mutation:
+/// `duplicate_event_ids`.
+#[test]
+fn t_graph_event_ids_are_unique_and_terminate_is_idempotent() {
+    let mut kernel = Kernel::new();
+    let a = kernel
+        .spawn_leaf("/bin/sh", &["-c", "exec sleep 60"], Winsize::default())
+        .expect("A");
+    let b = kernel
+        .spawn_leaf("/bin/sh", &["-c", "exec sleep 60"], Winsize::default())
+        .expect("B");
+    kernel.terminate(a).expect("term A");
+    kernel.terminate(a).expect("term A again");
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(2) {
+        let _ = kernel.reap(a);
+        if kernel
+            .events()
+            .iter()
+            .any(|e| e.kind == rill_kernel::GraphEventKind::Exit && e.session == a)
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let pid_b = kernel.session(b).expect("B").child_pid();
+    assert!(
+        unsafe { libc::kill(pid_b as i32, 0) } == 0,
+        "second terminate(A) killed B"
+    );
+    let ids: Vec<u64> = kernel.events().iter().map(|e| e.id).collect();
+    let mut sorted = ids.clone();
+    sorted.sort();
+    sorted.dedup();
+    assert_eq!(ids.len(), sorted.len(), "event ids were reused: {ids:?}");
+    let terms = kernel
+        .events()
+        .iter()
+        .filter(|e| e.kind == rill_kernel::GraphEventKind::Terminate && e.session == a)
+        .count();
+    assert_eq!(terms, 1, "second terminate emitted another event");
+    assert!(
+        kernel
+            .events()
+            .iter()
+            .any(|e| e.kind == rill_kernel::GraphEventKind::Exit && e.session == a),
+        "terminate was not followed by an Exit event"
+    );
+    terminate_leaf(&mut kernel, b);
+}
+
+/// T-GRAPH-LAYOUT. Oracle is two live pids in the snapshot. Required mutation:
+/// `omit_second_leaf`.
+#[test]
+fn t_graph_layout_snapshot_names_every_live_leaf() {
+    let mut kernel = Kernel::new();
+    let a = kernel
+        .spawn_leaf("/bin/sh", &["-c", "exec sleep 60"], Winsize::default())
+        .expect("A");
+    let b = kernel
+        .spawn_leaf("/bin/sh", &["-c", "exec sleep 60"], Winsize::default())
+        .expect("B");
+    let snap = kernel.layout_snapshot();
+    assert_eq!(snap.len(), 2, "layout omitted a live leaf");
+    let pids: Vec<u32> = snap.iter().map(|r| r.child_pid).collect();
+    assert_ne!(pids[0], pids[1], "snapshot reused a pid");
+    assert!(snap.iter().any(|r| r.id == a) && snap.iter().any(|r| r.id == b));
+    terminate_leaf(&mut kernel, a);
+    terminate_leaf(&mut kernel, b);
+}
+
+/// T-GRAPH-EPHEMERAL. Opt-in Drop kills. Default persist is T-KILL.
+/// Required mutation: `ignore_ephemeral`.
+#[test]
+fn t_graph_ephemeral_drop_terminates_the_child() {
+    std::env::set_var("RILL_EPHEMERAL", "1");
+    let pid = {
+        let session =
+            Session::spawn("/bin/sh", &["-c", "exec sleep 30"], Winsize::default()).expect("spawn");
+        session.child_pid()
+    };
+    std::env::remove_var("RILL_EPHEMERAL");
+    std::thread::sleep(Duration::from_millis(80));
+    let alive = unsafe { libc::kill(pid as i32, 0) } == 0;
+    assert!(!alive, "ephemeral Drop left child {pid} alive");
+}
+
+/// T-GRAPH-NESTED-ENV. Child sees RILL_INSIDE. Required mutation lives in rilld
+/// (`skip_nested_guard`).
+#[test]
+fn t_graph_child_env_marks_rill_inside() {
+    let mut session = Session::spawn(
+        "/bin/sh",
+        &["-c", "printf %s \"$RILL_INSIDE\""],
+        Winsize::default(),
+    )
+    .expect("spawn");
+    session.on_frame(Frame::attach(1, None)).expect("attach");
+    session.on_frame(Frame::Credit(4096)).expect("credit");
+    let start = Instant::now();
+    let mut acc = Vec::new();
+    while start.elapsed() < Duration::from_secs(2) {
+        let _ = session.poll_child();
+        let _ = session.on_pty_readable();
+        while let Some(f) = session.pop_outbound() {
+            if let Frame::Data(b) = f {
+                acc.extend(b);
+            }
+        }
+        if acc.windows(1).any(|w| w == b"1") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        acc.windows(1).any(|w| w == b"1"),
+        "child RILL_INSIDE was not 1, got {:?}",
+        String::from_utf8_lossy(&acc)
+    );
 }

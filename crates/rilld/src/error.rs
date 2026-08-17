@@ -7,6 +7,7 @@ pub enum Error {
     Attach(rill_attach::Error),
     Chip(rill_chip0::Error),
     AlreadyRunning,
+    NestedLaunch,
 }
 
 impl fmt::Display for Error {
@@ -17,6 +18,7 @@ impl fmt::Display for Error {
             Self::Attach(e) => write!(f, "{e}"),
             Self::Chip(e) => write!(f, "{e}"),
             Self::AlreadyRunning => write!(f, "already running"),
+            Self::NestedLaunch => write!(f, "nested rilld refused (set RILL_ALLOW_NESTED=1)"),
         }
     }
 }
@@ -29,6 +31,7 @@ impl std::error::Error for Error {
             Self::Attach(e) => Some(e),
             Self::Chip(e) => Some(e),
             Self::AlreadyRunning => None,
+            Self::NestedLaunch => None,
         }
     }
 }

@@ -26,6 +26,10 @@ fn main() {
         }
     }
     let socket = rilld::default_socket();
+    if rilld::nested_launch_blocked() {
+        eprintln!("rilld: nested launch refused (set RILL_ALLOW_NESTED=1)");
+        std::process::exit(1);
+    }
     let shell = rilld::default_shell();
     let size = rill_kernel::Winsize::default();
     let daemon = match rilld::Daemon::bind(&socket, &shell, &[], size) {

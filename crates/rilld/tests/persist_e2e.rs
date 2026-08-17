@@ -79,12 +79,15 @@ fn t_kill_gui_process_group_child_pid_survives_and_reattach_shows_prior_output()
     let sock = unique_sock();
     let pidfile = PathBuf::from(format!("{}.child", sock.display()));
     let rilld_pidfile = PathBuf::from(format!("{}.rilld", sock.display()));
+    let second_pidfile = PathBuf::from(format!("{}.child2", sock.display()));
 
     let mut gui_cmd = Command::new(&gui_bin);
     gui_cmd
         .env("RILL_SOCKET", &sock)
         .env("RILL_TEST_PIDFILE", &pidfile)
         .env("RILL_TEST_DAEMON_PIDFILE", &rilld_pidfile)
+        .env("RILL_TEST_SECOND_LEAF", "1")
+        .env("RILL_TEST_SECOND_PIDFILE", &second_pidfile)
         .env("SHELL", "/bin/sh")
         .env("PS1", "PERSIST-MARK")
         .env("PROMPT", "PERSIST-MARK")
@@ -107,8 +110,11 @@ fn t_kill_gui_process_group_child_pid_survives_and_reattach_shows_prior_output()
         sock.display()
     );
     let child = wait_pidfile(&pidfile, Duration::from_secs(5)).expect("child pidfile");
+    let child2 = wait_pidfile(&second_pidfile, Duration::from_secs(5)).expect("second pidfile");
     let daemon = wait_pidfile(&rilld_pidfile, Duration::from_secs(5)).expect("rilld pidfile");
     assert!(alive(child), "shell not running");
+    assert!(alive(child2), "second leaf not running");
+    assert_ne!(child, child2, "second leaf reused the default pid");
     assert!(alive(daemon), "rilld not running");
     assert_ne!(daemon, gui_pid, "rilld must not be the GUI process");
     // Give the interactive shell time to paint its prompt (PS1=PERSIST-MARK).
@@ -133,6 +139,11 @@ fn t_kill_gui_process_group_child_pid_survives_and_reattach_shows_prior_output()
         "SIGKILL of the GUI killed the shell (child pid {})",
         child
     );
+    assert!(
+        alive(child2),
+        "SIGKILL of the GUI killed the second leaf (child pid {})",
+        child2
+    );
     assert_eq!(
         child,
         std::fs::read_to_string(&pidfile)
@@ -145,14 +156,7 @@ fn t_kill_gui_process_group_child_pid_survives_and_reattach_shows_prior_output()
 
     let mut stream = UnixStream::connect(&sock).expect("reload connect");
     stream
-        .write_all(
-            &Frame::Attach {
-                generation: 2,
-                session_id: None,
-            }
-            .encode()
-            .expect("a2"),
-        )
+        .write_all(&Frame::attach(2, None).encode().expect("a2"))
         .expect("reattach");
     stream
         .write_all(&Frame::Credit(256 * 1024).encode().expect("c2"))
@@ -198,4 +202,5 @@ fn t_kill_gui_process_group_child_pid_survives_and_reattach_shows_prior_output()
     let _ = std::fs::remove_file(&sock);
     let _ = std::fs::remove_file(&pidfile);
     let _ = std::fs::remove_file(&rilld_pidfile);
+    let _ = std::fs::remove_file(&second_pidfile);
 }

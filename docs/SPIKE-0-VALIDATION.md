@@ -83,8 +83,8 @@ for three gates, one of which it never ran (audit S4-3).
 
 ## Current state — 2026-08-17 (closed)
 
-**Spike 0 is Proven** ([ADR 0010](adr/0010-spike-0-closes.md)). Milestone 1 is
-the session graph ([ADR 0011](adr/0011-session-graph.md)).
+**Spike 0 is Proven** ([ADR 0010](adr/0010-spike-0-closes.md)). Milestone 1
+first slice is Proven ([ADR 0014](adr/0014-m1-first-slice-closes.md)).
 
 CI (ADR 0002 D8, library and packaged gates):
 [run 31993832263](https://github.com/mahboobmonnamd/RILL/actions/runs/31993832263)

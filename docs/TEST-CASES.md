@@ -412,13 +412,34 @@ budget=8.33ms, cadence p50=p95=8.33ms, `ax_trusted=1`, `pmset` Battery Power
 
 ## Milestone 1 — session graph
 
-Authority: [ADR 0011](adr/0011-session-graph.md), [SPEC-GRAPH](spec/SPEC-GRAPH.md),
+Authority: [ADR 0011](adr/0011-session-graph.md),
+[ADR 0014](adr/0014-m1-first-slice-closes.md),
+[ADR 0015](adr/0015-m1-persist-remainder.md),
+[SPEC-GRAPH](spec/SPEC-GRAPH.md),
 [#16](https://github.com/mahboobmonnamd/RILL/issues/16),
 [#28](https://github.com/mahboobmonnamd/RILL/issues/28),
-[#29](https://github.com/mahboobmonnamd/RILL/issues/29).
+[#29](https://github.com/mahboobmonnamd/RILL/issues/29),
+[#31](https://github.com/mahboobmonnamd/RILL/issues/31),
+[#254](https://github.com/mahboobmonnamd/RILL/issues/254),
+[#255](https://github.com/mahboobmonnamd/RILL/issues/255).
 Library tests live in `crates/rill-kernel/tests/gates.rs` and
-`crates/rilld/tests/gates.rs`. Packaged multi-leaf persist is **not** these
-gates (SPEC-GRAPH §4).
+`crates/rilld/tests/gates.rs`. Packaged N-leaf persist is T-KILL with
+`RILL_TEST_SECOND_LEAF` (ADR 0015 D8).
+
+Every first-slice gate below is **Proven** ([ADR 0014](adr/0014-m1-first-slice-closes.md) D1).
+Kernel suite: `fast.yml` on `main` after those PRs, mutations red in this closer.
+Named-id / flood: PRs #30 / #32, wired into `validate-spike0.sh`.
+Persist remainder gates follow; mutations are wired into `fast.yml` (kernel)
+and `validate-spike0.sh` (rilld).
+
+| ID | Status | Negative control | Notes |
+|---|---|---|---|
+| T-GRAPH-SPAWN | **Proven** | `single_session` automated | [#16](https://github.com/mahboobmonnamd/RILL/issues/16) / [PR #27](https://github.com/mahboobmonnamd/RILL/pull/27) |
+| T-GRAPH-ISOLATE | **Proven** | `single_session` automated | PR #27 |
+| T-GRAPH-ATTACH | **Proven** | `single_session` automated | PR #27 |
+| T-GRAPH-TERMINATE | **Proven** | `terminate_all_leaves` automated | [#29](https://github.com/mahboobmonnamd/RILL/issues/29) / [PR #30](https://github.com/mahboobmonnamd/RILL/pull/30) |
+| T-ATTACH-NAMED | **Proven** | `ignore_session_id` automated | [#28](https://github.com/mahboobmonnamd/RILL/issues/28) / PR #30 |
+| T-GRAPH-FLOOD | **Proven** | `starve_other_leaves` automated | [#31](https://github.com/mahboobmonnamd/RILL/issues/31) / [PR #32](https://github.com/mahboobmonnamd/RILL/pull/32) |
 
 ### T-GRAPH-SPAWN — two leaves, two pids
 
@@ -492,6 +513,90 @@ credit on A so the producer outruns the consumer. No GUI.
 
 **Required mutation.** `RILL_MUTATE=starve_other_leaves` (feature `mutate`):
 the daemon reads only the default leaf's PTY. B's marker MUST be absent.
+
+### T-ATTACH-PROTO — protocol mismatch is refused
+
+**Oracle.** An 18-byte ATTACH with protocol ≠ 1 yields
+`REFUSED{ProtocolMismatch}` on that connection. The default leaf stays
+unclaimed by that client.
+
+**Procedure.** In-process `Daemon` over `AF_UNIX`.
+
+**Required mutation.** `RILL_MUTATE=ignore_protocol_version`: accept any
+protocol byte. This test MUST go red.
+
+### T-GRAPH-NESTED — nested rilld bind is refused
+
+**Oracle.** With `RILL_INSIDE=1` and `RILL_ALLOW_NESTED` unset, `Daemon::bind`
+returns `NestedLaunch`. Downstream of the env the kernel sets on the child,
+not of a flag the test wrote into a struct.
+
+**Procedure.** In-process daemon. No GUI.
+
+**Required mutation.** `RILL_MUTATE=skip_nested_guard`: bind succeeds. This
+test MUST go red.
+
+### T-GRAPH-DELIVERY — DATA write is Dispatched
+
+**Oracle.** After a writer ATTACH and a DATA frame, `last_delivery()` is
+`Dispatched` and `io_journal` contains `PtyWrite`. Not a copy of the input
+buffer.
+
+**Procedure.** In-process `Session`. No GUI.
+
+**Required mutation.** `RILL_MUTATE=always_pending`: skip the PTY write. This
+test MUST go red.
+
+### T-GRAPH-EVENTS — unique ids; terminate is idempotent
+
+**Oracle.** Event ids are unique. A second `terminate` of a dead leaf does not
+emit a second Terminate event and MUST NOT kill another live child (`kill(pid, 0)`
+on B). Reap records one Exit for A.
+
+**Procedure.** In-process kernel. Two `/bin/sh -c 'exec sleep 60'` leaves.
+
+**Required mutation.** `RILL_MUTATE=duplicate_event_ids`: every event reuses
+id 1. This test MUST go red.
+
+### T-GRAPH-LAYOUT — snapshot names every live leaf
+
+**Oracle.** After two `spawn_leaf` calls, `layout_snapshot()` has two rows with
+distinct `child_pid` values and both ids.
+
+**Procedure.** In-process kernel.
+
+**Required mutation.** `RILL_MUTATE=omit_second_leaf`: snapshot length 1. This
+test MUST go red.
+
+### T-GRAPH-EPHEMERAL — opt-in Drop kills
+
+**Oracle.** With `RILL_EPHEMERAL=1`, dropping a `Session` makes
+`kill(pid, 0)` fail. Default persist remains T-KILL.
+
+**Procedure.** In-process kernel. `/bin/sh -c 'exec sleep 30'`.
+
+**Required mutation.** `RILL_MUTATE=ignore_ephemeral`: Drop is a no-op. This
+test MUST go red.
+
+### T-GRAPH-OBSERVE — observer sees DATA and cannot write
+
+**Oracle.** Writer attach plus observe attach: observer stream contains the
+child's fixture marker. Observer DATA MUST NOT appear in that stream (it was
+not written to the PTY).
+
+**Procedure.** In-process `Daemon` over `AF_UNIX`. Two connections.
+
+**Required mutation.** `RILL_MUTATE=allow_observer_write`: observer DATA is
+written through. This test MUST go red.
+
+### T-GRAPH-KILL-N — GUI SIGKILL must not kill any live leaf
+
+**Oracle.** Packaged T-KILL: after SIGKILL of the GUI process group, both
+pidfile pids and rilld remain alive (`kill(pid, 0)`). Reattach shows prior
+output. Socket-only drop of `Daemon` is supporting evidence, not the closer.
+
+**Procedure.** Packaged `Rill.app` with `RILL_TEST_SECOND_LEAF=1`. Existing
+T-KILL mutation `drop_POSIX_SPAWN_SETSID` MUST still go red.
 
 ---
 

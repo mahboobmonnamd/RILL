@@ -3,7 +3,8 @@
 Authority: [ADR 0001](adr/0001-session-operating-system.md). Spike 0 closed:
 [ADR 0010](adr/0010-spike-0-closes.md). Session graph: [ADR 0011](adr/0011-session-graph.md).
 Chip 1 isolated crate: [ADR 0012](adr/0012-chip1-isolated-vt.md) ([M4-HANDOFF](M4-HANDOFF.md)).
-Cwd tap: [ADR 0013](adr/0013-cwd-tap.md).
+Cwd tap: [ADR 0013](adr/0013-cwd-tap.md). M1 first slice: [ADR 0014](adr/0014-m1-first-slice-closes.md).
+M1 persist remainder: [ADR 0015](adr/0015-m1-persist-remainder.md).
 This file is the map. It does not authorize code by itself.
 
 ## Four planes
