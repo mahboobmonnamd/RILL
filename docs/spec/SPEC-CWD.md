@@ -1,12 +1,11 @@
 # SPEC-CWD — live cwd tap (`lane:kernel`)
 
-- **Status:** Proposed — 2026-08-17 (does not authorize code)
+- **Status:** Accepted — 2026-08-17 (kernel tap). Block path header is [#22](https://github.com/mahboobmonnamd/RILL/issues/22).
 - **Authority:** [ADR 0013](../adr/0013-cwd-tap.md)
 - **Issue:** [#23](https://github.com/mahboobmonnamd/RILL/issues/23)
 - **Crate:** `crates/rill-kernel` (tap). Attach MAY journal OSC 7.
   `vt-engine` MUST NOT. Host Block header is [#22](https://github.com/mahboobmonnamd/RILL/issues/22).
-- **Gates:** T-CWD-FG, T-CWD-NO-OSC7, T-CWD-FAIL-CLOSED (Red until ADR 0013
-  is Accepted and the tests exist)
+- **Gates:** T-CWD-FG, T-CWD-NO-OSC7, T-CWD-FAIL-CLOSED (Red until demonstrated)
 
 Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 

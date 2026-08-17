@@ -85,7 +85,7 @@ Reasons: `1 AlreadyAttached`, `2 Invalid`.
   policy UI exists), OSC 9, OSC 133, OSC 7, title. Classification is journalled.
   **Later — not Spike 0 Proven.** No classifier ships today; that is not a
   gate miss. OSC 7 is not the cwd source of truth
-  ([ADR 0013](../adr/0013-cwd-tap.md), Proposed).
+  ([ADR 0013](../adr/0013-cwd-tap.md)).
 - MUST NOT build a grid the GUI consumes.
 - MUST NOT carry cells, JSON, or any structure derived from parsing into a
   screen model.

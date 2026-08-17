@@ -1,17 +1,19 @@
 # ADR 0013: Cwd tap (kernel fg process, not OSC 7)
 
-- **Status:** Proposed — 2026-08-17
+- **Status:** Accepted — 2026-08-17
 - **Tree:** this repository only
 - **Issue:** [#23](https://github.com/mahboobmonnamd/RILL/issues/23)
 - **Requires:** [ADR 0001](0001-session-operating-system.md),
   [ADR 0010](0010-spike-0-closes.md), [ADR 0011](0011-session-graph.md)
-- **Does not authorize:** Block path headers, prompt parsing, JSON on the warm
-  path, a `CWD` tag on the attach typing socket, Chip 1, cwd logic in
-  `vt-engine`
+- **Authorizes:** kernel `Session::cwd()` after named T-CWD tests (M6)
+- **Does not authorize:** Block path-header chrome ([#22](https://github.com/mahboobmonnamd/RILL/issues/22)),
+  prompt parsing, JSON on the warm path, a `CWD` tag on the attach typing
+  socket, Chip 1 as the live chip, cwd logic in `vt-engine`
 
 Spike evidence (Darwin 25.5, 2026-08-17): `/tmp/rill-cwd-spike*.c` against a
-real PTY. This ADR is **Proposed**. It does not authorize implementation
-(ADR 0001 §9).
+real PTY. Accepted so the kernel tap may be implemented. The live TUI in a
+Block, and a path fix at the top of that Block, stay [#22](https://github.com/mahboobmonnamd/RILL/issues/22):
+same chip paints the TUI; the header **binds** to this tap. Chip 1 is unchanged.
 
 ## Context
 
@@ -89,12 +91,20 @@ string presented as success.
 
 Do not persist cwd into logs or the byte ring.
 
+### D6 — Native VT and Block path header are not this slice
+
+Live TUI-in-block is still the **same chip** in a Block (Chip 0 today, Chip 1
+only at M7). The path at the top is host chrome bound to `Session::cwd()`,
+not a second VT and not a dump of the live grid into `Text`. This ADR does
+not change that plan and does not implement the header.
+
 ## Consequences
 
 - Named tests in [TEST-CASES](../TEST-CASES.md) (T-CWD-*) start **Red**.
-- Implementation waits on this ADR becoming **Accepted**.
+- Kernel tap implementation is authorized after those tests are demonstrated
+  red.
 - [#23](https://github.com/mahboobmonnamd/RILL/issues/23) lives on **M6**, not
-  M1. M1 is the session graph.
+  M1. Block path chrome is [#22](https://github.com/mahboobmonnamd/RILL/issues/22).
 
 ## Rejected alternatives
 

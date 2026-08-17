@@ -481,12 +481,13 @@ always attach the default leaf. The two-id socket tests MUST go red.
 
 ---
 
-## Milestone 6 — cwd tap (Red; Proposed ADR 0013)
+## Milestone 6 — cwd tap (Red)
 
-Authority: [ADR 0013](adr/0013-cwd-tap.md) (**Proposed** — does not authorize
-code), [SPEC-CWD](spec/SPEC-CWD.md),
-[#23](https://github.com/mahboobmonnamd/RILL/issues/23). Named here so an
-Accept can start with failing tests. Not M1. Not a Block header. Not T-NFR.
+Authority: [ADR 0013](adr/0013-cwd-tap.md) (Accepted),
+[SPEC-CWD](spec/SPEC-CWD.md),
+[#23](https://github.com/mahboobmonnamd/RILL/issues/23). Named here first.
+Not M1. Path header chrome is [#22](https://github.com/mahboobmonnamd/RILL/issues/22).
+Not T-NFR. Not Chip 1.
 
 ### T-CWD-FG — foreground job chdir is visible
 
