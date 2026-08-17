@@ -224,7 +224,11 @@ int main(int argc, const char *argv[]) {
         if (skip_chrome) {
             window.contentView = view;
         } else {
-            RillChromeController *chrome = [[RillChromeController alloc] initWithTerminal:view];
+            RillChromeController *chrome =
+                [[RillChromeController alloc] initWithTerminal:view
+                                                    background:rill_client_background_rgba(client)
+                                                    foreground:rill_client_foreground_rgba(client)
+                                                      topInset:rill_client_padding_y(client)];
             window.contentViewController = chrome;
         }
         window.delegate = view;

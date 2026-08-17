@@ -4,6 +4,7 @@
 #include "rill_chip0_vt.h"
 
 #include <ghostty/vt.h>
+#include <ghostty/vt/color.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -79,6 +80,53 @@ int rill_vt_resize(RillVt *vt, uint16_t cols, uint16_t rows, uint32_t cell_w, ui
         return -1;
     }
     if (ghostty_terminal_resize(vt->term, cols, rows, cell_w, cell_h) != GHOSTTY_SUCCESS) {
+        return -1;
+    }
+    return 0;
+}
+
+static GhosttyColorRgb rill_rgb(uint32_t rgba) {
+    GhosttyColorRgb c;
+    c.r = (uint8_t)((rgba >> 24) & 0xffu);
+    c.g = (uint8_t)((rgba >> 16) & 0xffu);
+    c.b = (uint8_t)((rgba >> 8) & 0xffu);
+    return c;
+}
+
+int rill_vt_set_look(RillVt *vt, uint32_t fg, uint32_t bg, uint32_t cursor,
+                     const uint32_t *ansi16, size_t n_ansi) {
+    if (!vt) {
+        return -1;
+    }
+    GhosttyColorRgb f = rill_rgb(fg);
+    GhosttyColorRgb b = rill_rgb(bg);
+    GhosttyColorRgb c = rill_rgb(cursor);
+    if (ghostty_terminal_set(vt->term, GHOSTTY_TERMINAL_OPT_COLOR_FOREGROUND, &f)
+        != GHOSTTY_SUCCESS) {
+        return -1;
+    }
+    if (ghostty_terminal_set(vt->term, GHOSTTY_TERMINAL_OPT_COLOR_BACKGROUND, &b)
+        != GHOSTTY_SUCCESS) {
+        return -1;
+    }
+    if (ghostty_terminal_set(vt->term, GHOSTTY_TERMINAL_OPT_COLOR_CURSOR, &c)
+        != GHOSTTY_SUCCESS) {
+        return -1;
+    }
+    GhosttyColorRgb pal[256];
+    ghostty_color_palette_default(pal);
+    if (ansi16 && n_ansi >= 16) {
+        for (int i = 0; i < 16; i++) {
+            pal[i] = rill_rgb(ansi16[i]);
+        }
+    }
+    GhosttyColorPaletteMask skip = {0};
+    for (int i = 0; i < 16; i++) {
+        GHOSTTY_COLOR_PALETTE_MASK_SET(&skip, i);
+    }
+    ghostty_color_palette_generate(pal, &skip, &b, &f, true, pal);
+    if (ghostty_terminal_set(vt->term, GHOSTTY_TERMINAL_OPT_COLOR_PALETTE, pal)
+        != GHOSTTY_SUCCESS) {
         return -1;
     }
     return 0;

@@ -7,7 +7,8 @@ mod look;
 mod surface;
 
 pub use look::{
-    apply_theme, load_look_overlay, overlay_look, parse_look_keys, TerminalLook, ThemeColors,
+    apply_theme, chrome_surface_rgba, load_look_overlay, overlay_look, parse_look_keys,
+    TerminalLook, ThemeColors,
 };
 pub use surface::{discover_host_surface, load_host_surface, load_resolved_surface, HostSurface};
 
@@ -80,6 +81,21 @@ impl Chip0 {
 
     pub fn reset(&mut self) {
         self.vt.reset();
+    }
+
+    /// Push look-file colours into libghostty-vt (adapter only). Palette 0–15
+    /// come from the theme **file**, not a compiled table (ADR 0017 D3).
+    pub fn apply_look(&mut self, colors: &crate::ThemeColors) -> Result<(), Error> {
+        #[cfg(feature = "mutate")]
+        if std::env::var("RILL_MUTATE").as_deref() == Ok("skip_vt_look_colors") {
+            return Ok(());
+        }
+        self.vt.set_look(
+            colors.foreground,
+            colors.background,
+            colors.cursor,
+            colors.ansi.as_ref(),
+        )
     }
 
     /// Cold-path resync: format the current screen as VT bytes.

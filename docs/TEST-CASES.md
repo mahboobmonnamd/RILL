@@ -490,6 +490,60 @@ invented Latte RGB without reading the file.
 
 ---
 
+## T-LOOK-ANSI — SGR colours are the theme-file palette (Ghostty/cmux)
+
+Authority: [ADR 0017](adr/0017-ghostty-look-windowed-default.md) D3,
+[SPEC-DISPLAY](spec/SPEC-DISPLAY.md) §10,
+[#274](https://github.com/mahboobmonnamd/RILL/issues/274).
+
+**Bug (doc comment).** The same Catppuccin Latte file is readable in Ghostty
+and cmux (dark body, green `)`, red unknown command). Rill painted
+libghostty-vt's built-in SGR green (`#b5bd68`) and default white on
+`#eff1f5`, so typed commands were unreadable.
+
+**Oracle.** `Chip0::apply_look` from `fixtures/look/themes/Catppuccin Latte`,
+then feed `CSI 32 m G`. Snapshot cell `G` `fg` equals `palette = 2=` parsed
+from that **file**. Contrast vs file `background` must beat Chip 0's built-in
+green `#b5bd68` (the wash-out). Unstyled `A` equals file `foreground =` with
+WCAG contrast ≥ 4.5 vs that background. Downstream of the VT snapshot.
+
+**Procedure.** Library test. No packaged app.
+
+**Required mutation.** `RILL_MUTATE=skip_vt_look_colors`. SGR 32 stays the
+built-in green.
+
+Demonstrated **red** (`fg=0xb5bd68ff` vs file `#40a02b`; unstyled
+`0xffffffff` vs `#4c4f69`).
+
+Chip 1 counterpart (not this gate):
+[#267](https://github.com/mahboobmonnamd/RILL/issues/267) palette identity,
+[#271](https://github.com/mahboobmonnamd/RILL/issues/271) T-CHIP1-LOOK-ANSI
+(library, blocked on colour ADR),
+[#272](https://github.com/mahboobmonnamd/RILL/issues/272) M7 live must keep
+packaged T-LOOK-ANSI. Chrome inset is host [#270](https://github.com/mahboobmonnamd/RILL/issues/270).
+
+---
+
+## T-GLYPH-SCALE — atlas glyphs match backing-scale cell pixels
+
+Authority: [ADR 0003](adr/0003-display-pipeline.md) D1, [SPEC-DISPLAY](spec/SPEC-DISPLAY.md) §4–5,
+[#273](https://github.com/mahboobmonnamd/RILL/issues/273).
+
+**Bug (doc comment).** Latte colours were correct and the cursor filled the
+cell, but typed letters were tiny specks: CoreText rasterised at font
+point size while `cellPx` used `_cellW * backingScaleFactor`.
+
+**Oracle.** Packaged GUI on a Retina backing scale (`cell_px` > 1.5 ×
+look `font-size`). Heartbeat `glyph_m` (atlas height of `M`) / `cell_px`
+≥ 0.7. Downstream of the atlas, not of `font-size` in the config file.
+
+**Procedure.** Packaged GUI. Same heartbeat path as T-WINDOWED.
+
+**Required mutation.** `RILL_MUTATE=skip_glyph_backing_scale`. Atlas stays
+1× while `cell_px` stays backing pixels; ratio falls below 0.7.
+
+---
+
 ## T-LOOK-GLASS — background-opacity must not make the window translucent
 
 Authority: ADR 0017 D3, ADR 0009, SPEC-DISPLAY §3 / §10,
@@ -553,6 +607,92 @@ Demonstrated **red** on packaged `Rill.app` at `cdac6c5` (heartbeat
 `seq=… fullscreen=1` with no chrome fields). Demonstrated **green** on this
 branch; `no_chrome` went red (`chrome=1 left=0 right=0 first=terminal`).
 CI on `gates.yml` is the D8 closer.
+
+---
+
+## T-SPLIT-LOOK — chrome background is the derived surface, Latte and Mocha
+
+Authority: [ADR 0018](adr/0018-three-pane-host-chrome.md) D5,
+[ADR 0017](adr/0017-ghostty-look-windowed-default.md) D3,
+[SPEC-CHROME](spec/SPEC-CHROME.md) §4a,
+[#269](https://github.com/mahboobmonnamd/RILL/issues/269),
+[#270](https://github.com/mahboobmonnamd/RILL/issues/270).
+
+**Bug (doc comment).** Sidebars used `colorWithCalibratedWhite:0.09` while
+Chip 0 remapped to Catppuccin Latte, so the window was a dark frame around
+a light terminal. After look-file paint, sidebars still used the file
+`background`, so Latte chrome and Chip 0 were the same cream.
+
+**Oracle.** Packaged `Rill.app` heartbeat `nav_bg` is the left pane
+`CALayer.backgroundColor` as RRGGBB. Parse `background =` from
+`fixtures/look/themes/Catppuccin Latte` (and separately Mocha). Expected
+chrome is that hex with each channel saturating-minus 9. `nav_bg` MUST
+equal that derived hex and MUST NOT equal the file background. Not Chip 0
+`#121212`, not a compiled mantle table. Downstream of the layer.
+
+**Procedure.** Two launches. `RILL_CONFIG` with `theme = Catppuccin Latte`
+then `theme = Catppuccin Mocha`. Packaged `Resources/themes/` supplies the
+files. Socket-only tests do not close this.
+
+**Required mutation.** `RILL_MUTATE=hardcoded_chrome_gray`. `nav_bg` stays
+near `#171717` for both launches.
+
+Demonstrated **red** with hardcoded chrome (`nav_bg=1e1e1e` vs Latte
+derived surface). Demonstrated **red** again when chrome matched file
+`background` (`nav_bg=eff1f5` vs derived `#e6e8ec`; Mocha `1e1e2e` vs
+`#151525`). Demonstrated **green** after derived-surface paint
+(`nav_bg=e6e8ec` / `151525`); `hardcoded_chrome_gray` stays the invert.
+
+---
+
+## T-CHROME-INSET — section labels match look padding-y
+
+Authority: [ADR 0018](adr/0018-three-pane-host-chrome.md) D6,
+[SPEC-CHROME](spec/SPEC-CHROME.md) §4b,
+[#270](https://github.com/mahboobmonnamd/RILL/issues/270).
+
+**Bug (doc comment).** Workspaces sat in leftover space under the titlebar
+because labels were framed for a 680pt pane (`y = 680 - 36`) while Chip 0
+used `padding-y = 8`.
+
+**Oracle.** Packaged heartbeat `nav_top` is the left pane's distance from
+its top to `chrome-left-heading`'s frame (flipped: `origin.y`; unflipped:
+`NSMaxY(pane) - NSMaxY(heading)`). `pad_y` is Chip 0's look padding.
+`|nav_top - pad_y| ≤ 1`. Downstream of the frames, not of a constant the
+chrome copied into the heartbeat.
+
+**Procedure.** Packaged GUI. Socket-only tests do not close this.
+
+**Required mutation.** `RILL_MUTATE=hardcoded_chrome_y`. `nav_top` stays
+near 20 (the 680 − 36 template).
+
+Demonstrated **red** on packaged `Rill.app` (`nav_top=20` `pad_y=8`
+`chrome_font=11`). Demonstrated **green** after live-bounds layout
+(`nav_top=8` `pad_y=8`); `hardcoded_chrome_y` went red (`nav_top=20`).
+
+---
+
+## T-CHROME-FONT — section labels are control size, not caption size
+
+Authority: [ADR 0018](adr/0018-three-pane-host-chrome.md) D6,
+[SPEC-CHROME](spec/SPEC-CHROME.md) §4b,
+[#270](https://github.com/mahboobmonnamd/RILL/issues/270).
+
+**Bug (doc comment).** Workspaces / On \<home\> used 11pt caption size next
+to a 16pt JetBrains Mono grid.
+
+**Oracle.** Packaged heartbeat `chrome_font` is
+`chrome-left-heading`'s `NSTextField.font.pointSize` after layout. It MUST
+be `NSFont.systemFontSize` (≥ 13). Not 11. Downstream of the field, not of
+a number the chrome wrote for the test.
+
+**Procedure.** Packaged GUI. Socket-only tests do not close this.
+
+**Required mutation.** `RILL_MUTATE=tiny_chrome_font`. `chrome_font` is 9.
+
+Demonstrated **red** on packaged `Rill.app` (`chrome_font=11`).
+Demonstrated **green** after control-size type (`chrome_font=13`);
+`tiny_chrome_font` went red (`chrome_font=9`).
 
 ---
 
@@ -844,6 +984,10 @@ Authority: [ADR 0012](adr/0012-chip1-isolated-vt.md), [SPEC-CHIP1](spec/SPEC-CHI
 [M4-HANDOFF](M4-HANDOFF.md), [#6](https://github.com/mahboobmonnamd/RILL/issues/6).
 Palette-index cells and compositor opacity are
 [#267](https://github.com/mahboobmonnamd/RILL/issues/267) (colour ADR first).
+Theme-file SGR (Latte/Mocha, same oracle as T-LOOK-ANSI) is
+[#271](https://github.com/mahboobmonnamd/RILL/issues/271) — **blocked** until
+that ADR. Live swap must not regress packaged T-LOOK-ANSI:
+[#272](https://github.com/mahboobmonnamd/RILL/issues/272).
 These gates are **Red**. Named here first. No `vt-engine` behaviour until they
 exist and have been observed failing (ADR 0002 D2). Not live. Not T-NFR.
 

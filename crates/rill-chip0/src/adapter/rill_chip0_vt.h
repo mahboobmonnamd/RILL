@@ -46,6 +46,8 @@ void rill_vt_feed(RillVt *vt, const uint8_t *data, size_t len);
 int rill_vt_resize(RillVt *vt, uint16_t cols, uint16_t rows, uint32_t cell_w, uint32_t cell_h);
 int rill_vt_snapshot(RillVt *vt, RillPodHeader *hdr, RillPodCell **cells, size_t *ncells);
 int rill_vt_repaint_bytes(RillVt *vt, uint8_t **bytes, size_t *len);
+int rill_vt_set_look(RillVt *vt, uint32_t fg, uint32_t bg, uint32_t cursor,
+                     const uint32_t *ansi16, size_t n_ansi);
 void rill_vt_reset(RillVt *vt);
 void rill_vt_buf_free(uint8_t *ptr, size_t len);
 void rill_vt_cells_free(RillPodCell *ptr);

@@ -185,6 +185,7 @@ typedef struct {
 
     NSMutableDictionary<NSNumber *, NSValue *> *_glyphCache;
     int _atlasPenX, _atlasPenY, _atlasShelfHeight;
+    CGFloat _atlasScale;
 
     CTFontRef _font;
     CTFontRef _fontBold;
@@ -383,7 +384,22 @@ typedef struct {
     _atlasPenX = 1;
     _atlasPenY = 1;
     _atlasShelfHeight = 0;
+    _atlasScale = 1.0;
     return YES;
+}
+
+- (void)resetAtlasForScale:(CGFloat)scale {
+    if (scale < 1.0) {
+        scale = 1.0;
+    }
+    if (fabs(_atlasScale - scale) < 0.01 && _glyphCache.count > 0) {
+        return;
+    }
+    _atlasScale = scale;
+    [_glyphCache removeAllObjects];
+    _atlasPenX = 1;
+    _atlasPenY = 1;
+    _atlasShelfHeight = 0;
 }
 
 /* Event-driven: the socket wakes us, not a clock (ADR 0003 D2).
@@ -474,6 +490,42 @@ typedef struct {
     [self writeTestHeartbeat];
 }
 
+static NSView *rill_find_ident(NSView *root, NSString *ident) {
+    if (!root) {
+        return nil;
+    }
+    if ([root.accessibilityIdentifier isEqualToString:ident]) {
+        return root;
+    }
+    for (NSView *sub in root.subviews) {
+        NSView *hit = rill_find_ident(sub, ident);
+        if (hit) {
+            return hit;
+        }
+    }
+    return nil;
+}
+
+static unsigned rill_view_bg_rgb(NSView *v) {
+    if (!v || !v.layer || !v.layer.backgroundColor) {
+        return 0;
+    }
+    NSColor *c = [NSColor colorWithCGColor:v.layer.backgroundColor];
+    NSColor *rgb = [c colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+    if (!rgb) {
+        rgb = [c colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace];
+    }
+    if (!rgb) {
+        return 0;
+    }
+    CGFloat r = 0, g = 0, b = 0, a = 0;
+    [rgb getRed:&r green:&g blue:&b alpha:&a];
+    unsigned R = (unsigned)llround(r * 255.0) & 0xffu;
+    unsigned G = (unsigned)llround(g * 255.0) & 0xffu;
+    unsigned B = (unsigned)llround(b * 255.0) & 0xffu;
+    return (R << 16) | (G << 8) | B;
+}
+
 - (void)writeTestHeartbeat {
     const char *path = getenv("RILL_TEST_HEARTBEAT");
     if (!path || !path[0]) {
@@ -511,11 +563,48 @@ typedef struct {
     }
     const char *first =
         [w.firstResponder isKindOfClass:[TerminalView class]] ? "terminal" : "other";
+    NSView *nav = rill_find_ident(content, @"chrome-left");
+    NSView *heading = rill_find_ident(content, @"chrome-left-heading");
+    unsigned nav_bg = rill_view_bg_rgb(nav);
+    CGFloat nav_top = -1;
+    CGFloat chrome_font = 0;
+    if (nav && heading) {
+        [nav layoutSubtreeIfNeeded];
+        if (heading.superview == nav) {
+            if (nav.isFlipped) {
+                nav_top = heading.frame.origin.y;
+            } else {
+                nav_top = NSMaxY(nav.bounds) - NSMaxY(heading.frame);
+            }
+        } else {
+            NSRect headInNav = [nav convertRect:heading.bounds fromView:heading];
+            if (nav.isFlipped) {
+                nav_top = headInNav.origin.y;
+            } else {
+                nav_top = NSMaxY(nav.bounds) - NSMaxY(headInNav);
+            }
+        }
+    }
+    if ([heading isKindOfClass:[NSTextField class]]) {
+        chrome_font = ((NSTextField *)heading).font.pointSize;
+    }
+    CGFloat backing = (w && w.backingScaleFactor > 0) ? w.backingScaleFactor : 1.0;
+    CGFloat atlasScale = backing;
+    const char *gmut = getenv("RILL_MUTATE");
+    if (gmut && strcmp(gmut, "skip_glyph_backing_scale") == 0) {
+        atlasScale = 1.0;
+    }
+    [self resetAtlasForScale:atlasScale];
+    RillGlyph gm = [self glyphForCodepoint:(uint32_t)'M' bold:NO];
+    float cell_px = (float)(_cellH * backing);
+    float glyph_m = gm.sizeY;
     NSString *line = [NSString
         stringWithFormat:
             @"seq=%u fullscreen=%d visible=%d key=%d chrome=%u left=%.0f center=%.0f right=%.0f "
-            @"first=%s opaque=%d alpha=%d\n",
-            _heartbeatSeq, fs, vis, key, chrome, left, center, right, first, opaque, alpha];
+            @"first=%s opaque=%d alpha=%d nav_bg=%06x nav_top=%.0f pad_y=%.0f chrome_font=%.0f "
+            @"cell_px=%.0f glyph_m=%.0f\n",
+            _heartbeatSeq, fs, vis, key, chrome, left, center, right, first, opaque, alpha, nav_bg,
+            nav_top, _padY, chrome_font, cell_px, glyph_m];
     [line writeToFile:@(path) atomically:YES encoding:NSUTF8StringEncoding error:NULL];
 }
 
@@ -545,6 +634,17 @@ typedef struct {
 
     RillGlyph out = {0};
     CTFontRef font = bold ? _fontBold : _font;
+    CGFloat scale = _atlasScale >= 1.0 ? _atlasScale : 1.0;
+    CTFontRef drawFont = font;
+    BOOL ownDraw = NO;
+    if (scale > 1.01) {
+        drawFont = CTFontCreateCopyWithAttributes(font, CTFontGetSize(font) * scale, NULL, NULL);
+        if (drawFont) {
+            ownDraw = YES;
+        } else {
+            drawFont = font;
+        }
+    }
 
     UniChar uc[2];
     CFIndex n = 0;
@@ -558,22 +658,28 @@ typedef struct {
         n = 2;
     }
     CGGlyph glyphs[2] = {0, 0};
-    if (!CTFontGetGlyphsForCharacters(font, uc, glyphs, n) || glyphs[0] == 0) {
+    if (!CTFontGetGlyphsForCharacters(drawFont, uc, glyphs, n) || glyphs[0] == 0) {
         /* Colour emoji and anything the family cannot render become an explicit
          * empty cell, counted by the caller. Silent mis-rendering is not
          * acceptable (ADR 0003 D1). */
         out.valid = YES;
         _glyphCache[key] = [NSValue valueWithBytes:&out objCType:@encode(RillGlyph)];
+        if (ownDraw) {
+            CFRelease(drawFont);
+        }
         return out;
     }
 
     CGRect bounds =
-        CTFontGetBoundingRectsForGlyphs(font, kCTFontOrientationHorizontal, glyphs, NULL, 1);
+        CTFontGetBoundingRectsForGlyphs(drawFont, kCTFontOrientationHorizontal, glyphs, NULL, 1);
     int w = (int)ceil(CGRectGetWidth(bounds)) + 2;
     int h = (int)ceil(CGRectGetHeight(bounds)) + 2;
     if (w <= 2 || h <= 2) {
         out.valid = YES; /* whitespace */
         _glyphCache[key] = [NSValue valueWithBytes:&out objCType:@encode(RillGlyph)];
+        if (ownDraw) {
+            CFRelease(drawFont);
+        }
         return out;
     }
 
@@ -587,6 +693,9 @@ typedef struct {
     if (_atlasPenY + h + 1 >= RILL_ATLAS_DIM) {
         NSLog(@"Rill: glyph atlas full; U+%04X not cached", cp);
         out.valid = NO;
+        if (ownDraw) {
+            CFRelease(drawFont);
+        }
         return out;
     }
 
@@ -594,6 +703,9 @@ typedef struct {
     uint8_t *bitmap = calloc(stride * (size_t)h, 1);
     if (!bitmap) {
         out.valid = NO;
+        if (ownDraw) {
+            CFRelease(drawFont);
+        }
         return out;
     }
     CGColorSpaceRef gray = CGColorSpaceCreateDeviceGray();
@@ -603,6 +715,9 @@ typedef struct {
     if (!ctx) {
         free(bitmap);
         out.valid = NO;
+        if (ownDraw) {
+            CFRelease(drawFont);
+        }
         return out;
     }
     CGContextSetShouldAntialias(ctx, true);
@@ -610,7 +725,7 @@ typedef struct {
     CGContextSetGrayFillColor(ctx, 1.0, 1.0);
     CGContextSetTextMatrix(ctx, CGAffineTransformIdentity);
     CGPoint at = CGPointMake(1 - bounds.origin.x, 1 - bounds.origin.y);
-    CTFontDrawGlyphs(font, glyphs, &at, 1, ctx);
+    CTFontDrawGlyphs(drawFont, glyphs, &at, 1, ctx);
     CGContextRelease(ctx);
 
     [_atlas replaceRegion:MTLRegionMake2D((NSUInteger)_atlasPenX, (NSUInteger)_atlasPenY,
@@ -626,9 +741,9 @@ typedef struct {
     out.h = (float)h / (float)RILL_ATLAS_DIM;
     out.sizeX = (float)w;
     out.sizeY = (float)h;
-    /* Cell-local, top-left origin: baseline sits at _ascent from the top. */
+    /* Cell-local, top-left origin: baseline sits at ascent from the top. */
     out.originX = (float)(bounds.origin.x - 1);
-    out.originY = (float)(_ascent - (bounds.origin.y + CGRectGetHeight(bounds)) - 1);
+    out.originY = (float)(CTFontGetAscent(drawFont) - (bounds.origin.y + CGRectGetHeight(bounds)) - 1);
     out.valid = YES;
 
     _atlasPenX += w + 1;
@@ -636,6 +751,9 @@ typedef struct {
         _atlasShelfHeight = h;
     }
     _glyphCache[key] = [NSValue valueWithBytes:&out objCType:@encode(RillGlyph)];
+    if (ownDraw) {
+        CFRelease(drawFont);
+    }
     return out;
 }
 
@@ -790,6 +908,12 @@ typedef struct {
     if (layer.contentsScale != scale) {
         layer.contentsScale = scale;
     }
+    CGFloat atlasScale = scale;
+    const char *gmut = getenv("RILL_MUTATE");
+    if (gmut && strcmp(gmut, "skip_glyph_backing_scale") == 0) {
+        atlasScale = 1.0;
+    }
+    [self resetAtlasForScale:atlasScale];
     CGSize backing = [self convertSizeToBacking:self.bounds.size];
     if (backing.width >= 1 && backing.height >= 1 &&
         !CGSizeEqualToSize(layer.drawableSize, backing)) {

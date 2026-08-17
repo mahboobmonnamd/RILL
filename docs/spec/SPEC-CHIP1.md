@@ -65,7 +65,9 @@ v0 default colours (match Chip 0 adapter until a colour ADR): fg `#cccccc`,
 bg `#121212`. Theme **files** are host data today (ADR 0017). Palette-index
 cells, theme-file materialisation of ANSI 0–15, and compositor opacity are
 **not** v0: they need an Accepted colour ADR and
-[#267](https://github.com/mahboobmonnamd/RILL/issues/267) under [#6](https://github.com/mahboobmonnamd/RILL/issues/6). Until then Chip 1 MUST NOT
+[#267](https://github.com/mahboobmonnamd/RILL/issues/267) under [#6](https://github.com/mahboobmonnamd/RILL/issues/6).
+T-CHIP1-LOOK-ANSI (file palette, Latte and Mocha) is
+[#271](https://github.com/mahboobmonnamd/RILL/issues/271). Until then Chip 1 MUST NOT
 RGB-rewrite ANSI from a compiled-in table, and MUST NOT treat `PodCell.fg` /
 `bg` as the only colour identity.
 

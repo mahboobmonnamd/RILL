@@ -2,9 +2,13 @@
 
 - **Status:** Accepted — 2026-08-17
 - **Authority:** [ADR 0018](../adr/0018-three-pane-host-chrome.md)
-- **Issue:** [#260](https://github.com/mahboobmonnamd/RILL/issues/260)
+- **Issue:** [#260](https://github.com/mahboobmonnamd/RILL/issues/260),
+  look-file chrome: [#269](https://github.com/mahboobmonnamd/RILL/issues/269),
+  inset / type / surface: [#270](https://github.com/mahboobmonnamd/RILL/issues/270)
 - **Code:** `host/macos/` (`ChromeHost`, `main.m`, `TerminalView`)
-- **Gates:** T-SPLIT (Red until demonstrated)
+- **Gates:** T-SPLIT **Proven** on the split. T-SPLIT-LOOK, T-CHROME-INSET,
+  T-CHROME-FONT demonstrated green on packaged `Rill.app`; CI `gates.yml`
+  is the D8 closer.
 
 Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
@@ -39,6 +43,27 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
   last path component. Not persisted. Not a second session.
 - Right: inert **Changes** and **Files** rows. Clicks MUST NOT spawn, kill,
   or detach.
+
+## 4a. Look
+
+- Left and right MUST paint a **chrome surface**: look `background` with each
+  8-bit RGB channel saturating-minus 9. Center Chip 0 keeps the file
+  `background`. Labels use look `foreground`.
+- They MUST NOT use a hardcoded gray independent of the theme file, and MUST
+  NOT match Chip 0's file background (T-SPLIT-LOOK).
+- Latte and Mocha MUST both paint; a cream constant that matches only one
+  file is not this gate.
+- `background-opacity` MUST NOT make chrome or the window translucent.
+
+## 4b. Inset and type
+
+- Section labels MUST sit `padding-y` points from the top of their pane
+  (same look value Chip 0 uses as `window-padding-y` / host-surface
+  `padding-y`). Layout MUST use the live pane bounds. A 680pt template is
+  not this gate (T-CHROME-INSET).
+- Section labels MUST use `NSFont.systemFontSize` (13pt control size), not
+  11pt caption size (T-CHROME-FONT). Terminal glyphs stay the look
+  `font-family` / `font-size`.
 
 ## 5. Out of scope
 

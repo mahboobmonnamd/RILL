@@ -103,7 +103,9 @@ the `\x1b[2J` prefix.
    exist as names, one issue per slice, `lane:chip1-vt-engine`, milestone M4.
    Palette-index cells / compositor opacity:
    **[#267](https://github.com/mahboobmonnamd/RILL/issues/267)** (colour ADR
-   first; this handoff does not authorize that work).
+   first; this handoff does not authorize that work). Theme-file SGR oracle:
+   **[#271](https://github.com/mahboobmonnamd/RILL/issues/271)**. M7 must keep
+   packaged T-LOOK-ANSI: **[#272](https://github.com/mahboobmonnamd/RILL/issues/272)**.
 3. Types crate + red tests, then impl.
 
 ## Done (M4) vs later
