@@ -20,11 +20,12 @@ Status vocabulary: **Red** (no evidence) · **Green-unproven** (passes, never
 demonstrated red) · **Proven** (demonstrated red, then green, in CI or a
 recorded evidence artifact).
 
-Ledger below is the 2026-08-16 laptop run
-(`evidence/spike0-20260816T163646Z.json`) plus the 2026-08-17 battery hid on
-ADR 0009. No gate is **Proven** (ADR 0002 D8; T-NFR `timer_pump` invert is
-pending). Spike 0 stays **Red**. The withdrawn `p95=0.032ms` run must not be
-cited.
+Ledger below cites GitHub Actions
+[run 31993832263](https://github.com/mahboobmonnamd/RILL/actions/runs/31993832263)
+(`spike0-20260817T041912Z.json`) for the library suite, plus the 2026-08-17
+battery hid on ADR 0009. No gate is **Proven**. T-NFR is **Manual**. Spike 0
+stays **Red**. The withdrawn `p95=0.032ms` run must not be cited. Do not
+dispatch `gates.yml` again.
 
 ---
 
@@ -356,11 +357,11 @@ snapshot, inside the Rust client, never reaching the host or the GPU.
 | T-RESYNC | Green-unproven | `no_resync` went red (blank reopen) | — |
 | T-KILL | Green-unproven | `drop_POSIX_SPAWN_SETSID` automated | S3-3 (drop kills child) |
 | T-SPAWN | Green-unproven | fixture control + `openpty_in_main_m` automated | S1-1 |
-| T-NFR | Green-unproven | `timer_pump` went red (p95 30.823ms) | S3-8b, S3-8g, S3-8h |
+| T-NFR | Manual | `timer_pump` went red on laptop (p95 30.823ms); CI hid not possible | S3-8b, S3-8g, S3-8h |
 
-T-NFR battery hid (ADR 0009, 2026-08-17): p50=6.743ms p95=**7.011ms**
-p99=14.220ms max=22.670ms, samples=1000 discarded=2 (0.20%), 120 Hz
-budget=8.33ms, cadence p50=p95=8.33ms, `ax_trusted=1`, `pmset` Battery Power
-28% discharging. `timer_pump` invert: p95 **30.823ms**, cadence 33.33ms,
-`timer_pump=1`. Demonstrated red, then green, on a laptop. Not Proven until
-the rest of ADR 0002 D8 (library suite in `gates.yml`).
+Library D8 artifact: [run 31993832263](https://github.com/mahboobmonnamd/RILL/actions/runs/31993832263).
+Rows stay Green-unproven. T-NFR battery hid (ADR 0009, 2026-08-17): p50=6.743ms
+p95=**7.011ms** p99=14.220ms max=22.670ms, samples=1000 discarded=2 (0.20%),
+120 Hz budget=8.33ms, cadence p50=p95=8.33ms, `ax_trusted=1`, `pmset` Battery
+Power 28% discharging. `timer_pump` invert: p95 **30.823ms**, cadence 33.33ms,
+`timer_pump=1`. Hosted `macos-14` T-NFR timed out at 45s and does not close.

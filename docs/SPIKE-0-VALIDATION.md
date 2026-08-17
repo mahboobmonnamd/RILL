@@ -81,24 +81,31 @@ The human summary is rendered **from** this file. No summary line may be printed
 without a corresponding recorded result — the previous script hardcoded `pass`
 for three gates, one of which it never ran (audit S4-3).
 
-## Current state — 2026-08-16
+## Current state — 2026-08-17
 
-Laptop artifact: `evidence/spike0-20260816T163646Z.json`. **Does not close
-Spike 0.** No gate is Proven (ADR 0002 D8: never run in `gates.yml`).
+**Does not close Spike 0.** No gate is Proven. Do not dispatch `gates.yml`
+again: hosted `macos-14` cannot close T-NFR hid, and the library suite already
+has a D8 artifact.
 
-- Library and packaged gates (T-BYTES, T-DROP, T-ATTACH, T-RESIZE, T-EXIT,
-  T-SPAWN, T-KILL, T-RESYNC) passed unmutated. Automated cargo mutations
-  (`drop_high_bytes`, `drop_on_full`, `resize_before_data`,
-  `clear_outbound_on_detach`, `accept_replaces_client`, `no_resync`) failed
-  the named tests. That is **Green-unproven**, not Proven.
-- T-KILL / T-SPAWN production mutations are automated
-  (`drop_POSIX_SPAWN_SETSID`, `openpty_in_main_m`).
-- T-NFR **Green-unproven** on battery hid (ADR 0009): p95 **7.011ms** vs
-  8.33ms (120 Hz), 1000/2 discards, `ax_trusted=1`, `pmset` Battery Power.
-  `timer_pump` went red (p95 **30.823ms**). GitHub-hosted `macos-14` cannot
-  close hid (no panel, no battery).
-- ASan over `fixtures/bytes/` is `T-BYTES-asan` in `validate-spike0.sh`
-  (`CARGO_TARGET_DIR` isolated so instrumented objects cannot break later
-  links).
+CI (ADR 0002 D8, library and packaged gates):
+[run 31993832263](https://github.com/mahboobmonnamd/RILL/actions/runs/31993832263)
+on `d20568e`, artifact
+[spike0-evidence](https://github.com/mahboobmonnamd/RILL/actions/runs/31993832263/artifacts/9276297736)
+(`spike0-20260817T041912Z.json`). Host: `VirtualMac2,1`, macOS 14.8.7, AC,
+`refresh_hz` null, `nfr_mode=app`.
+
+- Unmutated exit 0: LINT-PLANES, T-BYTES (chip / ASan / kernel), T-DROP,
+  T-RESIZE, T-EXIT, T-EXIT-detach, T-ATTACH, T-RESYNC, PACKAGE (`nm -u` none),
+  T-SPAWN, T-KILL. Class in the artifact: **Green-unproven**.
+- Mutations went red: `drop_high_bytes`, `drop_on_full`, `resize_before_data`,
+  `clear_outbound_on_detach`, `accept_replaces_client`, `no_resync`,
+  `drop_POSIX_SPAWN_SETSID`, `openpty_in_main_m`.
+- T-NFR in that job: **Red**, `timed out after 45s` (`RILL_NFR_OPTIONAL=1` so
+  the job still succeeded). `timer_pump` is `went_red: null`. Diagnostic only.
+- T-NFR hid stays **Manual** (ADR 0009): laptop battery p95 **7.011ms** vs
+  8.33ms, 1000/2, `ax_trusted=1`. `timer_pump` went red (p95 **30.823ms**)
+  from Terminal.app. Hosted CI cannot repeat that.
+- ASan over `fixtures/bytes/` ran in the suite and again as a separate step
+  (`CARGO_TARGET_DIR` isolated).
 
 The withdrawn 2026-08-16 run (`p95=0.032ms control_rpc=0`) must not be cited.

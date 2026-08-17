@@ -79,17 +79,19 @@ diagnostic (ADR 0003 D7). It **cannot** close T-NFR hid.
 
 There is no self-hosted Mac runner in this project. T-NFR hid stays **Manual**:
 packaged `Rill.app`, real panel, `pmset` Battery Power / discharging, recorded
-in `/tmp/rill-nfr-hid.{out,err}` and the `evidence/` artifact. A gate that has
-never run in CI is not Proven for the *library* suite (ADR 0002 D8). T-NFR hid
-is the exception `gates.yml` already states.
+in `/tmp/rill-nfr-hid.{out,err}`. Library D8 is the
+[run 31993832263](https://github.com/mahboobmonnamd/RILL/actions/runs/31993832263)
+artifact `spike0-20260817T041912Z.json` (2026-08-17). T-NFR hid is the
+exception `gates.yml` already states. Do not re-dispatch that workflow to
+chase hid: the job timed out at 45s on a headless panel.
 
 ### D5 — `timer_pump` invert is recorded
 
 Unmutated battery hid: p95 **7.011 ms**. `RILL_MUTATE=timer_pump` on the same
 presenter (same-stack echo and the NFR 0.5 ms pump disabled): p95 **30.823 ms**,
 cadence 33.33 ms (~30 Hz), `timer_pump=1`, 1000/2. The instrument detects a
-60 Hz poll. T-NFR is still not **Proven** until library gates have a `gates.yml`
-artifact (ADR 0002 D8). Hid stays Manual.
+60 Hz poll. Library gates have the `gates.yml` artifact above (ADR 0002 D8).
+T-NFR hid stays Manual. No gate is **Proven**.
 
 ## Consequences
 
