@@ -9,6 +9,7 @@
   are exhausted presenters, not the closer.
 - **Requires:** ADR 0003 D1 atlas and D5–D8 oracle. Full libghostty exec stays
   rejected (ADR 0001 §1).
+- **Amended by:** [ADR 0016](0016-exit-fullscreen-must-not-hang.md) (leave must not hang)
 - **Evidence:** packaged battery hid, `pmset` Battery Power 28% discharging,
   p95 **7.011 ms** vs 8.33 ms (120 Hz), 1000/2 discards (0.20%), vsync on,
   cadence p50=p95=8.33 ms, `ax_trusted=1`. `timer_pump` p95 **30.823 ms**.

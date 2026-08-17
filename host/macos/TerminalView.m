@@ -17,6 +17,7 @@
 #include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdatomic.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -199,6 +200,7 @@ typedef struct {
     BOOL _nfrFailed;
     uint32_t _nfrHidKeyDowns;
     BOOL _timerPump;
+    uint32_t _heartbeatSeq;
 
     NSUInteger _lastDrawCount;
     uint16_t _lastDrawCols;
@@ -408,6 +410,7 @@ typedef struct {
         CAMetalLayer *layer = (CAMetalLayer *)self.layer;
         layer.opaque = YES;
         [self armDisplayLink];
+        [self writeTestHeartbeat];
     } else if (_displayLink) {
         _displayLink.paused = YES;
     }
@@ -447,6 +450,18 @@ typedef struct {
 
 - (void)onDisplayLink:(CADisplayLink *)link {
     _targetPresentTime = link.targetTimestamp;
+    [self writeTestHeartbeat];
+}
+
+- (void)writeTestHeartbeat {
+    const char *path = getenv("RILL_TEST_HEARTBEAT");
+    if (!path || !path[0]) {
+        return;
+    }
+    _heartbeatSeq += 1;
+    int fs = (self.window.styleMask & NSWindowStyleMaskFullScreen) ? 1 : 0;
+    NSString *line = [NSString stringWithFormat:@"seq=%u fullscreen=%d\n", _heartbeatSeq, fs];
+    [line writeToFile:@(path) atomically:YES encoding:NSUTF8StringEncoding error:NULL];
 }
 
 /* Same-stack echo: the key event is the wake. A second dispatch_source turn
@@ -678,9 +693,46 @@ static inline vector_float4 rgba(uint32_t c) {
     }
 }
 
+- (BOOL)waitForeverOnInflight {
+    const char *mut = getenv("RILL_MUTATE");
+    return mut && strcmp(mut, "wait_forever_on_inflight") == 0;
+}
+
+- (BOOL)shouldPresent {
+    if ([self waitForeverOnInflight]) {
+        return YES;
+    }
+    if (self.inLiveResize) {
+        return NO;
+    }
+    NSWindow *w = self.window;
+    if (w && w.inLiveResize) {
+        return NO;
+    }
+    return YES;
+}
+
+- (void)windowDidExitFullScreen:(NSNotification *)notification {
+    (void)notification;
+    [self renderFrame];
+}
+
+- (void)windowDidEnterFullScreen:(NSNotification *)notification {
+    (void)notification;
+    [self renderFrame];
+}
+
+- (void)windowDidEndLiveResize:(NSNotification *)notification {
+    (void)notification;
+    [self renderFrame];
+}
+
 - (void)presentEcho {
     CAMetalLayer *layer = (CAMetalLayer *)self.layer;
     if (!layer || _lastDrawCount == 0) {
+        return;
+    }
+    if (![self shouldPresent]) {
         return;
     }
     layer.opaque = YES;
@@ -694,7 +746,12 @@ static inline vector_float4 rgba(uint32_t c) {
         layer.drawableSize = backing;
         self.drawableSize = backing;
     }
-    dispatch_semaphore_wait(_inflight, DISPATCH_TIME_FOREVER);
+    BOOL forever = [self waitForeverOnInflight];
+    dispatch_time_t timeout = forever ? DISPATCH_TIME_FOREVER
+                                      : dispatch_time(DISPATCH_TIME_NOW, 8 * NSEC_PER_MSEC);
+    if (dispatch_semaphore_wait(_inflight, timeout) != 0) {
+        return;
+    }
     id<CAMetalDrawable> drawable = [layer nextDrawable];
     if (!drawable) {
         dispatch_semaphore_signal(_inflight);
@@ -770,11 +827,20 @@ static inline vector_float4 rgba(uint32_t c) {
         _sentinelInMirror = NO;
     }
     __weak TerminalView *weakSelf = self;
+    __block atomic_int released = 0;
+    void (^releaseInflight)(void) = ^{
+        if (atomic_exchange(&released, 1) == 0) {
+            TerminalView *s = weakSelf;
+            if (s) {
+                dispatch_semaphore_signal(s->_inflight);
+            }
+        }
+    };
+    BOOL forever = [self waitForeverOnInflight];
     [drawable addPresentedHandler:^(id<MTLDrawable> d) {
         double presented = d.presentedTime;
-        TerminalView *s = weakSelf;
-        if (s) {
-            dispatch_semaphore_signal(s->_inflight);
+        if (!forever) {
+            releaseInflight();
         }
         dispatch_async(dispatch_get_main_queue(), ^{
             TerminalView *view = weakSelf;
@@ -800,6 +866,12 @@ static inline vector_float4 rgba(uint32_t c) {
             }
         });
     }];
+    if (!forever) {
+        [cmd addCompletedHandler:^(id<MTLCommandBuffer> buffer) {
+            (void)buffer;
+            releaseInflight();
+        }];
+    }
     CFTimeInterval at = _targetPresentTime;
     if (at > CACurrentMediaTime() + 0.0002) {
         [cmd presentDrawable:drawable atTime:at];
@@ -817,7 +889,9 @@ static inline vector_float4 rgba(uint32_t c) {
     uint16_t cols = (uint16_t)MAX(20, (int)(newSize.width / _cellW));
     uint16_t rows = (uint16_t)MAX(8, (int)(newSize.height / _cellH));
     rill_client_resize(_client, cols, rows, (uint16_t)newSize.width, (uint16_t)newSize.height);
-    [self renderFrame];
+    if ([self shouldPresent]) {
+        [self renderFrame];
+    }
 }
 
 // ---------------------------------------------------------------- input

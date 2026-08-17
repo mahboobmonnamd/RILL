@@ -25,7 +25,7 @@ typedef struct {
     int ok;
 } RillNfrReport;
 
-@interface TerminalView : MTKView <MTKViewDelegate, NSTextInputClient>
+@interface TerminalView : MTKView <MTKViewDelegate, NSTextInputClient, NSWindowDelegate>
 
 - (instancetype)initWithClient:(RillClient *)client;
 

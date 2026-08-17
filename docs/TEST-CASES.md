@@ -387,6 +387,29 @@ snapshot, inside the Rust client, never reaching the host or the GPU.
 
 ---
 
+## T-FS-EXIT — leaving fullscreen must not hang
+
+Authority: [ADR 0016](adr/0016-exit-fullscreen-must-not-hang.md),
+[SPEC-DISPLAY](spec/SPEC-DISPLAY.md) §3,
+[#257](https://github.com/mahboobmonnamd/RILL/issues/257).
+
+**Bug (doc comment).** After `make run` the window is fullscreen. Clicking
+the button to return to a normal window hangs; force quit is required.
+
+**Oracle.** A main-thread heartbeat file (`RILL_TEST_HEARTBEAT`) keeps
+advancing after `toggleFullScreen:` leaves the Space (`fullscreen=0` in the
+file, then `seq` increases). The GUI pid stays alive (`kill(pid, 0)`).
+Downstream of the run loop, not of a flag the test wrote into the presenter.
+
+**Procedure.** Packaged `Rill.app`. `RILL_TEST_EXIT_FULLSCREEN=1` issues the
+same `toggleFullScreen:` as the green button. No GUI click in CI. Socket-only
+tests do not close this.
+
+**Required mutation.** `RILL_MUTATE=wait_forever_on_inflight`: the in-flight
+wait is unbounded again. This test MUST go red.
+
+---
+
 ## Gate ledger
 
 | ID | Status | Automated negative control | Blocking defect it also covers |
