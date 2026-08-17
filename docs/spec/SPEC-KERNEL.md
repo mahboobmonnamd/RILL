@@ -128,6 +128,7 @@ interactive spawn keeps the normal discipline.
 
 Reconnect tokens and daemon-restart / logout survival remain out (ADR 0001 §7).
 
-**Later (M1):** more than one leaf. Spike 0 code is still one `Session` per
-`Daemon`. That is not a spec hole; it is [ADR 0011](../adr/0011-session-graph.md).
-Session naming in the GUI is M2 chrome.
+**M1:** the kernel stores `SessionId → Session` ([ADR 0011](../adr/0011-session-graph.md),
+[SPEC-GRAPH](SPEC-GRAPH.md)). Default daemon start still spawns one leaf so the
+packaged one-window path stays Spike 0 frames. Session naming in the GUI is M2
+chrome.

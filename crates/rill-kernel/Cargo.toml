@@ -3,7 +3,7 @@ name = "rill-kernel"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "PTY owner, sole writer, bounded byte ring (lane A)"
+description = "PTY owner, sole writer, bounded byte ring (kernel lane)"
 
 [features]
 # Negative-control mutations (ADR 0002 D3). Only `validate-spike0.sh

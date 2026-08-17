@@ -4,7 +4,7 @@ mod error;
 
 use rill_attach::{Decoder, Frame};
 use rill_chip0::Chip0;
-use rill_kernel::{Session, Winsize};
+use rill_kernel::{Kernel, Session, SessionId, Winsize};
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -20,7 +20,8 @@ pub struct Daemon {
     listener: UnixListener,
     socket_path: PathBuf,
     _lock: File,
-    session: Session,
+    kernel: Kernel,
+    default_id: SessionId,
     /// The connection currently holding the attach claim.
     client: Option<Client>,
     chip: Chip0,
@@ -77,9 +78,14 @@ impl Daemon {
         // The attach socket carries keystrokes and shell output. Do not leave
         // it world-writable (SPEC-ATTACH §1).
         std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o600))?;
-        let session = Session::spawn(shell, args, size)?;
+        let mut kernel = Kernel::new();
+        let default_id = kernel.spawn_leaf(shell, args, size)?;
+        let child_pid = kernel
+            .session(default_id)
+            .ok_or(rill_kernel::Error::UnknownSession)?
+            .child_pid();
         if let Ok(path) = std::env::var("RILL_TEST_PIDFILE") {
-            std::fs::write(path, format!("{}\n", session.child_pid()))?;
+            std::fs::write(path, format!("{child_pid}\n"))?;
         }
         if let Ok(path) = std::env::var("RILL_TEST_DAEMON_PIDFILE") {
             std::fs::write(path, format!("{}\n", std::process::id()))?;
@@ -89,14 +95,27 @@ impl Daemon {
             listener,
             socket_path,
             _lock: lock,
-            session,
+            kernel,
+            default_id,
             client: None,
             chip,
         })
     }
 
+    fn leaf(&self) -> Result<&Session, Error> {
+        self.kernel
+            .session(self.default_id)
+            .ok_or(rill_kernel::Error::UnknownSession.into())
+    }
+
+    fn leaf_mut(&mut self) -> Result<&mut Session, Error> {
+        self.kernel
+            .session_mut(self.default_id)
+            .ok_or(rill_kernel::Error::UnknownSession.into())
+    }
+
     pub fn child_pid(&self) -> u32 {
-        self.session.child_pid()
+        self.leaf().map(Session::child_pid).unwrap_or(0)
     }
 
     pub fn socket_path(&self) -> &Path {
@@ -106,19 +125,19 @@ impl Daemon {
     /// Must stay at 1 however much the user types. Resync is a cold path
     /// (FR-RESYNC, SPEC-CHIP0 §7).
     pub fn resync_count(&self) -> u32 {
-        self.session.resync_count()
+        self.leaf().map(Session::resync_count).unwrap_or(0)
     }
 
     pub fn stalled_reads(&self) -> u64 {
-        self.session.stalled_reads()
+        self.leaf().map(Session::stalled_reads).unwrap_or(0)
     }
 
     pub fn child_alive(&self) -> bool {
-        self.session.child_alive()
+        self.leaf().map(Session::child_alive).unwrap_or(false)
     }
 
     pub fn step(&mut self, timeout_ms: i32) -> Result<(), Error> {
-        self.session.poll_child()?;
+        self.leaf_mut()?.poll_child()?;
         self.poll_io(timeout_ms)?;
         self.flush_outbound()?;
         self.maybe_resync()?;
@@ -136,7 +155,11 @@ impl Daemon {
         if std::env::var("RILL_MUTATE").as_deref() == Ok("idle_poll_while_attached") {
             return 50;
         }
-        if self.client.is_some() && self.session.credit() > 0 && self.session.child_alive() {
+        let live = self
+            .leaf()
+            .ok()
+            .is_some_and(|s| s.credit() > 0 && s.child_alive());
+        if self.client.is_some() && live {
             0
         } else {
             50
@@ -150,10 +173,10 @@ impl Daemon {
     }
 
     fn maybe_resync(&mut self) -> Result<(), Error> {
-        if let Some(history) = self.session.take_resync_history() {
+        if let Some(history) = self.leaf_mut()?.take_resync_history() {
             let bytes = self.chip.resync_from_history(&history)?;
             if !bytes.is_empty() {
-                self.session.enqueue_outbound(Frame::Data(bytes));
+                self.leaf_mut()?.enqueue_outbound(Frame::Data(bytes));
             }
         }
         Ok(())
@@ -181,9 +204,12 @@ impl Daemon {
             }
             None => None,
         };
-        let want_pty = self.session.credit() > 0 && self.session.child_alive();
+        let want_pty = {
+            let s = self.leaf()?;
+            s.credit() > 0 && s.child_alive()
+        };
         let pty_ready = if want_pty {
-            self.session.poll_with_extras(&mut fds, timeout_ms)?
+            self.leaf()?.poll_with_extras(&mut fds, timeout_ms)?
         } else {
             // SAFETY: fds is a valid, non-empty slice of initialised pollfd.
             let n = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, timeout_ms) };
@@ -205,7 +231,12 @@ impl Daemon {
             }
         }
         if pty_ready {
-            while self.session.credit() > 0 && self.session.on_pty_readable()? > 0 {}
+            loop {
+                let s = self.leaf_mut()?;
+                if !(s.credit() > 0 && s.on_pty_readable()? > 0) {
+                    break;
+                }
+            }
         }
         Ok(())
     }
@@ -276,14 +307,16 @@ impl Daemon {
         let mut buf = [0u8; 8192];
         match client.stream.read(&mut buf) {
             Ok(0) => {
-                self.session.detach();
+                if let Some(s) = self.kernel.session_mut(self.default_id) {
+                    s.detach();
+                }
                 self.client = None;
                 return Ok(());
             }
             Ok(n) => {
                 let frames = client.decoder.push(&buf[..n])?;
                 for frame in frames {
-                    match self.session.on_frame(frame) {
+                    match self.kernel.on_frame(self.default_id, frame) {
                         Ok(()) => {}
                         Err(rill_kernel::Error::Dead) => {}
                         Err(e) => return Err(e.into()),
@@ -292,7 +325,9 @@ impl Daemon {
             }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
             Err(_) => {
-                self.session.detach();
+                if let Some(s) = self.kernel.session_mut(self.default_id) {
+                    s.detach();
+                }
                 self.client = None;
             }
         }
@@ -304,31 +339,34 @@ impl Daemon {
         // drained and discarded everything here, so an EXIT that arrived while
         // the window was closed was destroyed and the reopened window painted a
         // live cursor over a dead process (audit S3-2).
+        let Some(session) = self.kernel.session_mut(self.default_id) else {
+            return Err(rill_kernel::Error::UnknownSession.into());
+        };
         let Some(client) = self.client.as_mut() else {
             let mut keep = Vec::new();
-            while let Some(f) = self.session.pop_outbound() {
+            while let Some(f) = session.pop_outbound() {
                 if !matches!(f, Frame::Data(_)) {
                     keep.push(f);
                 }
             }
             for f in keep {
-                self.session.enqueue_outbound(f);
+                session.enqueue_outbound(f);
             }
             return Ok(());
         };
 
         #[cfg(feature = "mutate")]
         if std::env::var("RILL_MUTATE").as_deref() == Ok("replay_full_frame") {
-            while let Some(frame) = self.session.pop_outbound() {
+            while let Some(frame) = session.pop_outbound() {
                 let bytes = frame.encode()?;
                 match client.stream.write_all(&bytes) {
                     Ok(()) => {}
                     Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        self.session.enqueue_outbound(frame);
+                        session.enqueue_outbound(frame);
                         break;
                     }
                     Err(_) => {
-                        self.session.detach();
+                        session.detach();
                         self.client = None;
                         break;
                     }
@@ -337,12 +375,12 @@ impl Daemon {
             return Ok(());
         }
 
-        while let Some(frame) = self.session.pop_outbound() {
+        while let Some(frame) = session.pop_outbound() {
             client.outbox.extend(frame.encode()?);
         }
         let failed = write_outbox(&mut client.stream, &mut client.outbox).is_err();
         if failed {
-            self.session.detach();
+            session.detach();
             self.client = None;
         }
         Ok(())

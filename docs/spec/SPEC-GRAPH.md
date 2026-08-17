@@ -1,11 +1,11 @@
-# SPEC-GRAPH — session graph (Milestone 1, Lane A)
+# SPEC-GRAPH — session graph (Milestone 1, kernel lane)
 
 - **Status:** Accepted for the first slice — 2026-08-17
 - **Authority:** [ADR 0011](../adr/0011-session-graph.md)
 - **Issue:** [#16](https://github.com/mahboobmonnamd/RILL/issues/16)
-- **Crates:** `crates/rill-kernel`, `crates/rilld` (attach payload: Lane B follow-on)
-- **Gates:** T-GRAPH-SPAWN, T-GRAPH-ISOLATE, T-GRAPH-ATTACH (all **Red** until
-  demonstrated). No production map until Spike 0 close docs are on `main`.
+- **Crates:** `crates/rill-kernel`, `crates/rilld` (attach payload: attach-lane follow-on)
+- **Gates:** T-GRAPH-SPAWN, T-GRAPH-ISOLATE, T-GRAPH-ATTACH (Red until demonstrated
+  in CI). `Kernel` holds the map; default daemon start still spawns one leaf.
 
 Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
@@ -25,7 +25,7 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
 This issue MAY keep one live attach in `rilld` while the **kernel map** is
 tested in-process (two `Session` values, no second socket). If `ATTACH` grows a
-session-id field, that change is Lane B and a second issue; it MUST NOT ship as
+session-id field, that change is attach-lane and a second issue; it MUST NOT ship as
 an untested tag.
 
 Until that follow-on:
