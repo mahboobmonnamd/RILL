@@ -1,10 +1,13 @@
 # SPEC-KERNEL — session kernel (Lane A)
 
-- **Status:** Draft for Spike 0 remediation — 2026-08-16
+- **Status:** Accepted for Spike 0 Proven clauses — 2026-08-17
+  ([ADR 0010](../adr/0010-spike-0-closes.md)). Written 2026-08-16 as the
+  remediation draft; those clauses closed. Multiple sessions: [ADR 0011](../adr/0011-session-graph.md),
+  [SPEC-GRAPH](SPEC-GRAPH.md).
 - **Authority:** [ADR 0001](../adr/0001-session-operating-system.md) §3–§7,
   [ADR 0002](../adr/0002-falsifiable-evidence.md)
 - **Crate:** `crates/rill-kernel`
-- **Gates:** T-BYTES, T-DROP, T-RESIZE, T-EXIT, T-KILL
+- **Gates:** T-BYTES, T-DROP, T-RESIZE, T-EXIT, T-KILL — **Proven**
 
 Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
@@ -121,7 +124,10 @@ For T-BYTES the kernel MUST offer a raw-mode spawn that clears `ISIG`,
 line discipline cannot rewrite the byte stream under test. The default
 interactive spawn keeps the normal discipline.
 
-## 11. Out of scope
+## 11. Out of scope (Spike 0)
 
-Multiple sessions, session naming, reconnect tokens, daemon restart survival
-(ADR 0001 §7 places daemon crash and logout out of wedge until a later ADR).
+Reconnect tokens and daemon-restart / logout survival remain out (ADR 0001 §7).
+
+**Later (M1):** more than one leaf. Spike 0 code is still one `Session` per
+`Daemon`. That is not a spec hole; it is [ADR 0011](../adr/0011-session-graph.md).
+Session naming in the GUI is M2 chrome.

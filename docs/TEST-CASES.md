@@ -365,3 +365,47 @@ p99=14.220ms max=22.670ms, samples=1000 discarded=2 (0.20%), 120 Hz
 budget=8.33ms, cadence p50=p95=8.33ms, `ax_trusted=1`, `pmset` Battery Power
 28% discharging. `timer_pump` invert: p95 **30.823ms**, cadence 33.33ms,
 `timer_pump=1`. Hosted `macos-14` T-NFR timed out at 45s and is not the closer.
+
+---
+
+## Milestone 1 — session graph (Red)
+
+Authority: [ADR 0011](adr/0011-session-graph.md), [SPEC-GRAPH](spec/SPEC-GRAPH.md),
+[#16](https://github.com/mahboobmonnamd/RILL/issues/16). These gates are **Red**.
+Named here first. Implementation waits until the Spike 0 close docs are merged
+and `main` is the Proven wedge only.
+
+### T-GRAPH-SPAWN — two leaves, two pids
+
+**Oracle.** After `spawn_leaf` twice, `child_pid` values differ and both
+`child_alive()`. Downstream of `posix_spawn`, not of a counter the test wrote.
+
+**Procedure.** In-process kernel (no GUI). Two interactive or raw spawns of
+`/bin/sleep` (or `/bin/sh -c 'exec sleep 60'`).
+
+**Required mutation.** A kernel that stores one `Session` and ignores the
+second spawn MUST turn this red. Negative control lands with the
+implementation (`RILL_MUTATE=single_session`).
+
+### T-GRAPH-ISOLATE — histories do not mix
+
+**Oracle.** Child A emits a unique marker that MUST appear in A's `history()`
+and MUST NOT appear in B's. Child B vice versa. Markers come from the children,
+not from a test-owned copy of the feed buffer.
+
+**Procedure.** Raw discipline; each child `cat`s a distinct fixture.
+
+**Required mutation.** A shared history for all ids MUST turn this red
+(`single_session` when implemented).
+
+### T-GRAPH-ATTACH — refuse same id, accept other id
+
+**Oracle.** Second attach to id A yields `REFUSED{AlreadyAttached}` and A's
+first client still receives DATA. Attach to id B succeeds. A bare connection
+MUST NOT steal A's claim (existing S3-6, per id).
+
+**Procedure.** In-process `on_frame` / map API for this slice. Socket
+multiplex is a Lane B follow-on.
+
+**Required mutation.** Treating every attach as one session MUST turn the
+second-id clause red.

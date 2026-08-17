@@ -5,11 +5,12 @@ A session operating system for terminals. macOS first. MIT OR Apache-2.0.
 **Spike 0 is GREEN** ([ADR 0010](docs/adr/0010-spike-0-closes.md)). Kernel,
 attach, Chip 0, and a packaged `Rill.app` exist. Every named gate is Proven:
 library suite in [run 31993832263](https://github.com/mahboobmonnamd/RILL/actions/runs/31993832263),
-T-NFR on packaged battery hid. The 2026-08-16 marks remain withdrawn; read
-[SPIKE-0-AUDIT](docs/SPIKE-0-AUDIT.md) before citing that day's numbers.
+T-NFR on packaged battery hid. The 2026-08-16 marks remain withdrawn; the
+[audit](docs/SPIKE-0-AUDIT.md) is that day's defect list, closed by ADR 0010.
 
-Milestone 1 may open. Do not add agents, Blocks, or chrome to hide a later NFR
-miss. Run `make gates` for regression.
+Milestone 1 is the session graph ([ADR 0011](docs/adr/0011-session-graph.md),
+[#16](https://github.com/mahboobmonnamd/RILL/issues/16)). Do not add agents,
+Blocks, or chrome to hide a later NFR miss. Run `make gates` for regression.
 
 ## In one page
 
@@ -55,16 +56,18 @@ Installs or checks Rust (`rustc` ≥ 1.85), Zig (≥ 0.16, for Chip 0 / `libghos
 
 ## Start here
 
-1. [SPIKE-0-AUDIT](docs/SPIKE-0-AUDIT.md) — **read first**: what the green marks actually meant
+1. [ADR 0010](docs/adr/0010-spike-0-closes.md) — Spike 0 is Proven
 2. [PRD](docs/PRD.md) — what we ship and what we refuse
 3. [Architecture](docs/ARCHITECTURE.md) — planes, contracts, diagrams
 4. [ADR 0001](docs/adr/0001-session-operating-system.md) — the lock
 5. [ADR 0002](docs/adr/0002-falsifiable-evidence.md) — what counts as evidence
 6. [ADR 0003](docs/adr/0003-display-pipeline.md) — renderer and key→present
-7. [Spike 0](docs/SPIKE-0.md) — named gates, **Proven** ([validation](docs/SPIKE-0-VALIDATION.md), [test cases](docs/TEST-CASES.md), [ADR 0010](docs/adr/0010-spike-0-closes.md))
-8. [Specs](docs/spec/) — [kernel](docs/spec/SPEC-KERNEL.md), [attach](docs/spec/SPEC-ATTACH.md), [chip 0](docs/spec/SPEC-CHIP0.md), [display](docs/spec/SPEC-DISPLAY.md)
-9. [Lanes](docs/LANES.md) — how 3–5 people work in parallel
-10. [CONTRIBUTING](CONTRIBUTING.md) — issues, PRs, TDD
+7. [Spike 0](docs/SPIKE-0.md) — named gates ([validation](docs/SPIKE-0-VALIDATION.md), [test cases](docs/TEST-CASES.md))
+8. [SPIKE-0-AUDIT](docs/SPIKE-0-AUDIT.md) — historical: why 2026-08-16 was Red
+9. [Specs](docs/spec/) — [kernel](docs/spec/SPEC-KERNEL.md), [attach](docs/spec/SPEC-ATTACH.md), [chip 0](docs/spec/SPEC-CHIP0.md), [display](docs/spec/SPEC-DISPLAY.md), [graph](docs/spec/SPEC-GRAPH.md)
+10. [ADR 0011](docs/adr/0011-session-graph.md) — Milestone 1
+11. [Lanes](docs/LANES.md) — how 3–5 people work in parallel
+12. [CONTRIBUTING](CONTRIBUTING.md) — issues, PRs, TDD
 
 ## License
 
