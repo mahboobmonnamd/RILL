@@ -5,11 +5,13 @@
 //! not as a descriptor (SPEC-KERNEL §1).
 
 mod error;
+mod kernel;
 mod pty;
 mod ring;
 mod session;
 
 pub use error::Error;
+pub use kernel::{Kernel, SessionId};
 pub use pty::{Discipline, Winsize};
 pub use ring::ByteRing;
 pub use session::{IoEvent, Session};

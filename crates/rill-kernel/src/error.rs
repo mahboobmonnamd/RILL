@@ -7,6 +7,7 @@ pub enum Error {
     Io(std::io::Error),
     Dead,
     AttachRefused,
+    UnknownSession,
 }
 
 impl fmt::Display for Error {
@@ -17,6 +18,7 @@ impl fmt::Display for Error {
             Self::Io(e) => write!(f, "kernel io: {e}"),
             Self::Dead => write!(f, "child has exited"),
             Self::AttachRefused => write!(f, "second attach refused"),
+            Self::UnknownSession => write!(f, "unknown session id"),
         }
     }
 }

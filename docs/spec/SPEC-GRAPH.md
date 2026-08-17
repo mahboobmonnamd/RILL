@@ -4,8 +4,8 @@
 - **Authority:** [ADR 0011](../adr/0011-session-graph.md)
 - **Issue:** [#16](https://github.com/mahboobmonnamd/RILL/issues/16)
 - **Crates:** `crates/rill-kernel`, `crates/rilld` (attach payload: `lane:attach` follow-on)
-- **Gates:** T-GRAPH-SPAWN, T-GRAPH-ISOLATE, T-GRAPH-ATTACH (all **Red** until
-  demonstrated). No production map until Spike 0 close docs are on `main`.
+- **Gates:** T-GRAPH-SPAWN, T-GRAPH-ISOLATE, T-GRAPH-ATTACH (Red until demonstrated
+  in CI). `Kernel` holds the map; default daemon start still spawns one leaf.
 
 Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
