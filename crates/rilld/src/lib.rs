@@ -22,8 +22,9 @@ pub struct Daemon {
     _lock: File,
     kernel: Kernel,
     default_id: SessionId,
-    /// The connection currently holding the attach claim.
-    client: Option<Client>,
+    /// One connection per attach claim. A second connection MAY attach a
+    /// different id (ADR 0011 D3). FR-ONE is per leaf, not per daemon.
+    clients: Vec<Client>,
     chip: Chip0,
 }
 
@@ -33,6 +34,7 @@ struct Client {
     /// Partial writes. `write_all` on a non-blocking socket plus re-queue of
     /// the whole frame duplicated DATA (quality audit Q1).
     outbox: VecDeque<u8>,
+    leaf: Option<SessionId>,
 }
 
 impl Daemon {
@@ -97,20 +99,32 @@ impl Daemon {
             _lock: lock,
             kernel,
             default_id,
-            client: None,
+            clients: Vec::new(),
             chip,
         })
+    }
+
+    pub fn default_id(&self) -> SessionId {
+        self.default_id
+    }
+
+    pub fn spawn_leaf(
+        &mut self,
+        shell: &str,
+        args: &[&str],
+        size: Winsize,
+    ) -> Result<SessionId, Error> {
+        Ok(self.kernel.spawn_leaf(shell, args, size)?)
+    }
+
+    /// Cold destroy of one leaf. MUST NOT kill any other live child.
+    pub fn terminate_leaf(&mut self, id: SessionId) -> Result<(), Error> {
+        Ok(self.kernel.terminate(id)?)
     }
 
     fn leaf(&self) -> Result<&Session, Error> {
         self.kernel
             .session(self.default_id)
-            .ok_or(rill_kernel::Error::UnknownSession.into())
-    }
-
-    fn leaf_mut(&mut self) -> Result<&mut Session, Error> {
-        self.kernel
-            .session_mut(self.default_id)
             .ok_or(rill_kernel::Error::UnknownSession.into())
     }
 
@@ -137,7 +151,11 @@ impl Daemon {
     }
 
     pub fn step(&mut self, timeout_ms: i32) -> Result<(), Error> {
-        self.leaf_mut()?.poll_child()?;
+        for id in self.kernel.ids() {
+            if let Some(s) = self.kernel.session_mut(id) {
+                s.poll_child()?;
+            }
+        }
         self.poll_io(timeout_ms)?;
         self.flush_outbound()?;
         self.maybe_resync()?;
@@ -155,11 +173,12 @@ impl Daemon {
         if std::env::var("RILL_MUTATE").as_deref() == Ok("idle_poll_while_attached") {
             return 50;
         }
-        let live = self
-            .leaf()
-            .ok()
-            .is_some_and(|s| s.credit() > 0 && s.child_alive());
-        if self.client.is_some() && live {
+        let live = self.clients.iter().any(|c| {
+            c.leaf
+                .and_then(|id| self.kernel.session(id))
+                .is_some_and(|s| s.credit() > 0 && s.child_alive())
+        });
+        if live {
             0
         } else {
             50
@@ -173,10 +192,18 @@ impl Daemon {
     }
 
     fn maybe_resync(&mut self) -> Result<(), Error> {
-        if let Some(history) = self.leaf_mut()?.take_resync_history() {
-            let bytes = self.chip.resync_from_history(&history)?;
-            if !bytes.is_empty() {
-                self.leaf_mut()?.enqueue_outbound(Frame::Data(bytes));
+        for id in self.kernel.ids() {
+            let history = self
+                .kernel
+                .session_mut(id)
+                .and_then(Session::take_resync_history);
+            if let Some(history) = history {
+                let bytes = self.chip.resync_from_history(&history)?;
+                if !bytes.is_empty() {
+                    if let Some(s) = self.kernel.session_mut(id) {
+                        s.enqueue_outbound(Frame::Data(bytes));
+                    }
+                }
             }
         }
         Ok(())
@@ -189,56 +216,62 @@ impl Daemon {
             events: libc::POLLIN,
             revents: 0,
         });
-        let client_idx = match self.client.as_ref() {
-            Some(c) => {
-                let mut events = libc::POLLIN;
-                if !c.outbox.is_empty() {
-                    events |= libc::POLLOUT;
-                }
-                fds.push(libc::pollfd {
-                    fd: c.stream.as_raw_fd(),
-                    events,
-                    revents: 0,
-                });
-                Some(1usize)
+        for c in &self.clients {
+            let mut events = libc::POLLIN;
+            if !c.outbox.is_empty() {
+                events |= libc::POLLOUT;
             }
-            None => None,
-        };
-        let want_pty = {
-            let s = self.leaf()?;
-            s.credit() > 0 && s.child_alive()
-        };
-        let pty_ready = if want_pty {
-            self.leaf()?.poll_with_extras(&mut fds, timeout_ms)?
-        } else {
-            // SAFETY: fds is a valid, non-empty slice of initialised pollfd.
-            let n = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, timeout_ms) };
-            if n < 0 {
-                let err = std::io::Error::last_os_error();
-                if err.kind() == std::io::ErrorKind::Interrupted {
-                    return Ok(());
-                }
-                return Err(err.into());
-            }
-            false
-        };
+            fds.push(libc::pollfd {
+                fd: c.stream.as_raw_fd(),
+                events,
+                revents: 0,
+            });
+        }
+        let n_clients = self.clients.len();
+        let readable = self.kernel.poll_with_extras(&mut fds, timeout_ms)?;
         if fds[0].revents & libc::POLLIN != 0 {
             self.accept_client()?;
         }
-        if let Some(i) = client_idx {
-            if fds[i].revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR) != 0 {
-                self.read_client()?;
+        let mut i = 0;
+        while i < self.clients.len() && i < n_clients {
+            let idx = 1 + i;
+            if idx < fds.len()
+                && fds[idx].revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR) != 0
+            {
+                self.read_client(i)?;
+                if i < self.clients.len() {
+                    i += 1;
+                }
+            } else {
+                i += 1;
             }
         }
-        if pty_ready {
-            loop {
-                let s = self.leaf_mut()?;
+        for id in readable {
+            while let Some(s) = self.kernel.session_mut(id) {
                 if !(s.credit() > 0 && s.on_pty_readable()? > 0) {
                     break;
                 }
             }
         }
         Ok(())
+    }
+
+    fn resolve_attach(&self, session_id: Option<u64>) -> Result<SessionId, Error> {
+        #[cfg(feature = "mutate")]
+        if std::env::var("RILL_MUTATE").as_deref() == Ok("ignore_session_id") {
+            return Ok(self.default_id);
+        }
+        match session_id {
+            None => Ok(self.default_id),
+            Some(raw) => {
+                let id = SessionId::from_u64(raw);
+                if self.kernel.session(id).is_some() {
+                    Ok(id)
+                } else {
+                    Err(rill_kernel::Error::UnknownSession.into())
+                }
+            }
+        }
     }
 
     fn accept_client(&mut self) -> Result<(), Error> {
@@ -259,39 +292,22 @@ impl Daemon {
                         );
                     }
                 }
-                // A live connection holds its slot whether or not it has sent
-                // ATTACH yet.
-                //
-                // The previous condition also required `session.attached()`, so
-                // a client that connected and never attached could be silently
-                // displaced by the next connection — FR-ONE bypassable by not
-                // attaching (audit S3-6).
-                let occupied = {
-                    #[cfg(feature = "mutate")]
-                    {
-                        if std::env::var("RILL_MUTATE").as_deref() == Ok("accept_replaces_client") {
-                            false
-                        } else {
-                            self.client.is_some()
+                #[cfg(feature = "mutate")]
+                if std::env::var("RILL_MUTATE").as_deref() == Ok("accept_replaces_client") {
+                    let leaves: Vec<SessionId> =
+                        self.clients.iter().filter_map(|c| c.leaf).collect();
+                    for id in leaves {
+                        if let Some(s) = self.kernel.session_mut(id) {
+                            s.detach();
                         }
                     }
-                    #[cfg(not(feature = "mutate"))]
-                    {
-                        self.client.is_some()
-                    }
-                };
-                if occupied {
-                    let mut s = stream;
-                    let frame = Frame::Refused {
-                        reason: rill_attach::RefuseReason::AlreadyAttached,
-                    };
-                    let _ = s.write_all(&frame.encode()?);
-                    return Ok(());
+                    self.clients.clear();
                 }
-                self.client = Some(Client {
+                self.clients.push(Client {
                     stream,
                     decoder: Decoder::new(),
                     outbox: VecDeque::new(),
+                    leaf: None,
                 });
             }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
@@ -300,49 +316,124 @@ impl Daemon {
         Ok(())
     }
 
-    fn read_client(&mut self) -> Result<(), Error> {
-        let Some(client) = self.client.as_mut() else {
+    fn read_client(&mut self, idx: usize) -> Result<(), Error> {
+        let mut buf = [0u8; 8192];
+        let n = {
+            let Some(client) = self.clients.get_mut(idx) else {
+                return Ok(());
+            };
+            match client.stream.read(&mut buf) {
+                Ok(0) => None,
+                Ok(n) => Some(n),
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => return Ok(()),
+                Err(_) => None,
+            }
+        };
+        let Some(n) = n else {
+            self.drop_client(idx);
             return Ok(());
         };
-        let mut buf = [0u8; 8192];
-        match client.stream.read(&mut buf) {
-            Ok(0) => {
-                if let Some(s) = self.kernel.session_mut(self.default_id) {
-                    s.detach();
-                }
-                self.client = None;
+        let frames = {
+            let Some(client) = self.clients.get_mut(idx) else {
                 return Ok(());
-            }
-            Ok(n) => {
-                let frames = client.decoder.push(&buf[..n])?;
-                for frame in frames {
-                    match self.kernel.on_frame(self.default_id, frame) {
-                        Ok(()) => {}
-                        Err(rill_kernel::Error::Dead) => {}
-                        Err(e) => return Err(e.into()),
+            };
+            client.decoder.push(&buf[..n])?
+        };
+        for frame in frames {
+            self.dispatch_frame(idx, frame)?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_frame(&mut self, idx: usize, frame: Frame) -> Result<(), Error> {
+        match frame {
+            Frame::Attach {
+                generation,
+                session_id,
+            } => {
+                let id = match self.resolve_attach(session_id) {
+                    Ok(id) => id,
+                    Err(_) => {
+                        if let Some(c) = self.clients.get_mut(idx) {
+                            c.outbox.extend(
+                                Frame::Refused {
+                                    reason: rill_attach::RefuseReason::Invalid,
+                                }
+                                .encode()?,
+                            );
+                        }
+                        return Ok(());
+                    }
+                };
+                let already = self.kernel.session(id).is_some_and(Session::attached);
+                let mine = self.clients.get(idx).and_then(|c| c.leaf) == Some(id);
+                if already && !mine {
+                    if let Some(c) = self.clients.get_mut(idx) {
+                        c.outbox.extend(
+                            Frame::Refused {
+                                reason: rill_attach::RefuseReason::AlreadyAttached,
+                            }
+                            .encode()?,
+                        );
+                    }
+                    return Ok(());
+                }
+                match self.kernel.on_frame(
+                    id,
+                    Frame::Attach {
+                        generation,
+                        session_id,
+                    },
+                ) {
+                    Ok(()) => {}
+                    Err(rill_kernel::Error::Dead) => {}
+                    Err(e) => return Err(e.into()),
+                }
+                if self.kernel.session(id).is_some_and(Session::attached) {
+                    if let Some(c) = self.clients.get_mut(idx) {
+                        c.leaf = Some(id);
                     }
                 }
             }
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-            Err(_) => {
-                if let Some(s) = self.kernel.session_mut(self.default_id) {
-                    s.detach();
+            other => {
+                let id = self
+                    .clients
+                    .get(idx)
+                    .and_then(|c| c.leaf)
+                    .unwrap_or(self.default_id);
+                match self.kernel.on_frame(id, other) {
+                    Ok(()) => {}
+                    Err(rill_kernel::Error::Dead) => {}
+                    Err(e) => return Err(e.into()),
                 }
-                self.client = None;
             }
         }
         Ok(())
     }
 
+    fn drop_client(&mut self, idx: usize) {
+        if idx >= self.clients.len() {
+            return;
+        }
+        let leaf = self.clients[idx].leaf;
+        if let Some(id) = leaf {
+            if let Some(s) = self.kernel.session_mut(id) {
+                s.detach();
+            }
+        }
+        self.clients.remove(idx);
+    }
+
     fn flush_outbound(&mut self) -> Result<(), Error> {
-        // With no client, leave control frames queued. The previous version
-        // drained and discarded everything here, so an EXIT that arrived while
-        // the window was closed was destroyed and the reopened window painted a
-        // live cursor over a dead process (audit S3-2).
-        let Some(session) = self.kernel.session_mut(self.default_id) else {
-            return Err(rill_kernel::Error::UnknownSession.into());
-        };
-        let Some(client) = self.client.as_mut() else {
+        // With no client for a leaf, leave control frames queued (audit S3-2).
+        let claimed: Vec<SessionId> = self.clients.iter().filter_map(|c| c.leaf).collect();
+        for id in self.kernel.ids() {
+            if claimed.contains(&id) {
+                continue;
+            }
+            let Some(session) = self.kernel.session_mut(id) else {
+                continue;
+            };
             let mut keep = Vec::new();
             while let Some(f) = session.pop_outbound() {
                 if !matches!(f, Frame::Data(_)) {
@@ -352,36 +443,57 @@ impl Daemon {
             for f in keep {
                 session.enqueue_outbound(f);
             }
-            return Ok(());
-        };
+        }
 
-        #[cfg(feature = "mutate")]
-        if std::env::var("RILL_MUTATE").as_deref() == Ok("replay_full_frame") {
-            while let Some(frame) = session.pop_outbound() {
-                let bytes = frame.encode()?;
-                match client.stream.write_all(&bytes) {
-                    Ok(()) => {}
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        session.enqueue_outbound(frame);
+        let mut drop_idx = None;
+        for i in 0..self.clients.len() {
+            if let Some(id) = self.clients[i].leaf {
+                let frames = if let Some(session) = self.kernel.session_mut(id) {
+                    let mut frames = Vec::new();
+                    while let Some(f) = session.pop_outbound() {
+                        frames.push(f);
+                    }
+                    frames
+                } else {
+                    Vec::new()
+                };
+                #[cfg(feature = "mutate")]
+                if std::env::var("RILL_MUTATE").as_deref() == Ok("replay_full_frame") {
+                    let client = &mut self.clients[i];
+                    for frame in frames {
+                        let bytes = frame.encode()?;
+                        match client.stream.write_all(&bytes) {
+                            Ok(()) => {}
+                            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                                if let Some(session) = self.kernel.session_mut(id) {
+                                    session.enqueue_outbound(frame);
+                                }
+                                break;
+                            }
+                            Err(_) => {
+                                drop_idx = Some(i);
+                                break;
+                            }
+                        }
+                    }
+                    if drop_idx.is_some() {
                         break;
                     }
-                    Err(_) => {
-                        session.detach();
-                        self.client = None;
-                        break;
-                    }
+                    continue;
+                }
+                let client = &mut self.clients[i];
+                for frame in frames {
+                    client.outbox.extend(frame.encode()?);
                 }
             }
-            return Ok(());
+            let client = &mut self.clients[i];
+            if write_outbox(&mut client.stream, &mut client.outbox).is_err() {
+                drop_idx = Some(i);
+                break;
+            }
         }
-
-        while let Some(frame) = session.pop_outbound() {
-            client.outbox.extend(frame.encode()?);
-        }
-        let failed = write_outbox(&mut client.stream, &mut client.outbox).is_err();
-        if failed {
-            session.detach();
-            self.client = None;
+        if let Some(i) = drop_idx {
+            self.drop_client(i);
         }
         Ok(())
     }

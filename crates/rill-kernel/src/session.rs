@@ -137,6 +137,10 @@ impl Session {
         self.pty.poll_with_extras(extras, timeout_ms)
     }
 
+    pub(crate) fn master_pollfd(&self, events: i16) -> libc::pollfd {
+        self.pty.master_pollfd(events)
+    }
+
     pub fn terminate(&mut self) -> Result<(), Error> {
         self.pty.terminate()
     }
@@ -210,7 +214,10 @@ impl Session {
     /// Apply one inbound attach frame. Total; never panics.
     pub fn on_frame(&mut self, frame: Frame) -> Result<(), Error> {
         match frame {
-            Frame::Attach { generation } => {
+            Frame::Attach {
+                generation,
+                session_id: _,
+            } => {
                 if self.attach_generation.is_some() {
                     self.outbound.push_back(Frame::Refused {
                         reason: RefuseReason::AlreadyAttached,

@@ -145,7 +145,14 @@ fn t_kill_gui_process_group_child_pid_survives_and_reattach_shows_prior_output()
 
     let mut stream = UnixStream::connect(&sock).expect("reload connect");
     stream
-        .write_all(&Frame::Attach { generation: 2 }.encode().expect("a2"))
+        .write_all(
+            &Frame::Attach {
+                generation: 2,
+                session_id: None,
+            }
+            .encode()
+            .expect("a2"),
+        )
         .expect("reattach");
     stream
         .write_all(&Frame::Credit(256 * 1024).encode().expect("c2"))

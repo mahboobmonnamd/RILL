@@ -64,7 +64,10 @@ impl Client {
             auditing: false,
             cached: None,
         };
-        client.send(Frame::Attach { generation: 1 })?;
+        client.send(Frame::Attach {
+            generation: 1,
+            session_id: None,
+        })?;
         client.grant_credit(CREDIT_WINDOW)?;
         Ok(client)
     }

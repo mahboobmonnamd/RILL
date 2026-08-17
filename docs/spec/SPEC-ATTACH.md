@@ -34,7 +34,7 @@
 | `CREDIT` | 2 | GUI → kernel | `u32` bytes granted |
 | `RESIZE` | 3 | GUI → kernel | `cols u16, rows u16, px_w u16, px_h u16` |
 | `EXIT` | 4 | kernel → GUI | `i32` raw wait status |
-| `ATTACH` | 5 | GUI → kernel | `u64` generation |
+| `ATTACH` | 5 | GUI → kernel | `generation u64`; optional `session_id u64` (16-byte payload). 8 bytes is Spike 0: default leaf. |
 | `REFUSED` | 6 | kernel → GUI | `u8` reason |
 
 Reasons: `1 AlreadyAttached`, `2 Invalid`.
@@ -73,6 +73,9 @@ Reasons: `1 AlreadyAttached`, `2 Invalid`.
   to displace an attached client by connecting (audit S3-6). The daemon tracks
   connections and the attach claim separately; the attached connection is
   replaced only when it closes.
+- 8-byte ATTACH (generation only) MUST attach the default leaf. 16-byte ATTACH
+  MUST name a `SessionId`. Unknown id → `REFUSED{Invalid}` on that connection.
+  A second connection MAY attach a different live id (ADR 0011 D3).
 - `generation` is opaque to the kernel in Spike 0 and reserved for reconnect
   tokens under a later ADR.
 
