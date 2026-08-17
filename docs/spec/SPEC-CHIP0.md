@@ -76,7 +76,8 @@ Required:
 - A cluster that exceeds a reasonable bound is truncated to its base codepoint
   and **counted**, not silently dropped.
 - `fixtures/bytes/zwj_emoji.bin` (a ≥9-codepoint ZWJ sequence) is a permanent
-  regression fixture, run under ASan in `fast.yml`.
+  regression fixture, run under ASan in `gates.yml` (`RILL_ASAN=1`, isolated
+  target dir). `fast.yml` must not grow a Chip 0 / Zig dependency.
 
 ## 6. Resize
 

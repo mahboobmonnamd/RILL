@@ -6,6 +6,7 @@
 
 use std::env;
 use std::path::PathBuf;
+use std::process::Command;
 
 fn read_pin(pin_file: &PathBuf) -> String {
     let text = std::fs::read_to_string(pin_file).unwrap_or_else(|e| {
@@ -80,6 +81,7 @@ fn main() {
     println!("cargo:rerun-if-changed={}", pin_file.display());
     println!("cargo:rerun-if-changed={}", stamp.display());
     println!("cargo:rerun-if-changed={}", archive.display());
+    println!("cargo:rerun-if-env-changed=RILL_ASAN");
     println!("cargo:rustc-link-search=native={}", out.display());
     println!("cargo:rustc-link-lib=static=ghostty-vt");
     println!("cargo:rustc-env=RILL_GHOSTTY_SHA={pin_sha}");
@@ -97,10 +99,41 @@ fn main() {
         .flag_if_supported("-fstack-protector-strong");
 
     // The gates run this under ASan over fixtures/bytes/ (SPEC-CHIP0 §5).
+    // rustc's cc driver uses -nodefaultlibs, so -fsanitize=address as a
+    // rustc-link-arg does not pull clang_rt. Link the runtime by path.
     if env::var("RILL_ASAN").is_ok() {
-        build.flag_if_supported("-fsanitize=address");
-        println!("cargo:rustc-link-arg=-fsanitize=address");
+        build.flag("-fsanitize=address");
+        let rt = asan_runtime();
+        println!("cargo:rustc-link-arg={}", rt.display());
+        if let Some(dir) = rt.parent() {
+            println!("cargo:rustc-link-arg=-Wl,-rpath,{}", dir.display());
+        }
     }
 
     build.compile("rill_chip0_vt");
+}
+
+fn asan_runtime() -> PathBuf {
+    let out = Command::new("clang")
+        .arg("-print-resource-dir")
+        .output()
+        .unwrap_or_else(|e| panic!("RILL_ASAN=1 needs clang: {e}"));
+    assert!(
+        out.status.success(),
+        "clang -print-resource-dir failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let resource = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let candidates = [
+        format!("{resource}/lib/darwin/libclang_rt.asan_osx_dynamic.dylib"),
+        format!("{resource}/lib/linux/libclang_rt.asan-aarch64.a"),
+        format!("{resource}/lib/linux/libclang_rt.asan-x86_64.a"),
+    ];
+    for c in &candidates {
+        let p = PathBuf::from(c);
+        if p.exists() {
+            return p;
+        }
+    }
+    panic!("RILL_ASAN=1 but clang asan runtime not found under {resource}");
 }

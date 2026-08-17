@@ -105,6 +105,10 @@ run_gate "LINT-PLANES" sh scripts/lint-planes.sh
 
 # ------------------------------------------------------------------ library tier
 run_gate "T-BYTES-chip"   cargo test -p rill-chip0 --offline t_bytes -- --nocapture
+# Isolate ASan: instrumented C objects in the default target dir break later
+# rilld / persist_e2e links (rustc -nodefaultlibs does not pull clang_rt).
+run_gate "T-BYTES-asan"   env CARGO_TARGET_DIR="$TMP/asan-target" RILL_ASAN=1 \
+  cargo test -p rill-chip0 --offline t_bytes -- --nocapture
 run_gate "T-BYTES-kernel" cargo test -p rill-kernel --offline t_bytes -- --nocapture
 run_gate "T-DROP"         cargo test -p rill-kernel --offline t_drop -- --test-threads=1 --nocapture
 run_gate "T-RESIZE"       cargo test -p rill-kernel --offline t_resize -- --nocapture
@@ -167,7 +171,13 @@ run_t_nfr() {
   fi
   grep -q '^T-NFR mode=' "$nfr_out"
 }
+nfr_fail_before=$ANY_FAIL
 run_gate "T-NFR" run_t_nfr
+# GitHub-hosted macos-14 has no panel. Record T-NFR but do not fail the suite
+# for it (ADR 0009 D4). Other gates still fail the job.
+if [ "${RILL_NFR_OPTIONAL:-}" = 1 ]; then
+  ANY_FAIL=$nfr_fail_before
+fi
 
 # --------------------------------------------------------------- negative controls
 if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
@@ -189,11 +199,22 @@ if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
     cargo test -p rilld --offline --features mutate t_attach -- --test-threads=1
   run_control "T-RESYNC" no_resync \
     cargo test -p rilld --offline --features mutate t_resync -- --test-threads=1
-  run_control "T-NFR" timer_pump run_t_nfr
-  # T-KILL and T-SPAWN mutations require an ObjC rebuild; reviewer applies them
-  # and pastes the red (TEST-CASES). Recorded as manual, not asserted here.
-  printf '{"gate":"T-KILL","mutation":"drop_POSIX_SPAWN_SETSID","went_red":null}\n'  >> "$CONTROLS"
-  printf '{"gate":"T-SPAWN","mutation":"openpty_in_main_m","went_red":null}\n'      >> "$CONTROLS"
+  if [ "${RILL_NFR_OPTIONAL:-}" = 1 ]; then
+    printf '{"gate":"T-NFR","mutation":"timer_pump","went_red":null}\n' >> "$CONTROLS"
+  else
+    run_control "T-NFR" timer_pump run_t_nfr
+  fi
+  run_control "T-KILL" drop_POSIX_SPAWN_SETSID \
+    env RILL_RILLD_BIN="$RILLD" RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rilld --offline --test persist_e2e -- --nocapture
+  run_t_spawn_openpty() {
+    mut_app="$TMP/Rill-openpty.app"
+    RILL_MUTATE=openpty_in_main_m RILL_APP="$mut_app" sh scripts/package-macos.sh
+    RILL_GUI_BIN="$mut_app/Contents/MacOS/Rill" \
+      cargo test -p rill-host --offline --test t_spawn \
+      t_spawn_gui_binary_does_not_import_pty_creation_symbols -- --nocapture
+  }
+  run_control "T-SPAWN" openpty_in_main_m run_t_spawn_openpty
 fi
 
 # ------------------------------------------------------------------- evidence

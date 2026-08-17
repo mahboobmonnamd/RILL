@@ -46,19 +46,26 @@ jobs:
       - name: Package Rill.app
         run: sh scripts/package-macos.sh
 
-      - name: Gate suite
-        run: sh scripts/validate-spike0.sh
-
-      - name: Negative controls
-        if: inputs.negative_controls
-        # A gate that stays green under its own mutation is a broken
-        # instrument and fails the run, whatever the unmutated gate did.
-        run: sh scripts/validate-spike0.sh --negative-controls
+      - name: Gate suite including negative controls
+        env:
+          RILL_NFR_MODE: app
+          RILL_NFR_OPTIONAL: "1"
+        # --negative-controls already runs the unmutated gates first.
+        # Always: a gate that stays green under mutation is a broken instrument
+        # (ADR 0002 D3). workflow_dispatch can still set the input false.
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.negative_controls }}" = "false" ]; then
+            sh scripts/validate-spike0.sh
+          else
+            sh scripts/validate-spike0.sh --negative-controls
+          fi
 
       - name: ASan over the byte fixtures
-        # SPEC-CHIP0 §5. The grapheme overflow (audit S3-1) is the reason.
+        # SPEC-CHIP0 §5. Isolated target dir so instrumented objects never
+        # land in the rust-cache used by later jobs.
         env:
           RILL_ASAN: "1"
+          CARGO_TARGET_DIR: ${{ runner.temp }}/asan-target
         run: cargo test -p rill-chip0 t_bytes -- --nocapture
 
       - uses: actions/upload-artifact@v4

@@ -247,11 +247,12 @@ kept — it is the one test in the tree that earns its name. Extended with:
 - Assert the shell's working directory and environment survived, by asking the
   shell itself after reattach.
 
-**Required mutation.** Remove `POSIX_SPAWN_SETSID` from `spawn_rilld` in
-`main.m`.
+**Required mutation.** Drop both session isolations: `POSIX_SPAWN_SETSID` in
+`spawn_rilld` (`main.m`) **and** `setsid()` in `rilld`. Either one alone keeps
+the daemon out of the GUI process group, so the instrument would stay green.
 
-**Negative control.** `manual` — requires an ObjC rebuild; reviewer pastes the
-red.
+**Negative control.** `RILL_MUTATE=drop_POSIX_SPAWN_SETSID` — forwarded to the
+packaged GUI and inherited by rilld; `persist_e2e` must go red.
 
 ---
 
@@ -277,7 +278,10 @@ this — `main.m` legitimately calls `posix_spawn` to launch `rilld`.
 **Required mutation.** Call `openpty()` once in `main.m` and discard the result.
 
 **Negative control.** Check 2 is the permanent, always-on negative control.
-The mutation is `manual`.
+The production mutation is `RILL_MUTATE=openpty_in_main_m` at package time
+(links `crates/rill-host/tests/fixtures/mutate_openpty.c`, never `host/`);
+`t_spawn_gui_binary_does_not_import_pty_creation_symbols` must go red against
+that binary.
 
 **Why the old test could not fail.** `nm -U` lists **defined** symbols. The
 asserted symbols can only ever be **undefined** imports. The command excluded
@@ -329,6 +333,10 @@ from Terminal.app on the packaged app. Must miss p95 (or fail to accept 1000
 samples because of the 60 Hz poll). App-mode invert on a headless runner is
 not this control.
 
+**Observed invert (2026-08-17).** `timer_pump=1`, p95 **30.823ms** vs 8.33ms,
+cadence p50=33.33ms (~30 Hz), 1000/2, `ax_trusted=1`. Unmutated battery hid
+on the same presenter was p95 **7.011ms**. The instrument detects the poll.
+
 **Why the old test could not fail.** It searched the whole grid for
 `b'a' + i%26`, which the shell had already echoed there on a previous cycle, so
 the wait loop exited before any PTY round trip. It also stopped at the POD
@@ -346,12 +354,13 @@ snapshot, inside the Rust client, never reaching the host or the GPU.
 | T-EXIT | Green-unproven | `clear_outbound_on_detach` went red | **S3-2 (EXIT lost on detach)** |
 | T-ATTACH | Green-unproven | `accept_replaces_client` went red | **S3-6 (refusal hole)** |
 | T-RESYNC | Green-unproven | `no_resync` went red (blank reopen) | — |
-| T-KILL | Green-unproven | manual (`went_red: null`) | S3-3 (drop kills child) |
-| T-SPAWN | Green-unproven | permanent positive control passed; `openpty_in_main_m` still `null` | S1-1 |
-| T-NFR | Green-unproven | `timer_pump` invert **pending** on ADR 0009 | S3-8b, S3-8g, S3-8h |
+| T-KILL | Green-unproven | `drop_POSIX_SPAWN_SETSID` automated | S3-3 (drop kills child) |
+| T-SPAWN | Green-unproven | fixture control + `openpty_in_main_m` automated | S1-1 |
+| T-NFR | Green-unproven | `timer_pump` went red (p95 30.823ms) | S3-8b, S3-8g, S3-8h |
 
 T-NFR battery hid (ADR 0009, 2026-08-17): p50=6.743ms p95=**7.011ms**
 p99=14.220ms max=22.670ms, samples=1000 discarded=2 (0.20%), 120 Hz
 budget=8.33ms, cadence p50=p95=8.33ms, `ax_trusted=1`, `pmset` Battery Power
-28% discharging. Unmutated hid **passes**. `timer_pump` on this presenter has
-not been observed red; until it is, T-NFR is not Proven.
+28% discharging. `timer_pump` invert: p95 **30.823ms**, cadence 33.33ms,
+`timer_pump=1`. Demonstrated red, then green, on a laptop. Not Proven until
+the rest of ADR 0002 D8 (library suite in `gates.yml`).

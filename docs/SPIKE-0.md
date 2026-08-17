@@ -12,7 +12,13 @@ Stop rule holds. Milestone 1 stays closed.
 
 Authority: [PRD](PRD.md), [ADR 0001](adr/0001-session-operating-system.md),
 [ADR 0002](adr/0002-falsifiable-evidence.md),
-[ADR 0003](adr/0003-display-pipeline.md).
+[ADR 0003](adr/0003-display-pipeline.md),
+[ADR 0004](adr/0004-chip0-does-not-close-nfr-key.md) (**Accepted**),
+[ADR 0005](adr/0005-mtkview-presenter.md) (**Accepted**),
+[ADR 0006](adr/0006-next-vsync-present.md) (**Accepted**),
+[ADR 0007](adr/0007-opaque-fullscreen.md) (**Accepted**),
+[ADR 0008](adr/0008-cametal-display-link.md) (**Accepted** — exhausted),
+[ADR 0009](adr/0009-direct-to-display-echo.md) (**Accepted** — closer).
 Gate definitions: [TEST-CASES](TEST-CASES.md).
 Closure procedure: [SPIKE-0-VALIDATION](SPIKE-0-VALIDATION.md).
 
@@ -41,12 +47,15 @@ demonstrated **red** on a build where the behaviour is absent (ADR 0002 D2).
 | T-ATTACH | attach → detach → attach; cell-by-cell grid compare | grids diverge, or a bare connection displaces the attached client | **Green-unproven** — `accept_replaces_client` went red, then unmutated tests passed (laptop; D8) |
 | T-RESIZE | child's own `TIOCGWINSZ` after `SIGWINCH`, with pending input | child's size ≠ display geometry, or resize overtakes queued input | **Green-unproven** — `resize_before_data` went red, then unmutated tests passed (laptop; D8) |
 | T-EXIT | `exit`, including **while detached** | reopened window paints a cursor over a dead process | **Green-unproven** — `clear_outbound_on_detach` went red, then unmutated tests passed (laptop; D8) |
-| T-SPAWN | `nm -u` + `otool -Iv` on the packaged GUI, plus a positive control | PTY-creation primitives imported, or the check itself is broken | **Green-unproven** — packaged GUI has no PTY-creation imports; fixture positive control reported a violation. `openpty_in_main_m` is still manual |
-| T-KILL | packaged `Rill.app`, `SIGKILL` the process group and AppKit Quit | child pid changes, or reattach is blank | **Green-unproven** — packaged persist_e2e passed. `drop_POSIX_SPAWN_SETSID` is still manual |
+| T-SPAWN | `nm -u` + `otool -Iv` on the packaged GUI, plus a positive control | PTY-creation primitives imported, or the check itself is broken | **Green-unproven** — packaged GUI has no PTY-creation imports; fixture positive control and `openpty_in_main_m` are automated |
+| T-KILL | packaged `Rill.app`, `SIGKILL` the process group and AppKit Quit | child pid changes, or reattach is blank | **Green-unproven** — packaged persist_e2e; `drop_POSIX_SPAWN_SETSID` automated |
 | T-RESYNC | reopen idle `zsh` and alt-screen `vim` | blank window over a live process, or resync touches the warm path | **Green-unproven** — `no_resync` went red (blank reopen), then unmutated tests passed (laptop; D8) |
-| T-NFR | key-down `NSEvent.timestamp` → drawable `presentedTime`, on battery | p95 over one refresh interval, discards > 2%, or any control RPC | **Red** — battery hid, 1000/0 discarded, p95 **23.525ms** vs 8.33ms (120 Hz). `timer_pump` is inconclusive: unmutated already misses |
+| T-NFR | key-down `NSEvent.timestamp` → drawable `presentedTime`, on battery | p95 over one refresh interval, discards > 2%, or any control RPC | **Green-unproven** — battery hid p95 **7.011ms**; `timer_pump` went red (p95 **30.823ms**). GitHub-hosted CI cannot close hid |
 
-Laptop record: `evidence/spike0-20260816T163646Z.json`. No gate is **Proven** (ADR 0002 D8: never run in `gates.yml`). Spike 0 stays **RED**. The withdrawn `p95=0.032ms` run must not be cited.
+Laptop record: `evidence/spike0-20260816T163646Z.json`. Battery hid (0009):
+`/tmp/rill-nfr-hid.{out,err}` 2026-08-17. `timer_pump` invert:
+`/tmp/rill-nfr-timer-pump.{out,err}`. No gate is **Proven** (ADR 0002 D8).
+Spike 0 stays **RED**. The withdrawn `p95=0.032ms` run must not be cited.
 
 ## Blocking defects found by the audit
 
@@ -66,6 +75,8 @@ Independent of the gates, and shipping-blockers on their own:
 Milestone 1 does not open until every gate above is `Proven` under ADR 0002
 D2–D6, on a packaged build, with T-NFR on battery per ADR 0003.
 
-If the honest number misses, that is the spike succeeding. Do not add agents,
-Blocks, or chrome to hide it — and do not re-cut the instrument to flatter it
-(ADR 0002 D11).
+Present is [ADR 0009](adr/0009-direct-to-display-echo.md): `toggleFullScreen:`
+plus opaque echo, one in flight. ADRs 0004–0008 are exhausted. T-NFR hid is
+Manual (GitHub-hosted `macos-14` has no panel). Unmutated battery hid passed;
+`timer_pump` went red (p95 **30.823ms**). Do not add agents, Blocks, or chrome,
+and do not re-cut the instrument (ADR 0002 D11).

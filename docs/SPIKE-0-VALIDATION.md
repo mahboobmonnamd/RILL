@@ -91,12 +91,14 @@ Spike 0.** No gate is Proven (ADR 0002 D8: never run in `gates.yml`).
   (`drop_high_bytes`, `drop_on_full`, `resize_before_data`,
   `clear_outbound_on_detach`, `accept_replaces_client`, `no_resync`) failed
   the named tests. That is **Green-unproven**, not Proven.
-- T-KILL / T-SPAWN production mutations remain **manual** (`went_red: null`).
-  T-SPAWN's always-on fixture positive control passed.
-- T-NFR **Red** on battery hid: p95 **23.525ms** vs 8.33ms (120 Hz), 1000
-  samples, 0 discards, `ax_trusted=1`. `timer_pump` in `app` mode also missed
-  (p95 24.578ms) and is **inconclusive** because the unmutated run already
-  misses the budget.
-- ASan over `fixtures/bytes/` was not run.
+- T-KILL / T-SPAWN production mutations are automated
+  (`drop_POSIX_SPAWN_SETSID`, `openpty_in_main_m`).
+- T-NFR **Green-unproven** on battery hid (ADR 0009): p95 **7.011ms** vs
+  8.33ms (120 Hz), 1000/2 discards, `ax_trusted=1`, `pmset` Battery Power.
+  `timer_pump` went red (p95 **30.823ms**). GitHub-hosted `macos-14` cannot
+  close hid (no panel, no battery).
+- ASan over `fixtures/bytes/` is `T-BYTES-asan` in `validate-spike0.sh`
+  (`CARGO_TARGET_DIR` isolated so instrumented objects cannot break later
+  links).
 
 The withdrawn 2026-08-16 run (`p95=0.032ms control_rpc=0`) must not be cited.

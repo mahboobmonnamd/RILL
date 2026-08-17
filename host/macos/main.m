@@ -12,6 +12,7 @@
 #import "TerminalView.h"
 #include <ApplicationServices/ApplicationServices.h>
 #include <spawn.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -57,7 +58,12 @@ static pid_t spawn_rilld(NSString *rilldPath) {
     if (posix_spawnattr_init(&attr) != 0) {
         return -1;
     }
-    posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSID);
+    short flags = POSIX_SPAWN_SETSID;
+    const char *mut = getenv("RILL_MUTATE");
+    if (mut && strcmp(mut, "drop_POSIX_SPAWN_SETSID") == 0) {
+        flags = 0;
+    }
+    posix_spawnattr_setflags(&attr, flags);
     const char *path = [rilldPath fileSystemRepresentation];
     char *argv[] = {(char *)path, NULL};
     pid_t pid = 0;

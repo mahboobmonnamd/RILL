@@ -246,16 +246,42 @@ mod tests {
         assert!(row(&after, 0).contains("RILL-RESYNC-MARK"));
     }
 
-    fn byte_fixtures() -> Vec<(&'static str, Vec<u8>)> {
-        vec![
-            ("lone_continuation", vec![0x80, 0x41]),
-            ("truncated_3byte", vec![0xe2, 0x82, 0x41]),
-            ("overlong_slash", vec![0xc0, 0xaf]),
-            ("lone_surrogate", vec![0xed, 0xa0, 0x80]),
-            ("bom_then_high", vec![0xff, 0xfe, 0x80, 0x41]),
-            ("csi_high_param", vec![0x1b, 0x5b, 0x80, 0x6d, 0x41]),
-            ("c1_in_utf8", vec![0xc2, 0x9b, 0x41]),
-        ]
+    fn byte_fixtures() -> Vec<(String, Vec<u8>)> {
+        let mut out = vec![
+            ("lone_continuation".into(), vec![0x80, 0x41]),
+            ("truncated_3byte".into(), vec![0xe2, 0x82, 0x41]),
+            ("overlong_slash".into(), vec![0xc0, 0xaf]),
+            ("lone_surrogate".into(), vec![0xed, 0xa0, 0x80]),
+            ("bom_then_high".into(), vec![0xff, 0xfe, 0x80, 0x41]),
+            ("csi_high_param".into(), vec![0x1b, 0x5b, 0x80, 0x6d, 0x41]),
+            ("c1_in_utf8".into(), vec![0xc2, 0x9b, 0x41]),
+        ];
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/bytes");
+        assert!(
+            dir.is_dir(),
+            "fixtures/bytes/ is required (SPEC-CHIP0 §5, ADR 0002 D5)"
+        );
+        let mut files: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("bin"))
+            .collect();
+        files.sort();
+        assert!(
+            !files.is_empty(),
+            "fixtures/bytes/ has no .bin files (SPEC-CHIP0 §5)"
+        );
+        for path in files {
+            let name = path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("bin")
+                .to_string();
+            let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {name}: {e}"));
+            out.push((name, bytes));
+        }
+        out
     }
 
     #[test]

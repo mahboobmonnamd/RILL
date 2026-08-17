@@ -9,6 +9,7 @@ use rill_attach::{Decoder, Frame};
 use rill_chip0::{Chip0, TerminalEmulation};
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::thread;
@@ -79,7 +80,8 @@ fn t_kill_gui_process_group_child_pid_survives_and_reattach_shows_prior_output()
     let pidfile = PathBuf::from(format!("{}.child", sock.display()));
     let rilld_pidfile = PathBuf::from(format!("{}.rilld", sock.display()));
 
-    let mut gui = Command::new(&gui_bin)
+    let mut gui_cmd = Command::new(&gui_bin);
+    gui_cmd
         .env("RILL_SOCKET", &sock)
         .env("RILL_TEST_PIDFILE", &pidfile)
         .env("RILL_TEST_DAEMON_PIDFILE", &rilld_pidfile)
@@ -89,8 +91,14 @@ fn t_kill_gui_process_group_child_pid_survives_and_reattach_shows_prior_output()
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .spawn()
-        .expect("spawn packaged Rill");
+        // Become a process-group leader so kill(-gui_pid) actually signals
+        // the GUI group. Without this, the GUI stays in cargo's group,
+        // killpg is ESRCH, and drop_POSIX_SPAWN_SETSID cannot go red.
+        .process_group(0);
+    if let Ok(m) = std::env::var("RILL_MUTATE") {
+        gui_cmd.env("RILL_MUTATE", m);
+    }
+    let mut gui = gui_cmd.spawn().expect("spawn packaged Rill");
     let gui_pid = gui.id();
 
     assert!(

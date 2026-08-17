@@ -4,6 +4,9 @@
 - **Tree:** this repository only
 - **Amends:** ADR 0001 §1 (fills in what "our Metal" means). Supersedes the
   T-NFR definition in [SPIKE-0](../SPIKE-0.md) and [PRD](../PRD.md) §NFR-KEY.
+- **Amended by:** [ADR 0005](0005-mtkview-presenter.md)–[0008](0008-cametal-display-link.md)
+  (exhausted schedulers) and [ADR 0009](0009-direct-to-display-echo.md) (closer
+  presenter). D1 atlas and D5–D8 oracle stand.
 - **Evidence:** [SPIKE-0-AUDIT](../SPIKE-0-AUDIT.md) S1-2, S3-8b, S3-8g, S3-8h
 
 ## Context
@@ -63,17 +66,19 @@ mis-rendering is not acceptable; a second BGRA atlas is Milestone 1 work.
 
 The `NSTimer` is deleted. A `dispatch_source_t` (`DISPATCH_SOURCE_TYPE_READ`)
 on the attach socket wakes the client the moment kernel bytes land. That wake
-feeds the VT, rebuilds the damaged instance rows, and presents.
+feeds the VT and rebuilds the damaged instance rows.
 
-`CAMetalLayer.maximumDrawableCount = 3`. `displaySyncEnabled` stays **on** for
-the recorded gate number, because that is what a person perceives. An
-off-vsync figure may be reported alongside as a diagnostic; it does not close
-the gate.
+`displaySyncEnabled` stays **on** for the recorded gate number, because that
+is what a person perceives. An off-vsync figure may be reported alongside as a
+diagnostic; it does not close the gate.
 
-Presentation is coalesced: at most one drawable in flight per display refresh.
 Bytes arriving faster than the refresh accumulate into the VT and paint on the
 next frame — feeding is decoupled from presenting, which is what keeps a `yes`
 flood from stalling input.
+
+Present ownership is [ADR 0005](0005-mtkview-presenter.md): `MTKView` takes one
+drawable per vsync. Socket wake MUST NOT call `nextDrawable`.
+`CAMetalLayer.maximumDrawableCount = 2`.
 
 ### D3 — Damage is honoured end to end
 
