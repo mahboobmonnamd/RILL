@@ -11,8 +11,7 @@
   rejected (ADR 0001 §1).
 - **Evidence:** packaged battery hid, `pmset` Battery Power 28% discharging,
   p95 **7.011 ms** vs 8.33 ms (120 Hz), 1000/2 discards (0.20%), vsync on,
-  cadence p50=p95=8.33 ms, `ax_trusted=1`. `timer_pump` on this presenter is
-  not yet demonstrated red.
+  cadence p50=p95=8.33 ms, `ax_trusted=1`. `timer_pump` p95 **30.823 ms**.
 
 ## Context
 
@@ -95,8 +94,7 @@ T-NFR hid stays Manual. No gate is **Proven**.
 
 ## Consequences
 
-- Spike 0 stays Red until every gate is Proven under ADR 0002, including
-  T-NFR with D5's invert. Milestone 1 stays closed.
+- Spike 0 is closed ([ADR 0010](0010-spike-0-closes.md)). Milestone 1 may open.
 - ADRs 0004–0008 stay in the tree as the exhausted series. Do not re-run those
   presenters as the closer.
 - `docs/spec/SPEC-DISPLAY.md` and T-NFR in `docs/TEST-CASES.md` name this

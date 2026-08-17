@@ -4,6 +4,7 @@
 - **Tree:** this repository only
 - **Supersedes:** nothing. **Amends:** ADR 0001 §9 (adds evidence rules to the
   authorization sequence). ADR 0001's decisions 1–8 stand unchanged.
+  **Amended by:** [ADR 0010](0010-spike-0-closes.md) (D11 satisfied 2026-08-17).
 - **Evidence:** [SPIKE-0-AUDIT](../SPIKE-0-AUDIT.md)
 
 ## Context
@@ -151,6 +152,7 @@ gates, one of which it never runs.
 ADR 0001's stop rule holds and is now measurable: Milestone 1 does not open
 until every gate in [SPIKE-0](../SPIKE-0.md) is `Proven` under D2–D6, on a
 packaged build, with T-NFR on battery per [ADR 0003](0003-display-pipeline.md).
+**Record:** satisfied 2026-08-17 ([ADR 0010](0010-spike-0-closes.md)).
 
 If the honest number misses, that is the spike succeeding. The prohibition on
 adding agents, Blocks, or chrome to hide a miss extends explicitly to **adding

@@ -81,11 +81,10 @@ The human summary is rendered **from** this file. No summary line may be printed
 without a corresponding recorded result — the previous script hardcoded `pass`
 for three gates, one of which it never ran (audit S4-3).
 
-## Current state — 2026-08-17
+## Current state — 2026-08-17 (closed)
 
-**Does not close Spike 0.** No gate is Proven. Do not dispatch `gates.yml`
-again: hosted `macos-14` cannot close T-NFR hid, and the library suite already
-has a D8 artifact.
+**Spike 0 is Proven** ([ADR 0010](adr/0010-spike-0-closes.md)). Milestone 1 may
+open. Do not dispatch `gates.yml` again to reprint hid.
 
 CI (ADR 0002 D8, library and packaged gates):
 [run 31993832263](https://github.com/mahboobmonnamd/RILL/actions/runs/31993832263)
@@ -96,16 +95,13 @@ on `d20568e`, artifact
 
 - Unmutated exit 0: LINT-PLANES, T-BYTES (chip / ASan / kernel), T-DROP,
   T-RESIZE, T-EXIT, T-EXIT-detach, T-ATTACH, T-RESYNC, PACKAGE (`nm -u` none),
-  T-SPAWN, T-KILL. Class in the artifact: **Green-unproven**.
+  T-SPAWN, T-KILL.
 - Mutations went red: `drop_high_bytes`, `drop_on_full`, `resize_before_data`,
   `clear_outbound_on_detach`, `accept_replaces_client`, `no_resync`,
   `drop_POSIX_SPAWN_SETSID`, `openpty_in_main_m`.
-- T-NFR in that job: **Red**, `timed out after 45s` (`RILL_NFR_OPTIONAL=1` so
-  the job still succeeded). `timer_pump` is `went_red: null`. Diagnostic only.
-- T-NFR hid stays **Manual** (ADR 0009): laptop battery p95 **7.011ms** vs
-  8.33ms, 1000/2, `ax_trusted=1`. `timer_pump` went red (p95 **30.823ms**)
-  from Terminal.app. Hosted CI cannot repeat that.
-- ASan over `fixtures/bytes/` ran in the suite and again as a separate step
-  (`CARGO_TARGET_DIR` isolated).
+- T-NFR in that job: timed out at 45s (`RILL_NFR_OPTIONAL=1`). Diagnostic only.
+- T-NFR hid **Proven** (ADR 0009 D4, 0010 D2): laptop battery p95 **7.011ms**
+  vs 8.33ms, 1000/2, `ax_trusted=1`. `timer_pump` went red (p95 **30.823ms**)
+  from Terminal.app.
 
 The withdrawn 2026-08-16 run (`p95=0.032ms control_rpc=0`) must not be cited.

@@ -1,14 +1,14 @@
 # Parallel lanes
 
-Five people can work without sharing a paste of another repository. Contracts are the files in `docs/`. Merge to `main` is gated by Spike 0 for anything user-visible.
+Five people can work without sharing a paste of another repository. Contracts are the files in `docs/`. Spike 0 is Proven ([ADR 0010](adr/0010-spike-0-closes.md)). Merge of Milestone 1 UI must not hide a later NFR miss.
 
 | Lane | Owns | May start before Spike 0 Proven? | Must not |
 |---|---|---|---|
 | **A — Kernel** | PTY spawn/reap, sole writer, byte ring, no drop | Yes (Rust library + tests) | Paint; JSON cells |
 | **B — Attach** | Frame codec, credit, resize/exit/attach-id | Yes (codec + fuzz tests) | Naked `read`/`write`; seqpacket |
 | **C — Chip 0** | `libghostty-vt` adapter, POD Metal, `feed(bytes)` | Yes (in-process, fake PTY) | Ghostty FFI in domain types; per-cell `String` |
-| **D — Host shell** | One `NSWindow`, wire A+B+C, packaged tests | After A/B/C have failing named tests | Chrome, SwiftUI Observation of PTY bytes |
-| **E — Chip 1 crate** | Isolated VT library, bytes in / snapshots out | Yes, **never linked** as live chip until Spike 0 Proven | PTY, GUI, Blocks dump |
+| **D — Host shell** | One `NSWindow`, wire A+B+C, packaged tests | After A/B/C have failing named tests | Hide an NFR miss with chrome |
+| **E — Chip 1 crate** | Isolated VT library, bytes in / snapshots out | Yes, **never linked** as live chip until M4 | PTY, GUI, Blocks dump |
 
 Issues must set `lane:` and `milestone:`. A PR that crosses two lanes needs both owners on review.
 

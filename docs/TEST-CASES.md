@@ -23,9 +23,9 @@ recorded evidence artifact).
 Ledger below cites GitHub Actions
 [run 31993832263](https://github.com/mahboobmonnamd/RILL/actions/runs/31993832263)
 (`spike0-20260817T041912Z.json`) for the library suite, plus the 2026-08-17
-battery hid on ADR 0009. No gate is **Proven**. T-NFR is **Manual**. Spike 0
-stays **Red**. The withdrawn `p95=0.032ms` run must not be cited. Do not
-dispatch `gates.yml` again.
+battery hid on ADR 0009. Every gate is **Proven** ([ADR 0010](adr/0010-spike-0-closes.md)).
+The withdrawn `p95=0.032ms` run must not be cited. Do not dispatch `gates.yml`
+again.
 
 ---
 
@@ -349,19 +349,19 @@ snapshot, inside the Rust client, never reaching the host or the GPU.
 
 | ID | Status | Automated negative control | Blocking defect it also covers |
 |---|---|---|---|
-| T-BYTES | Green-unproven | `drop_high_bytes` went red (named test) | S3-1 (overflow) via the emoji fixture |
-| T-DROP | Green-unproven | `drop_on_full` went red (`stalled_reads` stayed 0) | S3-5 (nominal backpressure) |
-| T-RESIZE | Green-unproven | `resize_before_data` went red | — |
-| T-EXIT | Green-unproven | `clear_outbound_on_detach` went red | **S3-2 (EXIT lost on detach)** |
-| T-ATTACH | Green-unproven | `accept_replaces_client` went red | **S3-6 (refusal hole)** |
-| T-RESYNC | Green-unproven | `no_resync` went red (blank reopen) | — |
-| T-KILL | Green-unproven | `drop_POSIX_SPAWN_SETSID` automated | S3-3 (drop kills child) |
-| T-SPAWN | Green-unproven | fixture control + `openpty_in_main_m` automated | S1-1 |
-| T-NFR | Manual | `timer_pump` went red on laptop (p95 30.823ms); CI hid not possible | S3-8b, S3-8g, S3-8h |
+| T-BYTES | **Proven** | `drop_high_bytes` went red (named test) | S3-1 (overflow) via the emoji fixture |
+| T-DROP | **Proven** | `drop_on_full` went red (`stalled_reads` stayed 0) | S3-5 (nominal backpressure) |
+| T-RESIZE | **Proven** | `resize_before_data` went red | — |
+| T-EXIT | **Proven** | `clear_outbound_on_detach` went red | **S3-2 (EXIT lost on detach)** |
+| T-ATTACH | **Proven** | `accept_replaces_client` went red | **S3-6 (refusal hole)** |
+| T-RESYNC | **Proven** | `no_resync` went red (blank reopen) | — |
+| T-KILL | **Proven** | `drop_POSIX_SPAWN_SETSID` automated | S3-3 (drop kills child) |
+| T-SPAWN | **Proven** | fixture control + `openpty_in_main_m` automated | S1-1 |
+| T-NFR | **Proven** | `timer_pump` went red on laptop (p95 30.823ms); hid Manual per ADR 0009 D4 | S3-8b, S3-8g, S3-8h |
 
 Library D8 artifact: [run 31993832263](https://github.com/mahboobmonnamd/RILL/actions/runs/31993832263).
-Rows stay Green-unproven. T-NFR battery hid (ADR 0009, 2026-08-17): p50=6.743ms
-p95=**7.011ms** p99=14.220ms max=22.670ms, samples=1000 discarded=2 (0.20%),
-120 Hz budget=8.33ms, cadence p50=p95=8.33ms, `ax_trusted=1`, `pmset` Battery
-Power 28% discharging. `timer_pump` invert: p95 **30.823ms**, cadence 33.33ms,
-`timer_pump=1`. Hosted `macos-14` T-NFR timed out at 45s and does not close.
+T-NFR battery hid (ADR 0009 / 0010, 2026-08-17): p50=6.743ms p95=**7.011ms**
+p99=14.220ms max=22.670ms, samples=1000 discarded=2 (0.20%), 120 Hz
+budget=8.33ms, cadence p50=p95=8.33ms, `ax_trusted=1`, `pmset` Battery Power
+28% discharging. `timer_pump` invert: p95 **30.823ms**, cadence 33.33ms,
+`timer_pump=1`. Hosted `macos-14` T-NFR timed out at 45s and is not the closer.

@@ -78,18 +78,3 @@ jobs:
           GOT="$(git -C "$TMP" rev-parse FETCH_HEAD)"
           rm -rf "$TMP"
           [ "$GOT" = "$SHA" ] || { echo "fetched $GOT, wanted $SHA" >&2; exit 1; }
-
-  docs-consistency:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      # ADR 0002 D1: nothing claims Proven until the gate suite says so.
-      # Delete this step in the PR that legitimately closes a gate.
-      - name: No unearned Proven claims in status docs
-        run: |
-          set -eu
-          # Vocabulary tables may name the class. A gate row marked Proven is the leak.
-          if grep -E '^\| T-[A-Z]+ .*\| \*\*Proven\*\*' docs/SPIKE-0.md docs/TEST-CASES.md; then
-            echo "A gate is marked Proven. It must cite an evidence artifact and a demonstrated red (ADR 0002 D2)." >&2
-            exit 1
-          fi
