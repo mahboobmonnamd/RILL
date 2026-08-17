@@ -102,7 +102,8 @@ MUST:
 - DA / DSR `6n`: MUST answer. A TUI that hangs on DA is a v0 miss.
 
 MAY consume and ignore OSC 0/1/2/7/8/9/133 (MUST NOT crash). Title and cwd
-are attach **classifier** / M6 tap work, not Chip 1 paint.
+are attach **classifier** / M6 tap work ([ADR 0013](../adr/0013-cwd-tap.md)),
+not Chip 1 paint.
 
 MUST NOT (v0):
 

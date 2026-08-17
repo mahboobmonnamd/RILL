@@ -247,6 +247,12 @@ impl Daemon {
             }
         }
         for id in readable {
+            #[cfg(feature = "mutate")]
+            if std::env::var("RILL_MUTATE").as_deref() == Ok("starve_other_leaves")
+                && id != self.default_id
+            {
+                continue;
+            }
             while let Some(s) = self.kernel.session_mut(id) {
                 if !(s.credit() > 0 && s.on_pty_readable()? > 0) {
                     break;

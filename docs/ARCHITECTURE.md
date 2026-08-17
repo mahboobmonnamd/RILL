@@ -3,6 +3,7 @@
 Authority: [ADR 0001](adr/0001-session-operating-system.md). Spike 0 closed:
 [ADR 0010](adr/0010-spike-0-closes.md). Session graph: [ADR 0011](adr/0011-session-graph.md).
 Chip 1 isolated crate: [ADR 0012](adr/0012-chip1-isolated-vt.md) ([M4-HANDOFF](M4-HANDOFF.md)).
+Cwd tap: [ADR 0013](adr/0013-cwd-tap.md).
 This file is the map. It does not authorize code by itself.
 
 ## Four planes
@@ -72,7 +73,7 @@ Kernel never `try_send`s PTY output into a dropping channel. If the GUI is slow,
 
 ## Classifier vs renderer
 
-The attach plane may watch the byte stream for alt-screen, OSC 52 (deny until policy UI), OSC 9/title, OSC 133, child exit. It journals events. It never builds a grid the GUI consumes.
+The attach plane may watch the byte stream for alt-screen, OSC 52 (deny until policy UI), OSC 9/title, OSC 133, OSC 7, child exit. It journals events. It never builds a grid the GUI consumes. OSC 7 is not the cwd tap ([ADR 0013](adr/0013-cwd-tap.md)).
 
 A second live VT in the kernel is forbidden. A headless Chip 0 used **only** for resync bytes is the same implementation, cold path, not a second parser.
 

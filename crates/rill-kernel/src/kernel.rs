@@ -149,6 +149,10 @@ impl Kernel {
             .ok_or(Error::UnknownSession)?
             .terminate()
     }
+
+    pub fn cwd(&mut self, id: SessionId) -> Result<std::path::PathBuf, Error> {
+        self.leaves.get_mut(&id).ok_or(Error::UnknownSession)?.cwd()
+    }
 }
 
 impl Default for Kernel {

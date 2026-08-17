@@ -856,6 +856,192 @@ fn t_graph_attach_to_a_second_id_is_accepted() {
     terminate_leaf(&mut kernel, b);
 }
 
+// ------------------------------------------------------------------ T-CWD (M6)
+
+#[cfg(target_os = "macos")]
+fn os_vnode_cwd(pid: u32) -> std::path::PathBuf {
+    use std::os::unix::ffi::OsStrExt;
+    let mut info = std::mem::MaybeUninit::<libc::proc_vnodepathinfo>::zeroed();
+    let n = unsafe {
+        libc::proc_pidinfo(
+            pid as i32,
+            libc::PROC_PIDVNODEPATHINFO,
+            0,
+            info.as_mut_ptr() as *mut libc::c_void,
+            std::mem::size_of::<libc::proc_vnodepathinfo>() as libc::c_int,
+        )
+    };
+    assert!(n > 0, "proc_pidinfo({pid}) failed; oracle is the OS");
+    let info = unsafe { info.assume_init() };
+    let flat =
+        unsafe { std::slice::from_raw_parts(info.pvi_cdir.vip_path.as_ptr() as *const u8, 1024) };
+    let end = flat.iter().position(|&b| b == 0).expect("cwd path");
+    std::path::PathBuf::from(std::ffi::OsStr::from_bytes(&flat[..end]))
+}
+
+#[cfg(target_os = "macos")]
+fn write_chdir_fixture(go: &std::path::Path) -> std::path::PathBuf {
+    let script = tmp_path("cwd-chdir");
+    std::fs::write(
+        &script,
+        format!(
+            "import os, sys, time\nprint('BEFORE', os.getcwd(), flush=True)\nwhile not os.path.exists({go:?}):\n    time.sleep(0.05)\nos.chdir('/private/tmp')\nprint('AFTER', os.getcwd(), flush=True)\ntime.sleep(30)\n"
+        ),
+    )
+    .expect("write fixture");
+    script
+}
+
+/// T-CWD-FG. Oracle is OS vnode of the fg python vs zsh leader, not a
+/// string the test copied into the kernel. Required mutation: `leader_cwd`.
+#[cfg(target_os = "macos")]
+#[test]
+fn t_cwd_foreground_job_chdir_is_visible() {
+    let go = tmp_path("cwd-fg-go");
+    let script = write_chdir_fixture(&go);
+    let size = Winsize {
+        cols: 200,
+        ..Winsize::default()
+    };
+    let mut session = Session::spawn("/bin/zsh", &["-f", "-i"], size).expect("zsh");
+    session
+        .on_frame(Frame::Attach {
+            generation: 1,
+            session_id: None,
+        })
+        .expect("attach");
+    let leader = session.child_pid();
+    let start_dir = os_vnode_cwd(leader);
+
+    let cmd = format!("/usr/bin/python3 {}\n", script.display());
+    pump_until(&mut session, 64 * 1024, Duration::from_millis(400), |_| {
+        true
+    });
+    session
+        .on_frame(Frame::Data(cmd.into_bytes()))
+        .expect("send");
+    let before = pump_until(&mut session, 64 * 1024, Duration::from_secs(5), |acc| {
+        acc.windows(6).any(|w| w == b"BEFORE")
+    });
+    assert!(
+        before.windows(6).any(|w| w == b"BEFORE"),
+        "zsh never started the fg job; tail={:?} alive={}",
+        String::from_utf8_lossy(&before[before.len().saturating_sub(400)..]),
+        session.child_alive()
+    );
+    let first = session.cwd().expect("cwd before chdir");
+    assert_eq!(first, start_dir, "seed cwd should be the shell's directory");
+
+    std::fs::write(&go, b"go").expect("release chdir");
+    let after = pump_until(&mut session, 64 * 1024, Duration::from_secs(5), |acc| {
+        acc.windows(5).any(|w| w == b"AFTER")
+    });
+    assert!(
+        after.windows(5).any(|w| w == b"AFTER"),
+        "fg job never chdir'd"
+    );
+
+    let tapped = session.cwd().expect("cwd after fg chdir");
+    let leader_now = os_vnode_cwd(leader);
+    assert_eq!(
+        leader_now, start_dir,
+        "zsh leader cwd moved; this test needs a stopped shell"
+    );
+    assert_eq!(
+        tapped,
+        std::path::PathBuf::from("/private/tmp"),
+        "cwd tap followed the shell, not the fg TUI (ADR 0013 D2)"
+    );
+
+    let _ = session.terminate();
+    let _ = std::fs::remove_file(&script);
+    let _ = std::fs::remove_file(&go);
+}
+
+/// T-CWD-NO-OSC7. Leaf chdir's without writing OSC 7. Required mutation:
+/// `osc7_only`.
+#[cfg(target_os = "macos")]
+#[test]
+fn t_cwd_tui_chdir_without_osc7_is_visible() {
+    let go = tmp_path("cwd-osc-go");
+    let script = write_chdir_fixture(&go);
+    let mut session = Session::spawn_with(
+        "/usr/bin/python3",
+        &[script.to_str().expect("utf8")],
+        Winsize::default(),
+        Discipline::Interactive,
+    )
+    .expect("python leaf");
+    session
+        .on_frame(Frame::Attach {
+            generation: 1,
+            session_id: None,
+        })
+        .expect("attach");
+    let before = pump_until(&mut session, 64 * 1024, Duration::from_secs(5), |acc| {
+        acc.windows(6).any(|w| w == b"BEFORE")
+    });
+    assert!(
+        before.windows(6).any(|w| w == b"BEFORE"),
+        "python leaf never printed BEFORE; tail={:?} alive={}",
+        String::from_utf8_lossy(&before[before.len().saturating_sub(400)..]),
+        session.child_alive()
+    );
+    let start = session.cwd().expect("cwd before");
+    assert_ne!(start, std::path::PathBuf::from("/private/tmp"));
+
+    std::fs::write(&go, b"go").expect("release");
+    let after = pump_until(&mut session, 64 * 1024, Duration::from_secs(5), |acc| {
+        acc.windows(5).any(|w| w == b"AFTER")
+    });
+    assert!(after.windows(5).any(|w| w == b"AFTER"));
+    let hist = session.history();
+    assert!(
+        !hist.windows(3).any(|w| w == b"\x1b]7"),
+        "fixture emitted OSC 7; oracle would be the classifier, not the tap"
+    );
+    let tapped = session.cwd().expect("cwd after chdir");
+    assert_eq!(
+        tapped,
+        std::path::PathBuf::from("/private/tmp"),
+        "cwd required OSC 7 (ADR 0013 D3)"
+    );
+
+    let _ = session.terminate();
+    let _ = std::fs::remove_file(&script);
+    let _ = std::fs::remove_file(&go);
+}
+
+/// T-CWD-FAIL-CLOSED. Dead child → Err, last known kept. Required mutation:
+/// `cwd_fail_open`.
+#[cfg(target_os = "macos")]
+#[test]
+fn t_cwd_unreadable_does_not_invent_a_path() {
+    let mut session = Session::spawn_with(
+        "/usr/bin/python3",
+        &["-c", "import time; time.sleep(30)"],
+        Winsize::default(),
+        Discipline::Raw,
+    )
+    .expect("python");
+    let known = session.cwd().expect("live cwd");
+    assert!(
+        !known.as_os_str().is_empty(),
+        "live cwd was empty — not a path"
+    );
+    session.terminate().expect("kill");
+    let after = session.cwd();
+    assert!(
+        after.is_err(),
+        "unreadable cwd was Ok({after:?}); fail-open (ADR 0013 D5)"
+    );
+    assert_eq!(
+        session.last_cwd(),
+        Some(known.as_path()),
+        "last known was dropped or replaced"
+    );
+}
+
 // ---------------------------------------------------------------------- ring
 
 #[test]

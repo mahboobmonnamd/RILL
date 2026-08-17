@@ -132,3 +132,7 @@ Reconnect tokens and daemon-restart / logout survival remain out (ADR 0001 §7).
 [SPEC-GRAPH](SPEC-GRAPH.md)). Default daemon start still spawns one leaf so the
 packaged one-window path stays Spike 0 frames. Session naming in the GUI is M2
 chrome.
+
+**Cwd tap:** [ADR 0013](../adr/0013-cwd-tap.md), [SPEC-CWD](SPEC-CWD.md).
+Kernel API authorized; Block path header is [#22](https://github.com/mahboobmonnamd/RILL/issues/22).
+Not an attach warm frame.

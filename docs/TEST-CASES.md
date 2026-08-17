@@ -479,6 +479,64 @@ second connection ATTACH to B is accepted while A stays attached.
 **Required mutation.** `RILL_MUTATE=ignore_session_id` (feature `mutate`):
 always attach the default leaf. The two-id socket tests MUST go red.
 
+### T-GRAPH-FLOOD — flood on A must not drop B
+
+**Oracle.** Leaf A runs `yes`. A's attach stream MUST contain that child's
+`y` output (if it does not, the flood never ran and the test fails as
+inconclusive). Leaf B's child `cat`s a unique fixture. Every byte of that
+marker MUST appear in B's attach stream. Downstream of the children, not of
+a buffer the test copied.
+
+**Procedure.** In-process `Daemon` over `AF_UNIX`. Two connections. Finite
+credit on A so the producer outruns the consumer. No GUI.
+
+**Required mutation.** `RILL_MUTATE=starve_other_leaves` (feature `mutate`):
+the daemon reads only the default leaf's PTY. B's marker MUST be absent.
+
+---
+
+## Milestone 6 — cwd tap (Red)
+
+Authority: [ADR 0013](adr/0013-cwd-tap.md) (Accepted),
+[SPEC-CWD](spec/SPEC-CWD.md),
+[#23](https://github.com/mahboobmonnamd/RILL/issues/23). Named here first.
+Not M1. Path header chrome is [#22](https://github.com/mahboobmonnamd/RILL/issues/22).
+Not T-NFR. Not Chip 1.
+
+### T-CWD-FG — foreground job chdir is visible
+
+**Oracle.** Interactive `zsh` stays in dir A. A fg child `chdir`s to
+`/private/tmp` (or another path the test did not put in a buffer it then
+asserts). `Session::cwd()` MUST equal that child's vnode path
+(`/private/tmp`). The session-leader pid's cwd MUST still be A — if the
+implementation reports the leader, this test is red.
+
+**Procedure.** In-process kernel PTY. No GUI. Child script is a fixture file,
+not a prompt parse.
+
+**Required mutation.** `RILL_MUTATE=leader_cwd` (feature `mutate`): return
+`proc_pidinfo` of the posix_spawn child only. This test MUST go red.
+
+### T-CWD-NO-OSC7 — alt-screen / TUI chdir without OSC 7
+
+**Oracle.** Leaf is a process that `chdir`s and never writes `ESC ] 7`.
+History MUST NOT contain OSC 7. `Session::cwd()` MUST still be the new path.
+
+**Procedure.** In-process kernel. Python (or equivalent) as the leaf.
+
+**Required mutation.** `RILL_MUTATE=osc7_only`: cwd updates only when OSC 7
+is classified. This test MUST go red.
+
+### T-CWD-FAIL-CLOSED — unreadable cwd does not invent a path
+
+**Oracle.** When `proc_pidinfo` fails, `Session::cwd()` is `Err` and last
+known is unchanged. Never an empty path as `Ok`, never a prompt substring.
+
+**Procedure.** Mutation or a pid that cannot be inspected.
+
+**Required mutation.** `RILL_MUTATE=cwd_fail_open`: return `Ok("")` or the
+prompt. This test MUST go red.
+
 ---
 
 ## Milestone 4 — Chip 1 isolated VT (Red)

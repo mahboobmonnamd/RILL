@@ -662,3 +662,80 @@ fn t_attach_second_connection_to_other_id_is_accepted() {
         "attach to a second id was refused, got {frames:?}"
     );
 }
+
+/// T-GRAPH-FLOOD. Oracle is B's child marker on B's socket while A is a
+/// stalled `yes` flood. Required mutation: `RILL_MUTATE=starve_other_leaves`.
+#[test]
+fn t_graph_flood_on_one_leaf_does_not_drop_bytes_on_the_other() {
+    let n = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let marker = format!("RILL-GRAPH-FLOOD-B-{n}");
+    let path = PathBuf::from(format!("/tmp/rill-graph-flood-b-{n}"));
+    std::fs::write(&path, format!("{marker}\n")).expect("write B fixture");
+
+    let sock = temp_sock("graph-flood");
+    let mut daemon =
+        Daemon::bind(&sock, "/bin/sh", &["-c", "exec yes"], Winsize::default()).expect("bind A");
+    let cat = format!("cat {}; exec sleep 30", path.display());
+    let b = daemon
+        .spawn_leaf("/bin/sh", &["-c", &cat], Winsize::default())
+        .expect("spawn B");
+
+    let mut gui_a = UnixStream::connect(&sock).expect("a");
+    send(
+        &mut gui_a,
+        Frame::Attach {
+            generation: 1,
+            session_id: None,
+        },
+    );
+    send(&mut gui_a, Frame::Credit(8 * 1024));
+
+    let mut gui_b = UnixStream::connect(&sock).expect("b");
+    send(
+        &mut gui_b,
+        Frame::Attach {
+            generation: 1,
+            session_id: Some(b.as_u64()),
+        },
+    );
+    send(&mut gui_b, Frame::Credit(64 * 1024));
+
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(2) {
+        pump(&mut daemon, Duration::from_millis(50)).ok();
+    }
+
+    let mut da = Decoder::new();
+    let a_frames = recv_frames(&mut gui_a, &mut da, Duration::from_millis(400));
+    let mut a_bytes = Vec::new();
+    for f in &a_frames {
+        if let Frame::Data(b) = f {
+            a_bytes.extend_from_slice(b);
+        }
+    }
+    let y_count = a_bytes.iter().filter(|b| **b == b'y').count();
+    assert!(
+        y_count > 100,
+        "leaf A never received `yes` output ({y_count} y's) — the flood did \
+         not run, so this run is inconclusive (ADR 0011 D4)"
+    );
+
+    let mut db = Decoder::new();
+    let frames = recv_frames(&mut gui_b, &mut db, Duration::from_millis(400));
+    let mut bytes = Vec::new();
+    for f in &frames {
+        if let Frame::Data(b) = f {
+            bytes.extend_from_slice(b);
+        }
+    }
+    let text = String::from_utf8_lossy(&bytes);
+    assert!(
+        text.contains(&marker),
+        "flood on A dropped B's child marker, got {text:?}"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
