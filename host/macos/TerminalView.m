@@ -672,9 +672,9 @@ static unsigned rill_view_bg_rgb(NSView *v) {
 
     CGRect bounds =
         CTFontGetBoundingRectsForGlyphs(drawFont, kCTFontOrientationHorizontal, glyphs, NULL, 1);
-    int w = (int)ceil(CGRectGetWidth(bounds)) + 2;
-    int h = (int)ceil(CGRectGetHeight(bounds)) + 2;
-    if (w <= 2 || h <= 2) {
+    int tightW = (int)ceil(CGRectGetWidth(bounds)) + 2;
+    int tightH = (int)ceil(CGRectGetHeight(bounds)) + 2;
+    if (tightW <= 2 || tightH <= 2) {
         out.valid = YES; /* whitespace */
         _glyphCache[key] = [NSValue valueWithBytes:&out objCType:@encode(RillGlyph)];
         if (ownDraw) {
@@ -682,6 +682,13 @@ static unsigned rill_view_bg_rgb(NSView *v) {
         }
         return out;
     }
+    /* Raster into the Metal cell (backing pixels), not the tight ink box.
+     * Tight-box height on Retina is ~0.6 of cellPx and fails T-GLYPH-SCALE. */
+    CGFloat ascent = CTFontGetAscent(drawFont);
+    CGFloat descent = CTFontGetDescent(drawFont);
+    CGFloat leading = CTFontGetLeading(drawFont);
+    int w = (int)MAX(ceil(_cellW * scale), (CGFloat)tightW);
+    int h = (int)MAX(ceil(ascent + descent + leading), (CGFloat)tightH);
 
     /* Shelf packing. On exhaustion we stop caching rather than corrupt the
      * atlas; a real LRU/repack is Milestone 1. */
@@ -724,7 +731,7 @@ static unsigned rill_view_bg_rgb(NSView *v) {
     CGContextSetShouldSmoothFonts(ctx, false); /* grayscale AA; R8 atlas */
     CGContextSetGrayFillColor(ctx, 1.0, 1.0);
     CGContextSetTextMatrix(ctx, CGAffineTransformIdentity);
-    CGPoint at = CGPointMake(1 - bounds.origin.x, 1 - bounds.origin.y);
+    CGPoint at = CGPointMake(MAX(0.0, -bounds.origin.x), descent);
     CTFontDrawGlyphs(drawFont, glyphs, &at, 1, ctx);
     CGContextRelease(ctx);
 
@@ -741,9 +748,9 @@ static unsigned rill_view_bg_rgb(NSView *v) {
     out.h = (float)h / (float)RILL_ATLAS_DIM;
     out.sizeX = (float)w;
     out.sizeY = (float)h;
-    /* Cell-local, top-left origin: baseline sits at ascent from the top. */
-    out.originX = (float)(bounds.origin.x - 1);
-    out.originY = (float)(CTFontGetAscent(drawFont) - (bounds.origin.y + CGRectGetHeight(bounds)) - 1);
+    /* Full-cell atlas slot: map onto cellPx, baseline already in the bitmap. */
+    out.originX = 0.0f;
+    out.originY = 0.0f;
     out.valid = YES;
 
     _atlasPenX += w + 1;

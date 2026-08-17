@@ -78,7 +78,8 @@ Per ADR 0003 D1:
 
 - `MTLPixelFormatR8Unorm` glyph atlas, 2048×2048, shelf-packed, keyed by
   `(codepoint, bold, italic)`, rasterised with CoreText at the backing scale
-  factor (T-GLYPH-SCALE). Point-sized atlas entries on a pixel `cellPx`
+  factor (T-GLYPH-SCALE, [#275](https://github.com/mahboobmonnamd/RILL/issues/275)).
+  Point-sized atlas entries on a pixel `cellPx`
   (Retina) MUST NOT ship: glyphs occupy ~¼ of the cursor cell.
 - One instance per visible cell, 16 bytes:
   `{ atlas_uv ushort4, cell ushort2, fg uchar4, bg uchar4, flags ushort }`.
