@@ -249,6 +249,8 @@ int rill_vt_snapshot(RillVt *vt, RillPodHeader *hdr, RillPodCell **cells, size_t
     hdr->full_damage = dirty == GHOSTTY_RENDER_STATE_DIRTY_FULL;
     hdr->damage_row0 = d0;
     hdr->damage_row1 = d1;
+    hdr->default_fg = rgba(def_fg);
+    hdr->default_bg = rgba(def_bg);
     hdr->grapheme_truncated = grapheme_truncated;
     *cells = grid;
     *ncells = n;

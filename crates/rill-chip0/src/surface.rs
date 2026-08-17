@@ -1,3 +1,4 @@
+use crate::look::{resolve_theme, ThemeColors};
 use crate::Error;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -14,6 +15,18 @@ pub struct HostSurface {
     pub cols: u16,
     #[serde(default = "default_rows")]
     pub rows: u16,
+    #[serde(default)]
+    pub theme: Option<String>,
+    #[serde(rename = "padding-x", default)]
+    pub padding_x: f32,
+    #[serde(rename = "padding-y", default)]
+    pub padding_y: f32,
+    #[serde(rename = "background-opacity", default = "default_opaque")]
+    pub background_opacity: f32,
+    #[serde(rename = "macos-option-as-alt", default)]
+    pub macos_option_as_alt: bool,
+    #[serde(skip)]
+    pub colors: Option<ThemeColors>,
 }
 
 fn default_cols() -> u16 {
@@ -22,18 +35,37 @@ fn default_cols() -> u16 {
 fn default_rows() -> u16 {
     24
 }
+fn default_opaque() -> f32 {
+    1.0
+}
 
 pub fn load_host_surface(path: impl AsRef<Path>) -> Result<HostSurface, Error> {
     let text = std::fs::read_to_string(path.as_ref())?;
-    let cfg: HostSurface = toml::from_str(&text).map_err(|e| Error::Config(e.to_string()))?;
+    let mut cfg: HostSurface = toml::from_str(&text).map_err(|e| Error::Config(e.to_string()))?;
     if cfg.font_family.is_empty() {
         return Err(Error::Config("font-family required".into()));
+    }
+    if let Some(name) = cfg.theme.clone() {
+        cfg.colors = resolve_theme(&name, path.as_ref().parent());
     }
     Ok(cfg)
 }
 
+pub fn load_resolved_surface(path: impl AsRef<Path>) -> Result<HostSurface, Error> {
+    let base = load_host_surface(path)?;
+    match crate::look::load_look_overlay() {
+        Some(look) => Ok(crate::look::overlay_look(base, &look)),
+        None => Ok(base),
+    }
+}
+
 #[allow(dead_code)]
 pub fn discover_host_surface() -> PathBuf {
+    if let Ok(p) = std::env::var("RILL_HOST_SURFACE") {
+        if !p.is_empty() {
+            return PathBuf::from(p);
+        }
+    }
     let candidates = [
         PathBuf::from("host-surface.toml"),
         PathBuf::from("../host-surface.toml"),

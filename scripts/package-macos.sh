@@ -19,6 +19,10 @@ rm -rf "$APP"
 mkdir -p "$MACOS" "$RES"
 cp host/macos/Info.plist "$APP/Contents/Info.plist"
 cp host-surface.toml "$RES/host-surface.toml"
+mkdir -p "$RES/themes"
+if [ -d "$ROOT/fixtures/look/themes" ]; then
+  cp -R "$ROOT/fixtures/look/themes/." "$RES/themes/"
+fi
 cp "$TARGET_DIR/release/rilld" "$MACOS/rilld"
 
 HOST_LIB="$TARGET_DIR/release/librill_host.a"

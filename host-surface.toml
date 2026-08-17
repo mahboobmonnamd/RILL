@@ -1,7 +1,13 @@
 # Display surface. Production faces must not use NSFont.monospacedSystemFont
-# when a family is configured.
-font-family = "Menlo"
-font-size = 13.0
-font-fallbacks = ["Menlo", "Courier"]
+# when a family is configured. User look keys overlay this file (ADR 0017):
+# ~/.config/rill/config or RILL_CONFIG.
+font-family = "JetBrainsMono Nerd Font"
+font-size = 16.0
+font-fallbacks = ["JetBrainsMonoNL Nerd Font", "Menlo", "Courier"]
+theme = "Catppuccin Latte"
+padding-x = 8.0
+padding-y = 8.0
+background-opacity = 0.95
+macos-option-as-alt = true
 cols = 80
 rows = 24

@@ -78,7 +78,9 @@ extern char **environ;
 @end
 
 /* Apple: direct-to-display needs toggleFullScreen: on a titled window, not a
- * borderless cover of screen.frame. Pump until the Space is actually entered. */
+ * borderless cover of screen.frame. Default launch is windowed (ADR 0017).
+ * T-NFR and T-FS-EXIT still enter a Space. Pump until the Space is actually
+ * entered. */
 static BOOL wait_until_fullscreen(NSWindow *window, NSTimeInterval timeout) {
     NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:timeout];
     while ((window.styleMask & NSWindowStyleMaskFullScreen) == 0 &&
@@ -197,7 +199,11 @@ int main(int argc, const char *argv[]) {
                           defer:NO];
         window.opaque = YES;
         window.releasedWhenClosed = NO;
-        window.backgroundColor = [NSColor colorWithCalibratedWhite:0.07 alpha:1.0];
+        uint32_t bg = rill_client_background_rgba(client);
+        window.backgroundColor = [NSColor colorWithRed:((bg >> 24) & 0xff) / 255.0
+                                                 green:((bg >> 16) & 0xff) / 255.0
+                                                  blue:((bg >> 8) & 0xff) / 255.0
+                                                 alpha:1.0];
         window.title = @"Rill";
         window.collectionBehavior = NSWindowCollectionBehaviorFullScreenPrimary;
         appDelegate.window = window;
@@ -225,16 +231,27 @@ int main(int argc, const char *argv[]) {
         [window makeKeyAndOrderFront:nil];
         [window makeFirstResponder:view];
         [NSApp activateIgnoringOtherApps:YES];
-        /* T-DOCK-REOPEN stays windowed so orderOut is the not-visible case
-         * (ADR 0019). T-NFR and default make run still enter a Space. */
-        if (!getenv("RILL_TEST_DOCK_REOPEN")) {
+
+        const char *mut = getenv("RILL_MUTATE");
+        BOOL always_fs = mut && strcmp(mut, "always_toggle_fullscreen") == 0;
+        BOOL test_leave = getenv("RILL_TEST_EXIT_FULLSCREEN") != NULL;
+        BOOL enter_fs = nfr || always_fs || test_leave;
+        if (enter_fs) {
             [window toggleFullScreen:nil];
             if (!wait_until_fullscreen(window, 5.0)) {
                 fprintf(stderr, "Rill: toggleFullScreen did not enter a Space\n");
             }
+        } else {
+            if (mut && strcmp(mut, "window_alpha_from_opacity") == 0) {
+                float opacity = rill_client_background_opacity(client);
+                if (opacity < 0.999f) {
+                    window.alphaValue = (CGFloat)opacity;
+                }
+            }
         }
-        if (getenv("RILL_TEST_EXIT_FULLSCREEN")) {
-            /* Same call as the green traffic-light (ADR 0016). */
+        if (test_leave) {
+            /* Same call as the green traffic-light (ADR 0016). Enter already
+             * happened above; this leaves. */
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)),
                            dispatch_get_main_queue(), ^{
                                [window toggleFullScreen:nil];

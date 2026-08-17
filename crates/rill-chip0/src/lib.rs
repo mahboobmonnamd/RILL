@@ -3,9 +3,13 @@
 //! Domain types do not name Ghostty FFI. Adapter C files only.
 
 mod adapter;
+mod look;
 mod surface;
 
-pub use surface::{load_host_surface, HostSurface};
+pub use look::{
+    apply_theme, load_look_overlay, overlay_look, parse_look_keys, TerminalLook, ThemeColors,
+};
+pub use surface::{discover_host_surface, load_host_surface, load_resolved_surface, HostSurface};
 
 use std::fmt;
 
@@ -29,6 +33,10 @@ pub struct PodGrid {
     pub full_damage: bool,
     pub damage_row0: u16,
     pub damage_row1: u16,
+    /// VT default colours. Host look remaps cells that still hold these
+    /// (ADR 0017 D3). Not a theme.
+    pub default_fg: u32,
+    pub default_bg: u32,
     /// Clusters this snapshot could not materialise and rendered as a space.
     /// Reported, never silently dropped (SPEC-CHIP0 §5).
     pub grapheme_truncated: u32,

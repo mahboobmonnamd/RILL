@@ -1,11 +1,10 @@
-//! T-FS-EXIT — leaving fullscreen must not hang the window.
+//! T-LOOK-GLASS — background-opacity must not make the window translucent.
 //!
-//! Bug (doc comment, not the name — ADR 0002 D6): clicking the button to
-//! return to a normal window hangs; force quit is required. Default launch is
-//! windowed (ADR 0017); this test enters a Space via
-//! `RILL_TEST_EXIT_FULLSCREEN=1` then leaves.
+//! Bug (doc comment, not the name — ADR 0002 D6): windowed launch set
+//! `NSWindow.alphaValue` from `background-opacity = 0.95`, so the Metal
+//! surface was glass and the theme looked washed out.
 //!
-//! Required mutation: `RILL_MUTATE=wait_forever_on_inflight`.
+//! Required mutation: `RILL_MUTATE=window_alpha_from_opacity`.
 
 use std::fs;
 use std::os::unix::process::CommandExt;
@@ -32,18 +31,22 @@ fn unique_sock() -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .expect("time")
         .as_nanos();
-    PathBuf::from(format!("/tmp/rill-fs-exit-{n}.sock"))
+    PathBuf::from(format!("/tmp/rill-look-glass-{n}.sock"))
 }
 
 struct Heartbeat {
     seq: u32,
     fullscreen: Option<u32>,
+    opaque: Option<u32>,
+    alpha: Option<u32>,
 }
 
 fn read_heartbeat(path: &PathBuf) -> Option<Heartbeat> {
     let s = fs::read_to_string(path).ok()?;
     let mut seq = None;
     let mut fullscreen = None;
+    let mut opaque = None;
+    let mut alpha = None;
     for part in s.split_whitespace() {
         if let Some(v) = part.strip_prefix("seq=") {
             seq = v.parse().ok();
@@ -51,10 +54,18 @@ fn read_heartbeat(path: &PathBuf) -> Option<Heartbeat> {
         if let Some(v) = part.strip_prefix("fullscreen=") {
             fullscreen = v.parse().ok();
         }
+        if let Some(v) = part.strip_prefix("opaque=") {
+            opaque = v.parse().ok();
+        }
+        if let Some(v) = part.strip_prefix("alpha=") {
+            alpha = v.parse().ok();
+        }
     }
     Some(Heartbeat {
         seq: seq?,
         fullscreen,
+        opaque,
+        alpha,
     })
 }
 
@@ -83,25 +94,27 @@ fn wait_heartbeat(
     None
 }
 
-/// Clicking out of fullscreen must not hang (force quit).
+/// Packaged window stays opaque when the look file sets background-opacity.
 #[test]
-fn t_exit_fullscreen_does_not_hang_the_window() {
+fn t_background_opacity_does_not_make_the_window_glass() {
     let gui_bin = gui_bin();
     assert!(
         gui_bin.is_file(),
-        "T-FS-EXIT needs the packaged GUI at {}. Run: sh scripts/package-macos.sh",
+        "T-LOOK-GLASS needs the packaged GUI at {}. Run: sh scripts/package-macos.sh",
         gui_bin.display()
     );
 
     let sock = unique_sock();
     let heartbeat = PathBuf::from(format!("{}.hb", sock.display()));
+    let config = PathBuf::from(format!("{}.config", sock.display()));
     let _ = fs::remove_file(&heartbeat);
+    fs::write(&config, "background-opacity = 0.95\n").expect("write look file");
 
     let mut gui_cmd = Command::new(&gui_bin);
     gui_cmd
         .env("RILL_SOCKET", &sock)
         .env("RILL_TEST_HEARTBEAT", &heartbeat)
-        .env("RILL_TEST_EXIT_FULLSCREEN", "1")
+        .env("RILL_CONFIG", &config)
         .env("SHELL", "/bin/sh")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -113,50 +126,39 @@ fn t_exit_fullscreen_does_not_hang_the_window() {
     let mut gui = gui_cmd.spawn().expect("spawn packaged Rill");
     let pid = gui.id();
 
-    let entered = wait_heartbeat(&heartbeat, pid, Duration::from_secs(6), |h| {
-        h.fullscreen == Some(1)
+    let windowed = wait_heartbeat(&heartbeat, pid, Duration::from_secs(6), |h| {
+        h.fullscreen == Some(0) && h.seq >= 2
     });
-    if entered.is_none() || !alive(pid) {
+    if windowed.is_none() || !alive(pid) {
+        let still = alive(pid);
         let _ = gui.kill();
         let _ = gui.wait();
-        panic!(
-            "GUI died or never entered fullscreen; heartbeat={:?}",
-            fs::read_to_string(&heartbeat).ok()
-        );
-    }
-
-    let left = wait_heartbeat(&heartbeat, pid, Duration::from_secs(5), |h| {
-        h.fullscreen == Some(0)
-    });
-    if left.is_none() {
-        let still = alive(pid);
-        unsafe {
-            libc::kill(pid as i32, libc::SIGKILL);
-        }
-        let _ = gui.wait();
+        let hb = fs::read_to_string(&heartbeat).ok();
         let _ = fs::remove_file(&heartbeat);
         let _ = fs::remove_file(&sock);
-        panic!(
-            "leaving fullscreen hung or never completed; heartbeat={:?} alive={}",
-            fs::read_to_string(&heartbeat).ok(),
-            still
-        );
+        let _ = fs::remove_file(&config);
+        panic!("GUI died or entered fullscreen; heartbeat={hb:?} alive={still}");
     }
 
-    let seq0 = left.unwrap().seq;
-    thread::sleep(Duration::from_millis(400));
-    assert!(alive(pid), "GUI died after leaving fullscreen");
-    let after = read_heartbeat(&heartbeat).expect("heartbeat after leave");
-    assert!(
-        after.seq > seq0,
-        "main thread stopped after leave (seq {seq0} then {}); force quit was required",
-        after.seq
-    );
-
+    let hb = windowed.unwrap();
+    let opaque = hb.opaque;
+    let alpha = hb.alpha;
     unsafe {
         libc::kill(pid as i32, libc::SIGTERM);
     }
     let _ = gui.wait();
     let _ = fs::remove_file(&heartbeat);
     let _ = fs::remove_file(&sock);
+    let _ = fs::remove_file(&config);
+
+    assert_eq!(
+        opaque,
+        Some(1),
+        "window/layer must stay opaque with background-opacity = 0.95; heartbeat opaque={opaque:?}"
+    );
+    assert_eq!(
+        alpha,
+        Some(100),
+        "window.alphaValue must stay 1.0 (heartbeat alpha is percent); got {alpha:?} — glass washes the theme"
+    );
 }

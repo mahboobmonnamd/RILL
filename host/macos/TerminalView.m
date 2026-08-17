@@ -1,5 +1,6 @@
 /* Chip 0 presenter: glyph atlas + one instanced Metal draw. Socket readiness
- * feeds the VT (ADR 0003 D2). Surface is toggleFullScreen + opaque CAMetalLayer
+ * feeds the VT (ADR 0003 D2). Surface is a titled window (windowed by default,
+ * ADR 0017). T-NFR still uses toggleFullScreen + opaque CAMetalLayer
  * (direct-to-display). Present is echo-only, one in flight. A CADisplayLink
  * supplies targetTimestamp so the echo can late-latch this vsync; it does not
  * take a drawable. Keystrokes pump+present on the same stack as keyDown so
@@ -47,7 +48,7 @@ static CGKeyCode rill_vk_ansi_letter(uint32_t cp) {
 static NSString *const kShaderSource =
     @"#include <metal_stdlib>\n"
     @"using namespace metal;\n"
-    @"struct Uniforms { float2 viewport; float2 cellPx; uint cols; };\n"
+    @"struct Uniforms { float2 viewport; float2 cellPx; uint cols; uint pad0; float2 origin; };\n"
     @"struct Instance {\n"
     @"  float2 cell; float4 uvRect; float4 fg; float4 bg;\n"
     @"  float2 glyphOrigin; float2 glyphSize; float flags;\n"
@@ -71,7 +72,7 @@ static NSString *const kShaderSource =
     @"                              float2(0,1), float2(1,0), float2(1,1) };\n"
     @"  float2 c = corners[vid];\n"
     @"  Instance it = insts[iid];\n"
-    @"  float2 px = (it.cell + c) * u.cellPx;\n"
+    @"  float2 px = (it.cell + c) * u.cellPx + u.origin;\n"
     @"  float2 ndc = float2(px.x / u.viewport.x * 2.0 - 1.0,\n"
     @"                      1.0 - px.y / u.viewport.y * 2.0);\n"
     @"  VOut o;\n"
@@ -120,7 +121,8 @@ typedef struct {
     vector_float2 viewport;
     vector_float2 cellPx;
     uint32_t cols;
-    uint32_t _pad[3];
+    uint32_t _pad0;
+    vector_float2 origin;
 } RillUniforms;
 
 typedef struct {
@@ -142,6 +144,15 @@ typedef struct {
 #define RILL_ATLAS_DIM 2048
 #define RILL_MAX_FRAMES_IN_FLIGHT 1
 #define RILL_MAX_DRAWABLES 2
+
+static inline vector_float4 rgba(uint32_t c) {
+    return (vector_float4){
+        ((c >> 24) & 0xff) / 255.0f,
+        ((c >> 16) & 0xff) / 255.0f,
+        ((c >> 8) & 0xff) / 255.0f,
+        (c & 0xff) / 255.0f,
+    };
+}
 
 typedef struct {
     float u, v, w, h;      /* normalized atlas rect */
@@ -207,6 +218,10 @@ typedef struct {
     uint16_t _lastDrawRows;
     BOOL _sentinelInMirror;
     double _lastAnyPresented;
+    CGFloat _padX, _padY;
+    vector_float4 _themeBg;
+    vector_float4 _themeCursor;
+    BOOL _optionAsAlt;
 }
 
 // ---------------------------------------------------------------- lifecycle
@@ -228,6 +243,11 @@ typedef struct {
     _presentCadence = [NSMutableArray array];
     _frameIndex = 0;
     _inflight = dispatch_semaphore_create(RILL_MAX_FRAMES_IN_FLIGHT);
+    _padX = (CGFloat)rill_client_padding_x(client);
+    _padY = (CGFloat)rill_client_padding_y(client);
+    _themeBg = rgba(rill_client_background_rgba(client));
+    _themeCursor = rgba(rill_client_cursor_rgba(client));
+    _optionAsAlt = rill_client_macos_option_as_alt(client) != 0;
 
     if (![self setupFont]) {
         return nil;
@@ -314,7 +334,7 @@ typedef struct {
 - (BOOL)setupMetal {
     /* ADR 0006: MTKView is the layer host only. drawInMTKView does not present. */
     self.colorPixelFormat = MTLPixelFormatBGRA8Unorm;
-    self.clearColor = MTLClearColorMake(0.07, 0.07, 0.07, 1.0);
+    self.clearColor = MTLClearColorMake(_themeBg.x, _themeBg.y, _themeBg.z, 1.0);
     self.framebufferOnly = YES;
     self.paused = YES;
     self.enableSetNeedsDisplay = NO;
@@ -464,6 +484,13 @@ typedef struct {
     int fs = (w && (w.styleMask & NSWindowStyleMaskFullScreen)) ? 1 : 0;
     int vis = (w && w.isVisible) ? 1 : 0;
     int key = (w && w.isKeyWindow) ? 1 : 0;
+    int opaque = 0;
+    int alpha = 100;
+    if (w) {
+        CAMetalLayer *metal = (CAMetalLayer *)self.layer;
+        opaque = (w.opaque && metal.opaque) ? 1 : 0;
+        alpha = (int)llround((double)w.alphaValue * 100.0);
+    }
     NSView *content = w.contentView;
     uint32_t chrome = 1;
     CGFloat left = 0, center = self.bounds.size.width, right = 0;
@@ -486,8 +513,9 @@ typedef struct {
         [w.firstResponder isKindOfClass:[TerminalView class]] ? "terminal" : "other";
     NSString *line = [NSString
         stringWithFormat:
-            @"seq=%u fullscreen=%d visible=%d key=%d chrome=%u left=%.0f center=%.0f right=%.0f first=%s\n",
-            _heartbeatSeq, fs, vis, key, chrome, left, center, right, first];
+            @"seq=%u fullscreen=%d visible=%d key=%d chrome=%u left=%.0f center=%.0f right=%.0f "
+            @"first=%s opaque=%d alpha=%d\n",
+            _heartbeatSeq, fs, vis, key, chrome, left, center, right, first, opaque, alpha];
     [line writeToFile:@(path) atomically:YES encoding:NSUTF8StringEncoding error:NULL];
 }
 
@@ -613,11 +641,6 @@ typedef struct {
 
 // ---------------------------------------------------------------- rendering
 
-static inline vector_float4 rgba(uint32_t c) {
-    return (vector_float4){((c >> 24) & 0xff) / 255.0f, ((c >> 16) & 0xff) / 255.0f,
-                           ((c >> 8) & 0xff) / 255.0f, 1.0f};
-}
-
 - (void)ensureInstanceCapacityForCols:(uint16_t)cols rows:(uint16_t)rows {
     NSUInteger needed = (NSUInteger)cols * (NSUInteger)rows + 1; /* +1 cursor */
     if (_cols == cols && _rows == rows && _instances) {
@@ -696,7 +719,7 @@ static inline vector_float4 rgba(uint32_t c) {
         RillInstance *cur = &_instances[drawCount];
         memset(cur, 0, sizeof(*cur));
         cur->cell = (vector_float2){(float)grid.cursor_col, (float)grid.cursor_row};
-        cur->fg = (vector_float4){0.85f, 0.85f, 0.85f, 1.0f};
+        cur->fg = _themeCursor;
         cur->flags = rill_client_alive(_client)
                          ? (float)RILL_FLAG_CURSOR
                          : (float)RILL_FLAG_CURSOR_HOLLOW;
@@ -824,11 +847,13 @@ static inline vector_float4 rgba(uint32_t c) {
     u.viewport = (vector_float2){(float)drawableSize.width, (float)drawableSize.height};
     u.cellPx = (vector_float2){(float)(_cellW * scale), (float)(_cellH * scale)};
     u.cols = cols;
+    u._pad0 = 0;
+    u.origin = (vector_float2){(float)(_padX * scale), (float)(_padY * scale)};
 
     MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
     pass.colorAttachments[0].texture = drawable.texture;
     pass.colorAttachments[0].loadAction = MTLLoadActionClear;
-    pass.colorAttachments[0].clearColor = MTLClearColorMake(0.07, 0.07, 0.07, 1.0);
+    pass.colorAttachments[0].clearColor = MTLClearColorMake(_themeBg.x, _themeBg.y, _themeBg.z, 1.0);
     pass.colorAttachments[0].storeAction = MTLStoreActionStore;
 
     id<MTLCommandBuffer> cmd = [_queue commandBuffer];
@@ -913,9 +938,11 @@ static inline vector_float4 rgba(uint32_t c) {
     if (_cellW < 1 || _cellH < 1) {
         return;
     }
-    uint16_t cols = (uint16_t)MAX(20, (int)(newSize.width / _cellW));
-    uint16_t rows = (uint16_t)MAX(8, (int)(newSize.height / _cellH));
-    rill_client_resize(_client, cols, rows, (uint16_t)newSize.width, (uint16_t)newSize.height);
+    CGFloat innerW = MAX(1.0, newSize.width - 2.0 * _padX);
+    CGFloat innerH = MAX(1.0, newSize.height - 2.0 * _padY);
+    uint16_t cols = (uint16_t)MAX(20, (int)(innerW / _cellW));
+    uint16_t rows = (uint16_t)MAX(8, (int)(innerH / _cellH));
+    rill_client_resize(_client, cols, rows, (uint16_t)innerW, (uint16_t)innerH);
     if ([self shouldPresent]) {
         [self renderFrame];
     }
@@ -1030,13 +1057,18 @@ static inline vector_float4 rgba(uint32_t c) {
         }
     }
 
+    if (_optionAsAlt && (mods & NSEventModifierFlagOption)
+        && !(mods & NSEventModifierFlagCommand) && !(mods & NSEventModifierFlagControl)
+        && plain.length > 0) {
+        uint8_t esc = 0x1b;
+        [self sendBytes:&esc length:1];
+        NSData *data = [plain dataUsingEncoding:NSUTF8StringEncoding];
+        [self sendBytes:data.bytes length:data.length];
+        return;
+    }
     NSString *chars = event.characters;
     if (chars.length == 0) {
         return;
-    }
-    if (mods & NSEventModifierFlagOption) {
-        uint8_t esc = 0x1b;
-        [self sendBytes:&esc length:1];
     }
     NSData *data = [chars dataUsingEncoding:NSUTF8StringEncoding];
     [self sendBytes:data.bytes length:data.length];
