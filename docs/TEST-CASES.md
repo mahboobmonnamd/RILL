@@ -410,6 +410,33 @@ wait is unbounded again. This test MUST go red.
 
 ---
 
+## T-SPLIT — window is three panes around Chip 0
+
+Authority: [ADR 0018](adr/0018-three-pane-host-chrome.md),
+[SPEC-CHROME](spec/SPEC-CHROME.md),
+[#260](https://github.com/mahboobmonnamd/RILL/issues/260).
+
+**Bug (doc comment).** `contentView` was the `MTKView` alone, so there was no
+navigation column, no inspector, and no place for a workspace list.
+
+**Oracle.** Packaged `Rill.app` heartbeat (`RILL_TEST_HEARTBEAT`) reports
+`chrome=3`, `left` and `right` widths &gt; 0, `center` width &gt; 0, and
+`first=terminal`. Those numbers are the `NSSplitView` subview frames and the
+window first responder after layout, not a constant the test wrote.
+
+**Procedure.** Packaged GUI. No `--nfr-key`. No `RILL_TEST_EXIT_FULLSCREEN`.
+Socket-only tests do not close this.
+
+**Required mutation.** `RILL_MUTATE=no_chrome`: `contentView` is
+`TerminalView` again. Heartbeat `chrome` is not 3 (left/right collapse).
+
+Demonstrated **red** on packaged `Rill.app` at `cdac6c5` (heartbeat
+`seq=… fullscreen=1` with no chrome fields). Demonstrated **green** on this
+branch; `no_chrome` went red (`chrome=1 left=0 right=0 first=terminal`).
+CI on `gates.yml` is the D8 closer.
+
+---
+
 ## Gate ledger
 
 | ID | Status | Automated negative control | Blocking defect it also covers |

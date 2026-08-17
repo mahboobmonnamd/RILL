@@ -4,10 +4,13 @@
   ([ADR 0010](../adr/0010-spike-0-closes.md)). Presenter: [ADR 0009](../adr/0009-direct-to-display-echo.md).
 - **Authority:** [ADR 0003](../adr/0003-display-pipeline.md),
   [ADR 0009](../adr/0009-direct-to-display-echo.md),
-  [ADR 0016](../adr/0016-exit-fullscreen-must-not-hang.md)
+  [ADR 0016](../adr/0016-exit-fullscreen-must-not-hang.md),
+  [ADR 0018](../adr/0018-three-pane-host-chrome.md) (M2 chrome; not a Spike 0 reopen)
 - **Code:** `host/macos/`, `crates/rill-host`
 - **Gates:** T-NFR, T-SPAWN, T-KILL, T-RESIZE — **Proven**. T-FS-EXIT
-  ([#257](https://github.com/mahboobmonnamd/RILL/issues/257)). §6 IME and §7
+  ([#257](https://github.com/mahboobmonnamd/RILL/issues/257)). Three-pane
+  chrome is [SPEC-CHROME](SPEC-CHROME.md) / T-SPLIT
+  ([#260](https://github.com/mahboobmonnamd/RILL/issues/260)). §6 IME and §7
   window paint of EXIT are **later**, not a reopen of those gates.
 
 ## 1. Prohibitions
@@ -121,11 +124,13 @@ exists in a test build is not measuring the shipped app.
 
 ## 9. Out of scope for Spike 0
 
-Tabs, splits, sidebar, Blocks, themes, scrollback UI, mouse reporting, selection,
-search, ligatures, colour emoji, any second window, and session-graph UI
-([ADR 0011](../adr/0011-session-graph.md) D5). `font-fallbacks` in
-`host-surface.toml` is parsed and unused; wiring it is later, not a font-family
-regression (`font-family` / `font-size` are live).
+Tabs, nested PTY splits, Blocks, themes, scrollback UI, mouse reporting,
+selection, search, ligatures, colour emoji, any second window, and
+session-graph UI in the kernel
+([ADR 0011](../adr/0011-session-graph.md) D5). Three-pane chrome around **one**
+leaf is M2 ([SPEC-CHROME](SPEC-CHROME.md), [ADR 0018](../adr/0018-three-pane-host-chrome.md)).
+`font-fallbacks` in `host-surface.toml` is parsed and unused; wiring it is
+later, not a font-family regression (`font-family` / `font-size` are live).
 
 ASAP keep-alive presents, CA pin, `CAMetalDisplayLink`, and a borderless
 cover of `screen.frame` are not the closer (ADR 0004–0008). The closer is

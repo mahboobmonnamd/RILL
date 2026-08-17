@@ -235,6 +235,7 @@ typedef struct {
     if (![self setupMetal]) {
         return nil;
     }
+    self.accessibilityIdentifier = @"chrome-center";
     [self armSocketSource];
     return self;
 }
@@ -460,7 +461,29 @@ typedef struct {
     }
     _heartbeatSeq += 1;
     int fs = (self.window.styleMask & NSWindowStyleMaskFullScreen) ? 1 : 0;
-    NSString *line = [NSString stringWithFormat:@"seq=%u fullscreen=%d\n", _heartbeatSeq, fs];
+    NSView *content = self.window.contentView;
+    uint32_t chrome = 1;
+    CGFloat left = 0, center = self.bounds.size.width, right = 0;
+    NSView *split = content;
+    if (content && ![split isKindOfClass:[NSSplitView class]]) {
+        for (NSView *sub in content.subviews) {
+            if ([sub isKindOfClass:[NSSplitView class]]) {
+                split = sub;
+                break;
+            }
+        }
+    }
+    if ([split isKindOfClass:[NSSplitView class]] && split.subviews.count >= 3) {
+        chrome = (uint32_t)split.subviews.count;
+        left = split.subviews[0].frame.size.width;
+        center = split.subviews[1].frame.size.width;
+        right = split.subviews[2].frame.size.width;
+    }
+    const char *first =
+        [self.window.firstResponder isKindOfClass:[TerminalView class]] ? "terminal" : "other";
+    NSString *line = [NSString
+        stringWithFormat:@"seq=%u fullscreen=%d chrome=%u left=%.0f center=%.0f right=%.0f first=%s\n",
+                         _heartbeatSeq, fs, chrome, left, center, right, first];
     [line writeToFile:@(path) atomically:YES encoding:NSUTF8StringEncoding error:NULL];
 }
 
