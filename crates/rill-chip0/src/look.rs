@@ -443,6 +443,15 @@ fn parse_bool(value: &str) -> Option<bool> {
     }
 }
 
+/// Chrome pane fill: look `background` with each 8-bit RGB channel
+/// saturating-minus 9 (SPEC-CHROME §4a). Not a compiled theme table.
+pub fn chrome_surface_rgba(background: u32) -> u32 {
+    let r = ((background >> 24) & 0xff).saturating_sub(9);
+    let g = ((background >> 16) & 0xff).saturating_sub(9);
+    let b = ((background >> 8) & 0xff).saturating_sub(9);
+    (r << 24) | (g << 16) | (b << 8) | (background & 0xff)
+}
+
 pub fn parse_hex(value: &str) -> Option<u32> {
     let mut hex = value.trim().trim_start_matches('#');
     if !hex.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -490,6 +499,44 @@ mod tests {
 
     fn colors_from_theme_file(name: &str) -> ThemeColors {
         resolve_theme(name, Some(&fixture_themes())).expect("resolve fixture theme")
+    }
+
+    /// Oracle: `palette = N=` from the theme file, not ThemeColors we also fed in.
+    fn palette_from_theme_file(name: &str, index: usize) -> u32 {
+        let text = std::fs::read_to_string(fixture_themes().join(name)).expect("theme file");
+        let prefix = format!("palette = {index}=");
+        for line in text.lines() {
+            let line = line.trim();
+            if let Some(rest) = line.strip_prefix(&prefix) {
+                return parse_hex(rest).unwrap_or_else(|| panic!("{name} palette {index}"));
+            }
+        }
+        panic!("{name} has no palette = {index}=");
+    }
+
+    fn wcag_contrast(a: u32, b: u32) -> f64 {
+        fn luma(rgba: u32) -> f64 {
+            let chan = |shift: u32| {
+                let s = ((rgba >> shift) & 0xff) as f64 / 255.0;
+                if s <= 0.04045 {
+                    s / 12.92
+                } else {
+                    ((s + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            0.2126 * chan(24) + 0.7152 * chan(16) + 0.0722 * chan(8)
+        }
+        let (x, y) = (luma(a), luma(b));
+        let (hi, lo) = if x > y { (x, y) } else { (y, x) };
+        (hi + 0.05) / (lo + 0.05)
+    }
+
+    fn first_codepoint(grid: &PodGrid, cp: u32) -> crate::PodCell {
+        grid.cells
+            .iter()
+            .copied()
+            .find(|c| c.codepoint == cp)
+            .unwrap_or_else(|| panic!("no U+{cp:04X} in snapshot"))
     }
 
     fn base_surface() -> HostSurface {
@@ -635,6 +682,81 @@ mod tests {
             "empty cell bg must be the theme file background, not Chip0 {before:#08x}"
         );
         assert_ne!(after, before);
+    }
+
+    /// T-LOOK-ANSI. Bug: Ghostty/cmux paint Latte SGR green from the theme
+    /// file; Rill left libghostty-vt's dark default palette, so `killall` was
+    /// pale yellow-green on `#eff1f5`.
+    /// Required mutation: `skip_vt_look_colors`.
+    #[test]
+    fn t_ghostty_look_sgr_green_is_theme_file_palette() {
+        let colors = colors_from_theme_file("Catppuccin Latte");
+        let expected = palette_from_theme_file("Catppuccin Latte", 2);
+        let bg = background_from_theme_file("Catppuccin Latte");
+        assert_eq!(
+            colors.ansi.expect("Latte file has palette 0-15")[2],
+            expected,
+            "precondition: resolve_theme palette 2 matches the file"
+        );
+
+        let mut chip = Chip0::new(80, 24).expect("chip0");
+        chip.apply_look(&colors).expect("apply_look");
+        chip.feed(b"\x1b[32mG").expect("feed SGR green");
+        let grid = chip.snapshot().expect("snapshot");
+        let cell = first_codepoint(&grid, b'G' as u32);
+        assert_eq!(
+            cell.fg, expected,
+            "SGR 32 must be Latte file palette 2, not Chip0 default green; got {:#08x}",
+            cell.fg
+        );
+        let builtin_green = 0xb5bd_68ff;
+        assert!(
+            wcag_contrast(cell.fg, bg) > wcag_contrast(builtin_green, bg),
+            "file palette 2 must beat Chip0 default green on Latte bg; file {:.2} vs builtin {:.2}",
+            wcag_contrast(cell.fg, bg),
+            wcag_contrast(builtin_green, bg)
+        );
+    }
+
+    /// Unstyled glyphs must be the file foreground, not `#cccccc` on cream.
+    #[test]
+    fn t_ghostty_look_unstyled_text_is_theme_file_foreground() {
+        let colors = colors_from_theme_file("Catppuccin Latte");
+        let expected = parse_look_keys(
+            &std::fs::read_to_string(fixture_themes().join("Catppuccin Latte")).expect("file"),
+            None,
+        )
+        .expect("parse")
+        .foreground
+        .expect("foreground =");
+        let bg = background_from_theme_file("Catppuccin Latte");
+
+        let mut chip = Chip0::new(80, 24).expect("chip0");
+        chip.apply_look(&colors).expect("apply_look");
+        chip.feed(b"A").expect("feed");
+        let grid = chip.snapshot().expect("snapshot");
+        let cell = first_codepoint(&grid, b'A' as u32);
+        assert_eq!(
+            cell.fg, expected,
+            "unstyled text must be Latte file foreground, not Chip0 default; got {:#08x}",
+            cell.fg
+        );
+        assert!(
+            wcag_contrast(cell.fg, bg) >= 4.5,
+            "unstyled fg on Latte bg must be readable; contrast {:.2}",
+            wcag_contrast(cell.fg, bg)
+        );
+    }
+
+    #[test]
+    fn t_chrome_surface_darkens_latte_and_mocha_file_backgrounds() {
+        let latte = background_from_theme_file("Catppuccin Latte");
+        let mocha = background_from_theme_file("Catppuccin Mocha");
+        let latte_s = chrome_surface_rgba(latte);
+        let mocha_s = chrome_surface_rgba(mocha);
+        assert_ne!(latte_s, latte, "chrome must not match Chip 0 Latte base");
+        assert_ne!(mocha_s, mocha, "chrome must not match Chip 0 Mocha base");
+        assert_ne!(latte_s, mocha_s, "two files must not share one cream constant");
     }
 
     #[test]

@@ -64,6 +64,8 @@ int rill_client_macos_option_as_alt(const RillClient *client);
 uint32_t rill_client_background_rgba(const RillClient *client);
 uint32_t rill_client_foreground_rgba(const RillClient *client);
 uint32_t rill_client_cursor_rgba(const RillClient *client);
+/* SPEC-CHROME §4a: derived sidebar fill. Not a theme catalog. */
+uint32_t rill_chrome_surface_rgba(uint32_t background);
 
 int rill_client_snapshot(RillClient *client, RillPodGrid *out);
 

@@ -51,6 +51,14 @@ extern "C" {
         len: *mut usize,
     ) -> i32;
     fn rill_vt_reset(vt: *mut std::ffi::c_void);
+    fn rill_vt_set_look(
+        vt: *mut std::ffi::c_void,
+        fg: u32,
+        bg: u32,
+        cursor: u32,
+        ansi16: *const u32,
+        n_ansi: usize,
+    ) -> i32;
     fn rill_vt_buf_free(ptr: *mut u8, len: usize);
     fn rill_vt_cells_free(ptr: *mut CCell);
 }
@@ -88,6 +96,24 @@ impl Vt {
 
     pub fn reset(&mut self) {
         unsafe { rill_vt_reset(self.ptr) }
+    }
+
+    pub fn set_look(
+        &mut self,
+        fg: u32,
+        bg: u32,
+        cursor: u32,
+        ansi: Option<&[u32; 16]>,
+    ) -> Result<(), Error> {
+        let (ptr, n) = match ansi {
+            Some(a) => (a.as_ptr(), 16usize),
+            None => (ptr::null(), 0usize),
+        };
+        let rc = unsafe { rill_vt_set_look(self.ptr, fg, bg, cursor, ptr, n) };
+        if rc != 0 {
+            return Err(Error::Vt("set_look"));
+        }
+        Ok(())
     }
 
     pub fn snapshot(&mut self) -> Result<PodGrid, Error> {

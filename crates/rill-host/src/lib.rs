@@ -52,7 +52,10 @@ impl Client {
     pub fn connect(socket: impl AsRef<Path>, surface: HostSurface) -> Result<Self, Error> {
         let stream = UnixStream::connect(socket.as_ref())?;
         stream.set_nonblocking(true)?;
-        let chip = Chip0::new(surface.cols, surface.rows)?;
+        let mut chip = Chip0::new(surface.cols, surface.rows)?;
+        if let Some(ref colors) = surface.colors {
+            chip.apply_look(colors)?;
+        }
         let mut client = Self {
             stream,
             decoder: Decoder::new(),

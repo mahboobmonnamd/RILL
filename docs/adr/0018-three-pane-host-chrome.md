@@ -2,11 +2,15 @@
 
 - **Status:** Accepted — 2026-08-17
 - **Tree:** this repository only
-- **Issue:** [#260](https://github.com/mahboobmonnamd/RILL/issues/260)
+- **Issue:** [#260](https://github.com/mahboobmonnamd/RILL/issues/260),
+  look-file chrome: [#269](https://github.com/mahboobmonnamd/RILL/issues/269),
+  inset / type / surface: [#270](https://github.com/mahboobmonnamd/RILL/issues/270)
 - **Requires:** [ADR 0009](0009-direct-to-display-echo.md),
   [ADR 0010](0010-spike-0-closes.md),
   [ADR 0011](0011-session-graph.md) (kernel map Proven),
-  [ADR 0016](0016-exit-fullscreen-must-not-hang.md)
+  [ADR 0016](0016-exit-fullscreen-must-not-hang.md),
+  [ADR 0017](0017-ghostty-look-windowed-default.md) (look files; D3 allows
+  chrome to use the theme background)
 - **Amends:** ADR 0011 D5 — the shipped window may wrap the **one** attached
   leaf in M2 chrome. Tabs, nested PTY splits, and a second window stay later.
 - **Does not authorize:** tabs, nested pane splits, agents, conversations,
@@ -69,6 +73,33 @@ heartbeat reports three columns with non-zero left/right widths and
 `first=terminal`. Socket-only tests do not close this. Mutation `no_chrome`
 MUST turn it red.
 
+### D5 — Sidebars use a derived chrome surface from the look file
+
+Left and right MUST NOT paint a hardcoded gray. They MUST NOT paint the same
+pixels as Chip 0's look `background`. Chrome surface is the resolved look
+`background` with each 8-bit RGB channel saturating-minus **9**. That is a
+formula, not a compiled Catppuccin mantle table (ADR 0017 D2). Center Chip 0
+keeps the file `background`. Label `foreground` is the look `foreground`.
+
+Oracle: left pane `CALayer.backgroundColor` equals that formula applied to
+`background =` from the theme **file** (Latte and Mocha both required). It
+MUST NOT equal the file background. Mutation `hardcoded_chrome_gray` MUST
+turn T-SPLIT-LOOK red.
+
+Do not compile Catppuccin RGB into `ChromeHost`. Do not set
+`NSWindow.alphaValue` from `background-opacity`.
+
+### D6 — Chrome top inset and type follow the live pane
+
+Section labels MUST sit `padding-y` (host-surface / look `window-padding-y`)
+from the top of the chrome pane, using **live bounds**. MUST NOT position
+from a hardcoded 680pt content height. Mutation `hardcoded_chrome_y` MUST
+turn T-CHROME-INSET red.
+
+Section labels MUST use `NSFont.systemFontSize` (macOS control size), not
+11pt caption size. Mutation `tiny_chrome_font` MUST turn T-CHROME-FONT red.
+Terminal faces stay the look `font-family` / `font-size` (not this decision).
+
 ## Consequences
 
 - [SPEC-CHROME](../spec/SPEC-CHROME.md) is the host contract for this slice.
@@ -86,3 +117,6 @@ MUST turn it red.
 - **Chrome on the T-NFR path.** Rejected: ADR 0009 closer.
 - **Tabs and nested splits in the same PR.** Rejected: this issue is the
   split around one leaf.
+- **Hardcoded dark sidebars around a Latte terminal.** Rejected: [#269](https://github.com/mahboobmonnamd/RILL/issues/269).
+- **Compile Catppuccin mantle `#e6e9ef`.** Rejected: ADR 0017 D2; the
+  saturating-minus-9 formula is the chrome surface.

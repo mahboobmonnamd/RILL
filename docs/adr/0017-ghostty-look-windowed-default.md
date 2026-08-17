@@ -97,9 +97,15 @@ Mutation `invent_theme_rgb` MUST turn T-LOOK-FILE red.
 After Chip 0 snapshot, cells whose fg/bg equal the VT default are rewritten
 to the **file-resolved** default foreground / background. Truecolor / other
 RGB pass through. Chip 0 domain types still do not name Ghostty FFI. Theme
-is not a second VT. The host MUST NOT RGB-rewrite ANSI 0–15 from a
-compiled-in Chip 0 default map; Chip 0 snapshots have already lost the
-palette index.
+is not a second VT.
+
+The Chip 0 **adapter** MUST also set libghostty-vt default foreground,
+background, cursor, and palette 0–15 from the same look **file**
+(`GHOSTTY_TERMINAL_OPT_COLOR_*`). That is embedder configuration — what
+Ghostty and cmux do — not a compiled Catppuccin table and not a host rewrite
+of already-RGB cells. Without it, SGR greens stay Ghostty's built-in
+`#b5bd68` and wash out on Latte `#eff1f5`. The host MUST NOT RGB-rewrite
+ANSI 0–15 from a compiled-in Chip 0 default map.
 
 The Metal layer stays **opaque** (ADR 0009). `NSWindow` stays opaque.
 `window.alphaValue` stays `1`. Window chrome MAY use the theme background
@@ -107,6 +113,7 @@ at alpha 1. `background-opacity` MUST NOT set `NSWindow.alphaValue` in
 windowed or fullscreen (that was the washed-out glass bug).
 
 Mutation `skip_theme_apply` MUST turn T-LOOK-CELL red.
+Mutation `skip_vt_look_colors` MUST turn T-LOOK-ANSI red.
 Mutation `window_alpha_from_opacity` MUST turn T-LOOK-GLASS red.
 
 ### D4 — Shell is `$SHELL`

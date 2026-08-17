@@ -239,6 +239,11 @@ pub unsafe extern "C" fn rill_client_background_rgba(client: *const Client) -> u
     unsafe { (*client).background_rgba() }
 }
 
+#[no_mangle]
+pub extern "C" fn rill_chrome_surface_rgba(background: u32) -> u32 {
+    rill_chip0::chrome_surface_rgba(background)
+}
+
 /// # Safety
 /// `client` is a live handle.
 #[no_mangle]

@@ -153,8 +153,19 @@ run_gate "T-WINDOWED" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
   cargo test -p rill-host --offline --test t_windowed -- --nocapture
 run_gate "T-LOOK-GLASS" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
   cargo test -p rill-host --offline --test t_look_glass -- --nocapture
+run_gate "T-GLYPH-SCALE" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_glyph_scale -- --nocapture
 run_gate "T-SPLIT" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
   cargo test -p rill-host --offline --test t_split -- --nocapture
+run_gate "T-SPLIT-LOOK" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_split_look \
+  t_chrome_nav_background -- --nocapture
+run_gate "T-CHROME-INSET" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_split_look \
+  t_chrome_heading_top_inset -- --nocapture
+run_gate "T-CHROME-FONT" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_split_look \
+  t_chrome_section_font -- --nocapture
 run_gate "T-DOCK-REOPEN" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
   cargo test -p rill-host --offline --test t_dock_reopen -- --nocapture
 
@@ -253,6 +264,8 @@ if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
     cargo test -p rill-chip0 --offline --features mutate t_ghostty_look_themed_empty -- --nocapture
   run_control "T-LOOK-FILE" invent_theme_rgb \
     cargo test -p rill-chip0 --offline --features mutate t_ghostty_look_theme_file -- --nocapture
+  run_control "T-LOOK-ANSI" skip_vt_look_colors \
+    cargo test -p rill-chip0 --offline --features mutate t_ghostty_look_sgr_green -- --nocapture
   run_control "T-DROP" drop_on_full \
     cargo test -p rill-kernel --offline --features mutate t_drop -- --test-threads=1
   run_control "T-RESIZE" resize_before_data \
@@ -314,9 +327,24 @@ if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
   run_control "T-LOOK-GLASS" window_alpha_from_opacity \
     env RILL_GUI_APP="$ROOT/dist/Rill.app" \
     cargo test -p rill-host --offline --test t_look_glass -- --nocapture
+  run_control "T-GLYPH-SCALE" skip_glyph_backing_scale \
+    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rill-host --offline --test t_glyph_scale -- --nocapture
   run_control "T-SPLIT" no_chrome \
     env RILL_GUI_APP="$ROOT/dist/Rill.app" \
     cargo test -p rill-host --offline --test t_split -- --nocapture
+  run_control "T-SPLIT-LOOK" hardcoded_chrome_gray \
+    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rill-host --offline --test t_split_look \
+    t_chrome_nav_background -- --nocapture
+  run_control "T-CHROME-INSET" hardcoded_chrome_y \
+    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rill-host --offline --test t_split_look \
+    t_chrome_heading_top_inset -- --nocapture
+  run_control "T-CHROME-FONT" tiny_chrome_font \
+    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rill-host --offline --test t_split_look \
+    t_chrome_section_font -- --nocapture
   run_control "T-DOCK-REOPEN" skip_dock_reopen \
     env RILL_GUI_APP="$ROOT/dist/Rill.app" \
     cargo test -p rill-host --offline --test t_dock_reopen -- --nocapture

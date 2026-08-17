@@ -78,7 +78,8 @@ Per ADR 0003 D1:
 
 - `MTLPixelFormatR8Unorm` glyph atlas, 2048×2048, shelf-packed, keyed by
   `(codepoint, bold, italic)`, rasterised with CoreText at the backing scale
-  factor.
+  factor (T-GLYPH-SCALE). Point-sized atlas entries on a pixel `cellPx`
+  (Retina) MUST NOT ship: glyphs occupy ~¼ of the cursor cell.
 - One instance per visible cell, 16 bytes:
   `{ atlas_uv ushort4, cell ushort2, fg uchar4, bg uchar4, flags ushort }`.
 - A single instanced draw. Fragment shader returns
@@ -171,11 +172,13 @@ theme RGB catalog. Unknown theme names do not replace host-surface colors.
 Unquoted `#hex` is a color.
 
 Empty cells whose fg/bg equal the VT default are remapped to the
-file-resolved default colours. The Metal layer and `NSWindow` stay opaque.
+file-resolved default colours. The Chip 0 adapter MUST set libghostty-vt
+default fg/bg/cursor and palette 0–15 from that same file so SGR colours
+match Ghostty/cmux (T-LOOK-ANSI). The Metal layer and `NSWindow` stay opaque.
 `background-opacity` and `background-blur-radius` are parsed and not
-applied. ANSI 0–15 from the theme file are stored; Chip 0 cannot apply them
-without inventing a default-RGB map ([#267](https://github.com/mahboobmonnamd/RILL/issues/267),
-not this host gate). `cmux.json`, Herdr, and zshrc are not this file.
+applied. Do not invent a compiled Chip 0 default-RGB map
+([#267](https://github.com/mahboobmonnamd/RILL/issues/267) remains Chip 1
+palette-index cells). `cmux.json`, Herdr, and zshrc are not this file.
 
 `font-fallbacks` are live: `TerminalView` tries each name with CoreText
 before failing init. Production faces MUST NOT use
