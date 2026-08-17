@@ -481,6 +481,49 @@ always attach the default leaf. The two-id socket tests MUST go red.
 
 ---
 
+## Milestone 6 — cwd tap (Red; Proposed ADR 0013)
+
+Authority: [ADR 0013](adr/0013-cwd-tap.md) (**Proposed** — does not authorize
+code), [SPEC-CWD](spec/SPEC-CWD.md),
+[#23](https://github.com/mahboobmonnamd/RILL/issues/23). Named here so an
+Accept can start with failing tests. Not M1. Not a Block header. Not T-NFR.
+
+### T-CWD-FG — foreground job chdir is visible
+
+**Oracle.** Interactive `zsh` stays in dir A. A fg child `chdir`s to
+`/private/tmp` (or another path the test did not put in a buffer it then
+asserts). `Session::cwd()` MUST equal that child's vnode path
+(`/private/tmp`). The session-leader pid's cwd MUST still be A — if the
+implementation reports the leader, this test is red.
+
+**Procedure.** In-process kernel PTY. No GUI. Child script is a fixture file,
+not a prompt parse.
+
+**Required mutation.** `RILL_MUTATE=leader_cwd` (feature `mutate`): return
+`proc_pidinfo` of the posix_spawn child only. This test MUST go red.
+
+### T-CWD-NO-OSC7 — alt-screen / TUI chdir without OSC 7
+
+**Oracle.** Leaf is a process that `chdir`s and never writes `ESC ] 7`.
+History MUST NOT contain OSC 7. `Session::cwd()` MUST still be the new path.
+
+**Procedure.** In-process kernel. Python (or equivalent) as the leaf.
+
+**Required mutation.** `RILL_MUTATE=osc7_only`: cwd updates only when OSC 7
+is classified. This test MUST go red.
+
+### T-CWD-FAIL-CLOSED — unreadable cwd does not invent a path
+
+**Oracle.** When `proc_pidinfo` fails, `Session::cwd()` is `Err` and last
+known is unchanged. Never an empty path as `Ok`, never a prompt substring.
+
+**Procedure.** Mutation or a pid that cannot be inspected.
+
+**Required mutation.** `RILL_MUTATE=cwd_fail_open`: return `Ok("")` or the
+prompt. This test MUST go red.
+
+---
+
 ## Milestone 4 — Chip 1 isolated VT (Red)
 
 Authority: [ADR 0012](adr/0012-chip1-isolated-vt.md), [SPEC-CHIP1](spec/SPEC-CHIP1.md),

@@ -112,7 +112,8 @@ lint-planes clean.
 **M7 (not you):** live swap ADR, resync = Chip 1, packaged T-NFR hid.
 
 **M6 (not you):** Blocks host the live chip; live TUI-in-block; cwd tap
-(kernel `getcwd` / OSC 7). May use Chip 0. Must not dump the grid into `Text`.
+([ADR 0013](adr/0013-cwd-tap.md) Proposed: kernel fg `proc_pidinfo`, not
+OSC 7). May use Chip 0. Must not dump the grid into `Text`.
 
 ## Other milestones
 

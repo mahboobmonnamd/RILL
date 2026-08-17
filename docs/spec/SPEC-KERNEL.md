@@ -132,3 +132,6 @@ Reconnect tokens and daemon-restart / logout survival remain out (ADR 0001 §7).
 [SPEC-GRAPH](SPEC-GRAPH.md)). Default daemon start still spawns one leaf so the
 packaged one-window path stays Spike 0 frames. Session naming in the GUI is M2
 chrome.
+
+**Cwd tap:** Proposed [ADR 0013](../adr/0013-cwd-tap.md), [SPEC-CWD](SPEC-CWD.md).
+Not authorized until that ADR is Accepted. Not an attach warm frame.

@@ -82,9 +82,10 @@ Reasons: `1 AlreadyAttached`, `2 Invalid`.
 ## 7. What the attach plane may and may not do
 
 - MAY classify the byte stream: alt-screen entry/exit, OSC 52 (denied until a
-  policy UI exists), OSC 9, OSC 133, title. Classification is journalled.
+  policy UI exists), OSC 9, OSC 133, OSC 7, title. Classification is journalled.
   **Later — not Spike 0 Proven.** No classifier ships today; that is not a
-  gate miss.
+  gate miss. OSC 7 is not the cwd source of truth
+  ([ADR 0013](../adr/0013-cwd-tap.md), Proposed).
 - MUST NOT build a grid the GUI consumes.
 - MUST NOT carry cells, JSON, or any structure derived from parsing into a
   screen model.
