@@ -9,6 +9,7 @@
 
 #import <Cocoa/Cocoa.h>
 #include "rill_ffi.h"
+#import "ChromeHost.h"
 #import "TerminalView.h"
 #include <ApplicationServices/ApplicationServices.h>
 #include <spawn.h>
@@ -139,7 +140,7 @@ int main(int argc, const char *argv[]) {
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
 
-        NSRect frame = NSMakeRect(80, 80, 800, 480);
+        NSRect frame = NSMakeRect(80, 80, 1100, 680);
         RillWindow *window = [[RillWindow alloc]
             initWithContentRect:frame
                       styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
@@ -147,7 +148,7 @@ int main(int argc, const char *argv[]) {
                         backing:NSBackingStoreBuffered
                           defer:NO];
         window.opaque = YES;
-        window.backgroundColor = NSColor.blackColor;
+        window.backgroundColor = [NSColor colorWithCalibratedWhite:0.07 alpha:1.0];
         window.title = @"Rill";
         window.collectionBehavior = NSWindowCollectionBehaviorFullScreenPrimary;
         TerminalView *view = [[TerminalView alloc] initWithClient:client];
@@ -156,10 +157,23 @@ int main(int argc, const char *argv[]) {
             rill_client_free(client);
             return 1;
         }
-        window.contentView = view;
+
+        /* T-NFR closer is TerminalView as contentView (ADR 0009 / 0018 D2).
+         * Mutation no_chrome is T-SPLIT's required invert. */
+        BOOL skip_chrome = nfr;
+        const char *chrome_mut = getenv("RILL_MUTATE");
+        if (chrome_mut && strcmp(chrome_mut, "no_chrome") == 0) {
+            skip_chrome = YES;
+        }
+        if (skip_chrome) {
+            window.contentView = view;
+        } else {
+            RillChromeController *chrome = [[RillChromeController alloc] initWithTerminal:view];
+            window.contentViewController = chrome;
+        }
         window.delegate = view;
-        [window makeFirstResponder:view];
         [window makeKeyAndOrderFront:nil];
+        [window makeFirstResponder:view];
         [NSApp activateIgnoringOtherApps:YES];
         [window toggleFullScreen:nil];
         if (!wait_until_fullscreen(window, 5.0)) {

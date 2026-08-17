@@ -36,7 +36,7 @@ fi
 clang -fobjc-arc -O2 -fmodules \
   -Werror=implicit-function-declaration \
   -o "$MACOS/Rill" \
-  host/macos/main.m host/macos/TerminalView.m \
+  host/macos/main.m host/macos/TerminalView.m host/macos/ChromeHost.m \
   $EXTRA_SRC \
   "$HOST_LIB" \
   "$CHIP0_VT" \

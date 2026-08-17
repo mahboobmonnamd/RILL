@@ -46,6 +46,6 @@ test: gates
 package: libghostty-vt
 	sh scripts/package-macos.sh
 
-# One titled fullscreen window. Attaches to rilld; does not spawn the user shell.
+# One titled fullscreen window with three-pane chrome around Chip 0.
 run: package
 	open dist/Rill.app

@@ -27,7 +27,7 @@ for regression. Launch the window with `make run`.
 ```mermaid
 flowchart TB
   subgraph window["Window process — dies on quit"]
-    UI[Chrome later]
+    UI[Chrome: nav | Chip 0 | inspector]
     CHIP[Display chip: VT + GPU + keys]
   end
   subgraph attach["Attach plane"]
@@ -66,11 +66,12 @@ Installs or checks Rust (`rustc` ≥ 1.85), Zig (≥ 0.16, for Chip 0 / `libghos
 6. [ADR 0003](docs/adr/0003-display-pipeline.md) — renderer and key→present
 7. [Spike 0](docs/SPIKE-0.md) — named gates ([validation](docs/SPIKE-0-VALIDATION.md), [test cases](docs/TEST-CASES.md))
 8. [SPIKE-0-AUDIT](docs/SPIKE-0-AUDIT.md) — historical: why 2026-08-16 was Red
-9. [Specs](docs/spec/) — [kernel](docs/spec/SPEC-KERNEL.md), [attach](docs/spec/SPEC-ATTACH.md), [chip 0](docs/spec/SPEC-CHIP0.md), [display](docs/spec/SPEC-DISPLAY.md), [graph](docs/spec/SPEC-GRAPH.md), [chip 1](docs/spec/SPEC-CHIP1.md)
+9. [Specs](docs/spec/) — [kernel](docs/spec/SPEC-KERNEL.md), [attach](docs/spec/SPEC-ATTACH.md), [chip 0](docs/spec/SPEC-CHIP0.md), [display](docs/spec/SPEC-DISPLAY.md), [graph](docs/spec/SPEC-GRAPH.md), [chrome](docs/spec/SPEC-CHROME.md), [chip 1](docs/spec/SPEC-CHIP1.md)
 10. [ADR 0011](docs/adr/0011-session-graph.md) / [ADR 0014](docs/adr/0014-m1-first-slice-closes.md) / [ADR 0015](docs/adr/0015-m1-persist-remainder.md) — Milestone 1
-11. [ADR 0012](docs/adr/0012-chip1-isolated-vt.md) / [M4-HANDOFF](docs/M4-HANDOFF.md) — isolated Chip 1 (not live)
-12. [Lanes](docs/LANES.md) — how 3–5 people work in parallel
-13. [CONTRIBUTING](CONTRIBUTING.md) — issues, PRs, TDD
+11. [ADR 0018](docs/adr/0018-three-pane-host-chrome.md) — M2 three-pane chrome (one leaf)
+12. [ADR 0012](docs/adr/0012-chip1-isolated-vt.md) / [M4-HANDOFF](docs/M4-HANDOFF.md) — isolated Chip 1 (not live)
+13. [Lanes](docs/LANES.md) — how 3–5 people work in parallel
+14. [CONTRIBUTING](CONTRIBUTING.md) — issues, PRs, TDD
 
 ## License
 
