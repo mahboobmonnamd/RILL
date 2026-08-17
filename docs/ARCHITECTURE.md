@@ -2,6 +2,7 @@
 
 Authority: [ADR 0001](adr/0001-session-operating-system.md). Spike 0 closed:
 [ADR 0010](adr/0010-spike-0-closes.md). Session graph: [ADR 0011](adr/0011-session-graph.md).
+Chip 1 isolated crate: [ADR 0012](adr/0012-chip1-isolated-vt.md) ([M4-HANDOFF](M4-HANDOFF.md)).
 This file is the map. It does not authorize code by itself.
 
 ## Four planes

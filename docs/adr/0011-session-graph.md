@@ -65,11 +65,12 @@ is still one `Session`.
 ### D6 — Do not hide NFR-KEY
 
 Adding a leaf MUST NOT put JSON, cell dumps, or extra control RPCs on the key
-path of an attached leaf. T-NFR is not re-cut. Chip 1 stays isolated until M4.
+path of an attached leaf. T-NFR is not re-cut. Chip 1 stays isolated until M7
+([ADR 0012](0012-chip1-isolated-vt.md)).
 
 ## Consequences
 
-- [#16](https://github.com/mahboobmonnamd/RILL/issues/16) is the first lane A
+- [#16](https://github.com/mahboobmonnamd/RILL/issues/16) is the first `lane:kernel`
   slice: map, spawn two, refuse second attach on the same id.
 - [SPEC-KERNEL](../spec/SPEC-KERNEL.md) §11 no longer forbids multiple sessions;
   it defers the contract to this ADR and SPEC-GRAPH.

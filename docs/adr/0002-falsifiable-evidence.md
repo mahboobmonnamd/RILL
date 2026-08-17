@@ -108,7 +108,7 @@ It is never a side effect of a clean checkout.
 
 - **`fast.yml`** — Linux, no Zig: `rill-attach` codec tests, `cargo fmt
   --check`, `clippy -D warnings`, and the repository invariant lints (D9). Runs
-  on every push. Lane B and Lane A logic must not require Lane C's toolchain.
+  on every push. Attach and kernel logic must not require Chip 0's toolchain.
 - **`gates.yml`** — self-hosted macOS: pinned libghostty-vt, packaged
   `Rill.app`, the full gate suite, negative controls, and evidence upload.
 
@@ -181,4 +181,4 @@ instrumentation that flatters the miss**.
 - **Mutation-testing framework (`cargo-mutants`) instead of D3.** Deferred, not
   rejected. Valuable for the pure-Rust crates, useless for the gates that matter
   most — packaged spawn, process-group kill, GPU presentation. D3's named
-  mutation covers those; a framework can be added under Lane A later.
+  mutation covers those; a framework can be added under `lane:kernel` later.

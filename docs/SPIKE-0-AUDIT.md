@@ -294,7 +294,7 @@ downstream can verify what actually ran.
 `crates/rill-chip0/build.rs` panics when `libghostty-vt.a` is missing, and
 `rill-attach`'s pure codec tests sit in the same workspace. `cargo test
 --workspace` therefore requires Zig and a full Ghostty build to run a
-frame-decoding unit test. Lane B cannot work without Lane C's toolchain, which
+frame-decoding unit test. Attach cannot work without Chip 0's toolchain, which
 contradicts LANES.
 
 ### S4-5 · The status docs contradict themselves

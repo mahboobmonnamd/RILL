@@ -68,7 +68,7 @@ fullscreen).
 - SPEC-DISPLAY: the Spike 0 window is screen-covering and opaque.
 - Interactive `Rill.app` is that window. Cmd-Q quits. T-NFR uses the same
   surface.
-- Lane D still must not add tabs, splits, or chrome.
+- The host lane still must not add tabs, splits, or chrome.
 
 ## Rejected alternatives
 

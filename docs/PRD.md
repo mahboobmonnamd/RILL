@@ -31,7 +31,7 @@ One window. One runtime. One PTY. Chip 0 display. Framed attach. Quit/SIGKILL ke
 - Sidebar, tabs, splits, Blocks, themes
 - Agents, conversations, scheduler, natural-language routing
 - Full Ghostty.app embed / Ghostty-owned spawn
-- Our own VT engine as the live chip (Chip 1 may be prototyped in isolation; it cannot replace Chip 0 until Spike 0 is butter)
+- Our own VT engine as the live chip (Chip 1 is isolated in M4 per [ADR 0012](adr/0012-chip1-isolated-vt.md); it cannot replace Chip 0 until M7)
 - Accounts, billing, hosted control plane
 - Linux / Windows UI
 

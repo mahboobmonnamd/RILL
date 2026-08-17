@@ -1,7 +1,7 @@
 # Fast tier. No Zig, no macOS, no libghostty-vt.
 #
-# LANES says Lane A and Lane B can work before Lane C. That is only true if
-# their tests run without Lane C's toolchain, so this job must never grow a
+# LANES says kernel and attach can work before Chip 0. That is only true if
+# their tests run without Chip 0's toolchain, so this job must never grow a
 # dependency on rill-chip0. ADR 0002 D8.
 name: fast
 

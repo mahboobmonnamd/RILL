@@ -64,10 +64,11 @@ Installs or checks Rust (`rustc` ≥ 1.85), Zig (≥ 0.16, for Chip 0 / `libghos
 6. [ADR 0003](docs/adr/0003-display-pipeline.md) — renderer and key→present
 7. [Spike 0](docs/SPIKE-0.md) — named gates ([validation](docs/SPIKE-0-VALIDATION.md), [test cases](docs/TEST-CASES.md))
 8. [SPIKE-0-AUDIT](docs/SPIKE-0-AUDIT.md) — historical: why 2026-08-16 was Red
-9. [Specs](docs/spec/) — [kernel](docs/spec/SPEC-KERNEL.md), [attach](docs/spec/SPEC-ATTACH.md), [chip 0](docs/spec/SPEC-CHIP0.md), [display](docs/spec/SPEC-DISPLAY.md), [graph](docs/spec/SPEC-GRAPH.md)
+9. [Specs](docs/spec/) — [kernel](docs/spec/SPEC-KERNEL.md), [attach](docs/spec/SPEC-ATTACH.md), [chip 0](docs/spec/SPEC-CHIP0.md), [display](docs/spec/SPEC-DISPLAY.md), [graph](docs/spec/SPEC-GRAPH.md), [chip 1](docs/spec/SPEC-CHIP1.md)
 10. [ADR 0011](docs/adr/0011-session-graph.md) — Milestone 1
-11. [Lanes](docs/LANES.md) — how 3–5 people work in parallel
-12. [CONTRIBUTING](CONTRIBUTING.md) — issues, PRs, TDD
+11. [ADR 0012](docs/adr/0012-chip1-isolated-vt.md) / [M4-HANDOFF](docs/M4-HANDOFF.md) — isolated Chip 1 (not live)
+12. [Lanes](docs/LANES.md) — how 3–5 people work in parallel
+13. [CONTRIBUTING](CONTRIBUTING.md) — issues, PRs, TDD
 
 ## License
 

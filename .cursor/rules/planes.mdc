@@ -11,6 +11,6 @@ Forbidden on that path: JSON, cell dumps, per-cell String snapshots, SwiftUI Obs
 
 Kernel owns the PTY master and the byte history. Display dies on quit. Attach may classify; it must not paint. Orchestration JSON is cold.
 
-Chip 0 is libghostty-vt + our Metal. Chip 1 is a later isolated crate. Do not link Chip 1 as the live chip until Spike 0 is Proven. Do not take full libghostty exec as an intermediate.
+Chip 0 is the live emulator: libghostty-vt + our Metal. Chip 1 is an isolated VT-engine crate (bytes in / snapshots out). Do not link Chip 1 as the live chip until M7. Do not take full libghostty exec as an intermediate.
 
 Domain sources must not name Ghostty FFI types. Adapter files only.

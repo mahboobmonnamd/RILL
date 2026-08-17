@@ -1,4 +1,4 @@
-# SPEC-KERNEL — session kernel (Lane A)
+# SPEC-KERNEL — session kernel (`lane:kernel`)
 
 - **Status:** Accepted for Spike 0 Proven clauses — 2026-08-17
   ([ADR 0010](../adr/0010-spike-0-closes.md)). Written 2026-08-16 as the
