@@ -414,8 +414,7 @@ budget=8.33ms, cadence p50=p95=8.33ms, `ax_trusted=1`, `pmset` Battery Power
 
 Authority: [ADR 0011](adr/0011-session-graph.md), [SPEC-GRAPH](spec/SPEC-GRAPH.md),
 [#16](https://github.com/mahboobmonnamd/RILL/issues/16). These gates are **Red**.
-Named here first. Implementation waits until the Spike 0 close docs are merged
-and `main` is the Proven wedge only.
+Named here first. Library tests live in `crates/rill-kernel/tests/gates.rs`.
 
 ### T-GRAPH-SPAWN — two leaves, two pids
 
@@ -426,8 +425,8 @@ and `main` is the Proven wedge only.
 `/bin/sleep` (or `/bin/sh -c 'exec sleep 60'`).
 
 **Required mutation.** A kernel that stores one `Session` and ignores the
-second spawn MUST turn this red. Negative control lands with the
-implementation (`RILL_MUTATE=single_session`).
+second spawn MUST turn this red. Negative control: `RILL_MUTATE=single_session`
+(feature `mutate`).
 
 ### T-GRAPH-ISOLATE — histories do not mix
 

@@ -5,7 +5,7 @@
 //! (ADR 0002 D4).
 
 use rill_attach::{Frame, RefuseReason};
-use rill_kernel::{Discipline, Error, IoEvent, Session, Winsize};
+use rill_kernel::{Discipline, Error, IoEvent, Kernel, Session, Winsize};
 use std::time::{Duration, Instant};
 
 fn tmp_path(tag: &str) -> std::path::PathBuf {
@@ -471,6 +471,284 @@ fn t_kill_dropping_the_session_does_not_kill_the_child() {
          the daemon would take the user's work with it (SPEC-KERNEL §2)"
     );
     unsafe { libc::kill(pid as i32, libc::SIGKILL) };
+}
+
+// -------------------------------------------------------------- T-GRAPH (M1)
+
+fn graph_tmp(tag: &str) -> std::path::PathBuf {
+    tmp_path(tag)
+}
+
+fn pump_leaf(
+    kernel: &mut Kernel,
+    id: rill_kernel::SessionId,
+    window: u32,
+    timeout: Duration,
+    mut pred: impl FnMut(&[u8]) -> bool,
+) -> Vec<u8> {
+    let mut acc = Vec::new();
+    let start = Instant::now();
+    let _ = kernel.on_frame(id, Frame::Credit(window));
+    while start.elapsed() < timeout {
+        let consumed = {
+            let Some(session) = kernel.session_mut(id) else {
+                break;
+            };
+            let _ = session.poll_child();
+            let consumed = session.on_pty_readable().unwrap_or(0);
+            while let Some(f) = session.pop_outbound() {
+                if let Frame::Data(b) = f {
+                    acc.extend_from_slice(&b);
+                }
+            }
+            consumed
+        };
+        if consumed > 0 {
+            let _ = kernel.on_frame(id, Frame::Credit(consumed as u32));
+        }
+        if pred(&acc) {
+            break;
+        }
+        if consumed == 0 {
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+    acc
+}
+
+fn terminate_leaf(kernel: &mut Kernel, id: rill_kernel::SessionId) {
+    if let Some(session) = kernel.session_mut(id) {
+        let _ = session.terminate();
+    }
+}
+
+/// T-GRAPH-SPAWN. Oracle is two live `posix_spawn` children, not a counter
+/// the test wrote. Required mutation: `RILL_MUTATE=single_session`.
+#[test]
+fn t_graph_two_sessions_have_distinct_child_pids() {
+    let mut kernel = Kernel::new();
+    let a = kernel
+        .spawn_leaf("/bin/sh", &["-c", "exec sleep 60"], Winsize::default())
+        .expect("spawn A");
+    let b = kernel
+        .spawn_leaf("/bin/sh", &["-c", "exec sleep 60"], Winsize::default())
+        .expect("spawn B");
+
+    let pid_a = kernel.session(a).expect("A").child_pid();
+    let pid_b = kernel.session(b).expect("B").child_pid();
+    assert_ne!(
+        pid_a, pid_b,
+        "second spawn_leaf did not create a distinct child (SPEC-GRAPH §3)"
+    );
+    assert!(
+        kernel.session(a).expect("A").child_alive() && kernel.session(b).expect("B").child_alive(),
+        "a spawned leaf is already dead"
+    );
+    let alive_a = unsafe { libc::kill(pid_a as i32, 0) } == 0;
+    let alive_b = unsafe { libc::kill(pid_b as i32, 0) } == 0;
+    assert!(alive_a, "child A pid {pid_a} is not a live process");
+    assert!(alive_b, "child B pid {pid_b} is not a live process");
+
+    terminate_leaf(&mut kernel, a);
+    terminate_leaf(&mut kernel, b);
+}
+
+/// T-GRAPH-ISOLATE. Markers come from the children (`cat` of distinct files),
+/// not from a buffer the kernel copied for the test. Required mutation:
+/// `RILL_MUTATE=single_session`.
+#[test]
+fn t_graph_histories_do_not_mix() {
+    let n = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let marker_a = format!("RILL-GRAPH-A-{n}");
+    let marker_b = format!("RILL-GRAPH-B-{n}");
+    let path_a = graph_tmp("graph-a");
+    let path_b = graph_tmp("graph-b");
+    std::fs::write(&path_a, &marker_a).expect("write A");
+    std::fs::write(&path_b, &marker_b).expect("write B");
+
+    let mut kernel = Kernel::new();
+    let arg_a = format!("cat {}", path_a.display());
+    let arg_b = format!("cat {}", path_b.display());
+    let a = kernel
+        .spawn_leaf_with(
+            "/bin/sh",
+            &["-c", &arg_a],
+            Winsize::default(),
+            Discipline::Raw,
+        )
+        .expect("spawn A");
+    let b = kernel
+        .spawn_leaf_with(
+            "/bin/sh",
+            &["-c", &arg_b],
+            Winsize::default(),
+            Discipline::Raw,
+        )
+        .expect("spawn B");
+
+    kernel
+        .on_frame(a, Frame::Attach { generation: 1 })
+        .expect("attach A");
+    kernel
+        .on_frame(b, Frame::Attach { generation: 1 })
+        .expect("attach B");
+
+    let _ = pump_leaf(&mut kernel, a, 64 * 1024, Duration::from_secs(3), |acc| {
+        acc.windows(marker_a.len())
+            .any(|w| w == marker_a.as_bytes())
+    });
+    let _ = pump_leaf(&mut kernel, b, 64 * 1024, Duration::from_secs(3), |acc| {
+        acc.windows(marker_b.len())
+            .any(|w| w == marker_b.as_bytes())
+    });
+
+    let hist_a = kernel.session(a).expect("A").history();
+    let hist_b = kernel.session(b).expect("B").history();
+    assert!(
+        hist_a
+            .windows(marker_a.len())
+            .any(|w| w == marker_a.as_bytes()),
+        "A's child marker did not reach A's history"
+    );
+    assert!(
+        hist_b
+            .windows(marker_b.len())
+            .any(|w| w == marker_b.as_bytes()),
+        "B's child marker did not reach B's history"
+    );
+    assert!(
+        !hist_a
+            .windows(marker_b.len())
+            .any(|w| w == marker_b.as_bytes()),
+        "B's marker leaked into A's history (SPEC-GRAPH §3)"
+    );
+    assert!(
+        !hist_b
+            .windows(marker_a.len())
+            .any(|w| w == marker_a.as_bytes()),
+        "A's marker leaked into B's history (SPEC-GRAPH §3)"
+    );
+
+    terminate_leaf(&mut kernel, a);
+    terminate_leaf(&mut kernel, b);
+    let _ = std::fs::remove_file(&path_a);
+    let _ = std::fs::remove_file(&path_b);
+}
+
+/// T-GRAPH-ATTACH (same id). Second attach is REFUSED; the first claim still
+/// receives later DATA.
+#[test]
+fn t_graph_second_attach_to_same_id_is_refused() {
+    let mut kernel = Kernel::new();
+    let a = kernel
+        .spawn_leaf(
+            "/bin/sh",
+            &[
+                "-c",
+                "printf FIRST-A\\n; sleep 0.4; printf SECOND-A\\n; sleep 5",
+            ],
+            Winsize::default(),
+        )
+        .expect("spawn A");
+    kernel
+        .on_frame(a, Frame::Attach { generation: 1 })
+        .expect("a1");
+
+    let first = pump_leaf(&mut kernel, a, 64 * 1024, Duration::from_secs(3), |acc| {
+        acc.windows(7).any(|w| w == b"FIRST-A")
+    });
+    assert!(
+        first.windows(7).any(|w| w == b"FIRST-A"),
+        "first client never saw FIRST-A from the child"
+    );
+
+    kernel
+        .on_frame(a, Frame::Attach { generation: 2 })
+        .expect("a2");
+    let mut refused = false;
+    if let Some(session) = kernel.session_mut(a) {
+        while let Some(f) = session.pop_outbound() {
+            if matches!(
+                f,
+                Frame::Refused {
+                    reason: RefuseReason::AlreadyAttached
+                }
+            ) {
+                refused = true;
+            }
+        }
+        assert!(session.attached(), "the refusal disturbed the first client");
+    } else {
+        panic!("leaf A vanished");
+    }
+    assert!(
+        refused,
+        "second attach to the same id was not refused (FR-ONE)"
+    );
+
+    let second = pump_leaf(&mut kernel, a, 64 * 1024, Duration::from_secs(3), |acc| {
+        acc.windows(8).any(|w| w == b"SECOND-A")
+    });
+    assert!(
+        second.windows(8).any(|w| w == b"SECOND-A"),
+        "first client stopped receiving DATA after the refused attach"
+    );
+
+    terminate_leaf(&mut kernel, a);
+}
+
+/// T-GRAPH-ATTACH (other id). Attach to B succeeds while A stays attached.
+/// Required mutation: `RILL_MUTATE=single_session` turns this red.
+#[test]
+fn t_graph_attach_to_a_second_id_is_accepted() {
+    let mut kernel = Kernel::new();
+    let a = kernel
+        .spawn_leaf("/bin/sh", &["-c", "exec sleep 30"], Winsize::default())
+        .expect("spawn A");
+    let b = kernel
+        .spawn_leaf("/bin/sh", &["-c", "exec sleep 30"], Winsize::default())
+        .expect("spawn B");
+
+    kernel
+        .on_frame(a, Frame::Attach { generation: 1 })
+        .expect("attach A");
+    kernel
+        .on_frame(b, Frame::Attach { generation: 1 })
+        .expect("attach B");
+
+    let mut refused_b = false;
+    if let Some(session) = kernel.session_mut(b) {
+        while let Some(f) = session.pop_outbound() {
+            if matches!(
+                f,
+                Frame::Refused {
+                    reason: RefuseReason::AlreadyAttached
+                }
+            ) {
+                refused_b = true;
+            }
+        }
+        assert!(
+            session.attached(),
+            "attach to a second id did not take the claim"
+        );
+    } else {
+        panic!("leaf B vanished");
+    }
+    assert!(
+        !refused_b,
+        "attach to id B was refused as if it were id A (SPEC-GRAPH §2)"
+    );
+    assert!(
+        kernel.session(a).expect("A").attached(),
+        "attaching B disturbed A's claim"
+    );
+
+    terminate_leaf(&mut kernel, a);
+    terminate_leaf(&mut kernel, b);
 }
 
 // ---------------------------------------------------------------------- ring
