@@ -179,6 +179,35 @@ impl Pty {
         wait_fd(self.master.as_raw_fd(), libc::POLLIN, ms)
     }
 
+    /// Poll the master together with caller sockets. The master fd never
+    /// leaves this module (SPEC-KERNEL §1). `true` if the PTY is readable.
+    pub fn poll_with_extras(
+        &self,
+        extras: &mut [libc::pollfd],
+        timeout_ms: i32,
+    ) -> Result<bool, Error> {
+        let mut fds = Vec::with_capacity(1 + extras.len());
+        fds.push(libc::pollfd {
+            fd: self.master.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        });
+        fds.extend_from_slice(extras);
+        // SAFETY: fds is a valid pollfd slice we own for this call.
+        let rc = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, timeout_ms) };
+        if rc < 0 {
+            let err = std::io::Error::last_os_error();
+            if err.raw_os_error() == Some(libc::EINTR) {
+                return Ok(false);
+            }
+            return Err(Error::Io(err));
+        }
+        for (dst, src) in extras.iter_mut().zip(fds.iter().skip(1)) {
+            dst.revents = src.revents;
+        }
+        Ok(fds[0].revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR) != 0)
+    }
+
     pub fn set_winsize(&mut self, size: Winsize) -> Result<(), Error> {
         set_winsize(self.master.as_raw_fd(), size)
     }

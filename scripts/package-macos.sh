@@ -4,7 +4,12 @@ set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 sh scripts/fetch-libghostty-vt.sh
-cargo build --release -p rilld -p rill-host
+cargo build --release -p rill-host
+if [ "${RILL_MUTATE:-}" = "drop_POSIX_SPAWN_SETSID" ]; then
+  cargo build --release -p rilld --features mutate
+else
+  cargo build --release -p rilld
+fi
 
 TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/target}"
 APP="${RILL_APP:-$ROOT/dist/Rill.app}"

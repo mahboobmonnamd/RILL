@@ -51,14 +51,13 @@ fn main() {
             }
         }
         match client.snapshot() {
-            Ok(g) => println!(
-                "probe ok: {}x{} cursor=({},{}) alive={}",
-                g.cols,
-                g.rows,
-                g.cursor_col,
-                g.cursor_row,
-                client.alive()
-            ),
+            Ok(g) => {
+                let (cols, rows, cc, cr) = (g.cols, g.rows, g.cursor_col, g.cursor_row);
+                println!(
+                    "probe ok: {cols}x{rows} cursor=({cc},{cr}) alive={}",
+                    client.alive()
+                );
+            }
             Err(e) => {
                 eprintln!("rill-host: snapshot: {e}");
                 std::process::exit(1);

@@ -1,12 +1,11 @@
 # Spike — pin 120 Hz without extra Metal presents
 
-**Status: research. Does not make the code valid. Must not merge.**
-**Issue:** [#10](https://github.com/mahboobmonnamd/RILL/issues/10)
+**Status: research. Closed by [ADR 0009](adr/0009-direct-to-display-echo.md) /
+[ADR 0010](adr/0010-spike-0-closes.md). Do not merge this pin as a presenter.**
+**Issue:** [#10](https://github.com/mahboobmonnamd/RILL/issues/10) (closed)
 
-Spike 0 stays **Red**. T-NFR's oracle and budget do not move (ADR 0003 D5–D8,
-ADR 0004 D2). This spike does not authorize a product presenter (ADR 0004 D4,
-ADR 0005 D5). After it, an **Accepted** ADR must name the pin before any
-implementation is the closer.
+This file is the 2026-08-17 experiment that **did not** pin 120 Hz. Spike 0 is
+Proven on ADR 0009, not on this pin. T-NFR's oracle and budget do not move.
 
 ## Why
 
@@ -75,5 +74,5 @@ After warmup, `key_to_commit` ≈ 1.5–4ms, `commit_to_presented` ≈ 17–19ms
 opacity pin plus a DisplayLink that does not present did **not** hold Metal
 onto 120 Hz ticks.
 
-Must not merge. Spike 0 stays Red. A later presenter still needs a later ADR.
-Do not repeat this pin.
+Must not merge this pin. Spike 0 closed on ADR 0009, not here. Do not repeat
+this experiment as a closer.

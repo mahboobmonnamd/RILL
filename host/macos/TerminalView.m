@@ -55,6 +55,7 @@ static NSString *const kShaderSource =
     @"constant float kUnderline = 2.0;\n"
     @"constant float kStrike    = 4.0;\n"
     @"constant float kCursor    = 256.0;\n"
+    @"constant float kCursorHollow = 512.0;\n"
     @"static inline bool has_flag(float flags, float bit) {\n"
     @"  return fmod(floor(flags / bit), 2.0) >= 0.5;\n"
     @"}\n"
@@ -83,6 +84,13 @@ static NSString *const kShaderSource =
     @"                   texture2d<float> atlas [[texture(0)]],\n"
     @"                   constant Uniforms &u [[buffer(1)]]) {\n"
     @"  constexpr sampler s(address::clamp_to_edge, filter::linear);\n"
+    @"  if (has_flag(in.flags, kCursorHollow)) {\n"
+    @"    float t = 1.5;\n"
+    @"    float2 px = in.local * u.cellPx;\n"
+    @"    bool edge = px.x < t || px.y < t || (u.cellPx.x - px.x) < t || (u.cellPx.y - px.y) < t;\n"
+    @"    if (edge) { return float4(in.fg.rgb, 1.0); }\n"
+    @"    return float4(0.0, 0.0, 0.0, 0.0);\n"
+    @"  }\n"
     @"  if (has_flag(in.flags, kCursor)) { return float4(in.fg.rgb, 0.75); }\n"
     @"  float2 p = in.local * u.cellPx;\n"
     @"  float alpha = 0.0;\n"
@@ -128,6 +136,7 @@ typedef struct {
 #define RILL_FLAG_UNDERLINE 2u
 #define RILL_FLAG_STRIKE    4u
 #define RILL_FLAG_CURSOR    256u
+#define RILL_FLAG_CURSOR_HOLLOW 512u
 
 #define RILL_ATLAS_DIM 2048
 #define RILL_MAX_FRAMES_IN_FLIGHT 1
@@ -253,9 +262,26 @@ typedef struct {
 
 - (BOOL)setupFont {
     const char *family = rill_client_font_family(_client);
-    NSString *name = family ? @(family) : @"Menlo";
     CGFloat size = rill_client_font_size(_client);
-    _font = CTFontCreateWithName((__bridge CFStringRef)name, size, NULL);
+    NSMutableArray<NSString *> *names = [NSMutableArray array];
+    if (family && family[0]) {
+        [names addObject:@(family)];
+    }
+    for (uint32_t i = 0;; i++) {
+        const char *fb = rill_client_font_fallback(_client, i);
+        if (!fb || !fb[0]) {
+            break;
+        }
+        [names addObject:@(fb)];
+    }
+    _font = NULL;
+    for (NSString *name in names) {
+        CTFontRef candidate = CTFontCreateWithName((__bridge CFStringRef)name, size, NULL);
+        if (candidate) {
+            _font = candidate;
+            break;
+        }
+    }
     if (!_font) {
         return NO;
     }
@@ -629,7 +655,9 @@ static inline vector_float4 rgba(uint32_t c) {
         memset(cur, 0, sizeof(*cur));
         cur->cell = (vector_float2){(float)grid.cursor_col, (float)grid.cursor_row};
         cur->fg = (vector_float4){0.85f, 0.85f, 0.85f, 1.0f};
-        cur->flags = (float)RILL_FLAG_CURSOR;
+        cur->flags = rill_client_alive(_client)
+                         ? (float)RILL_FLAG_CURSOR
+                         : (float)RILL_FLAG_CURSOR_HOLLOW;
         drawCount += 1;
     }
 
@@ -644,6 +672,10 @@ static inline vector_float4 rgba(uint32_t c) {
         }
     }
     [self presentEcho];
+    if (!rill_client_alive(_client) && self.window) {
+        int st = rill_client_exit_status(_client);
+        [self.window setTitle:[NSString stringWithFormat:@"Rill — exited %d", st]];
+    }
 }
 
 - (void)presentEcho {
@@ -796,6 +828,9 @@ static inline vector_float4 rgba(uint32_t c) {
 
 - (void)sendBytes:(const uint8_t *)bytes length:(size_t)len {
     if (len == 0) {
+        return;
+    }
+    if (!rill_client_alive(_client)) {
         return;
     }
     if (rill_client_send_input(_client, bytes, len) != 0) {

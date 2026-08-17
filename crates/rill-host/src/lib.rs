@@ -17,6 +17,9 @@ use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 
+mod error;
+pub use error::Error;
+
 /// Initial credit window. Not `u32::MAX`: the client replenishes as it feeds,
 /// so the kernel can actually apply backpressure (SPEC-ATTACH §5, audit S3-5).
 const CREDIT_WINDOW: u32 = 256 * 1024;
@@ -38,13 +41,13 @@ pub struct Client {
     /// "zero control RPCs on the warm path" (SPEC-ATTACH §8, ADR 0003 D9).
     warm_path_violations: u32,
     auditing: bool,
+    /// Last VT extract. `cell_codepoint` / `cursor` must not calloc a new grid
+    /// on every probe (quality audit Q4).
+    cached: Option<PodGrid>,
 }
 
 impl Client {
-    pub fn connect(
-        socket: impl AsRef<Path>,
-        surface: HostSurface,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn connect(socket: impl AsRef<Path>, surface: HostSurface) -> Result<Self, Error> {
         let stream = UnixStream::connect(socket.as_ref())?;
         stream.set_nonblocking(true)?;
         let chip = Chip0::new(surface.cols, surface.rows)?;
@@ -59,6 +62,7 @@ impl Client {
             outstanding_credit: 0,
             warm_path_violations: 0,
             auditing: false,
+            cached: None,
         };
         client.send(Frame::Attach { generation: 1 })?;
         client.grant_credit(CREDIT_WINDOW)?;
@@ -71,6 +75,10 @@ impl Client {
 
     pub fn font_size(&self) -> f32 {
         self.surface.font_size
+    }
+
+    pub fn font_fallbacks(&self) -> &[String] {
+        &self.surface.font_fallbacks
     }
 
     pub fn alive(&self) -> bool {
@@ -105,20 +113,15 @@ impl Client {
         self.warm_path_violations
     }
 
-    pub fn send_input(&mut self, bytes: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn send_input(&mut self, bytes: &[u8]) -> Result<(), Error> {
         if !self.alive {
-            return Err("pane is dead".into());
+            return Err(Error::Dead);
         }
         self.send(Frame::Data(bytes.to_vec()))
     }
 
-    pub fn resize(
-        &mut self,
-        cols: u16,
-        rows: u16,
-        px_w: u16,
-        px_h: u16,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn resize(&mut self, cols: u16, rows: u16, px_w: u16, px_h: u16) -> Result<(), Error> {
+        self.cached = None;
         let cell_w = u32::from(px_w) / u32::from(cols.max(1));
         let cell_h = u32::from(px_h) / u32::from(rows.max(1));
         self.chip.resize(cols, rows, cell_w, cell_h)?;
@@ -132,7 +135,7 @@ impl Client {
 
     /// Drain everything readable, feed it, replenish exactly what we consumed.
     /// Returns bytes fed this turn.
-    pub fn pump(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
+    pub fn pump(&mut self) -> Result<usize, Error> {
         self.flush_outbox()?;
 
         let mut buf = [0u8; 65536];
@@ -146,6 +149,7 @@ impl Client {
                             Frame::Data(bytes) => {
                                 fed += bytes.len();
                                 self.chip.feed(&bytes)?;
+                                self.cached = None;
                             }
                             Frame::Exit { status } => {
                                 self.alive = false;
@@ -159,7 +163,7 @@ impl Client {
                                     self.warm_path_violations += 1;
                                 }
                                 if matches!(other, Frame::Refused { .. }) {
-                                    return Err("attach refused".into());
+                                    return Err(Error::Refused);
                                 }
                             }
                         }
@@ -180,18 +184,35 @@ impl Client {
         Ok(fed)
     }
 
-    fn grant_credit(&mut self, n: u32) -> Result<(), Box<dyn std::error::Error>> {
+    fn grant_credit(&mut self, n: u32) -> Result<(), Error> {
         self.outstanding_credit = self.outstanding_credit.saturating_add(u64::from(n));
         self.send(Frame::Credit(n))
     }
 
-    pub fn snapshot(&mut self) -> Result<PodGrid, rill_chip0::Error> {
-        self.chip.snapshot()
+    pub fn snapshot(&mut self) -> Result<&PodGrid, rill_chip0::Error> {
+        if self.cached.is_none() {
+            self.cached = Some(self.chip.snapshot()?);
+        }
+        self.cached
+            .as_ref()
+            .ok_or(rill_chip0::Error::Vt("snapshot cache"))
+    }
+
+    pub fn cell_codepoint(&mut self, col: u16, row: u16) -> u32 {
+        self.snapshot()
+            .ok()
+            .and_then(|g| g.cell(col, row).map(|x| x.codepoint))
+            .unwrap_or(0)
+    }
+
+    pub fn cursor_cell(&mut self) -> Result<(u16, u16), rill_chip0::Error> {
+        let g = self.snapshot()?;
+        Ok((g.cursor_col, g.cursor_row))
     }
 
     /// Non-blocking. A partial write is queued and completed on the next pump;
     /// the socket's blocking mode is never toggled (audit S3-8d).
-    fn send(&mut self, frame: Frame) -> Result<(), Box<dyn std::error::Error>> {
+    fn send(&mut self, frame: Frame) -> Result<(), Error> {
         if self.auditing && !frame.is_warm_path() {
             self.warm_path_violations += 1;
         }
@@ -200,7 +221,7 @@ impl Client {
         self.flush_outbox()
     }
 
-    fn flush_outbox(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn flush_outbox(&mut self) -> Result<(), Error> {
         while !self.outbox.is_empty() {
             let (front, _) = self.outbox.as_slices();
             let chunk: Vec<u8> = if front.is_empty() {

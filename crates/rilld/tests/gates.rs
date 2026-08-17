@@ -333,3 +333,141 @@ fn t_bind_does_not_steal_a_live_socket() {
     );
     drop(first);
 }
+
+/// T-NFR regression lock: a live attach must not `poll` with a sleep.
+///
+/// Required mutation: `RILL_MUTATE=idle_poll_while_attached` (feature `mutate`).
+/// Packaged hid p95 is the vsync oracle; this asserts the timeout `run` uses.
+#[test]
+fn t_attached_session_poll_does_not_sleep() {
+    let sock = temp_sock("nfr-poll");
+    let mut daemon = Daemon::bind(
+        &sock,
+        "/bin/sh",
+        &["-c", "exec sleep 30"],
+        Winsize::default(),
+    )
+    .expect("bind");
+    assert!(
+        daemon.step_timeout_ms() > 0,
+        "idle daemon must not busy-loop (Q5)"
+    );
+
+    let mut gui = UnixStream::connect(&sock).expect("connect");
+    send(&mut gui, Frame::Attach { generation: 1 });
+    send(&mut gui, Frame::Credit(256 * 1024));
+    for _ in 0..30 {
+        let _ = daemon.step(5);
+        if daemon.step_timeout_ms() == 0 {
+            break;
+        }
+    }
+    assert_eq!(
+        daemon.step_timeout_ms(),
+        0,
+        "attached poll slept; T-NFR hid p95 missed vsync after Q5"
+    );
+}
+
+/// T-PARTIAL-WRITE (quality Q1): a blocked attach socket must not replay a
+/// DATA frame that was already partially written.
+///
+/// Oracle: child-emitted `RILL-UNIQ-<n>-END` tokens in decoded DATA. A 4s
+/// cutoff can bisect `RILL-UNIQ-16073` into a line that looks like `160`;
+/// only complete `-END` tokens count. Required mutation:
+/// `RILL_MUTATE=replay_full_frame` (feature `mutate`).
+#[test]
+fn t_outbound_partial_write_does_not_replay_a_frame() {
+    use std::os::fd::AsRawFd;
+
+    std::env::set_var("RILL_TEST_TINY_SNDBUF", "1");
+    struct ClearTiny;
+    impl Drop for ClearTiny {
+        fn drop(&mut self) {
+            std::env::remove_var("RILL_TEST_TINY_SNDBUF");
+        }
+    }
+    let _clear = ClearTiny;
+    let sock = temp_sock("partial-write");
+    let mut daemon = Daemon::bind(
+        &sock,
+        "/bin/sh",
+        &[
+            "-c",
+            "sleep 0.2; seq 0 20000 | awk '{printf \"RILL-UNIQ-%d-END\\n\", $1}'",
+        ],
+        Winsize::default(),
+    )
+    .expect("bind");
+    let mut gui = UnixStream::connect(&sock).expect("connect");
+    let small: libc::c_int = 2048;
+    unsafe {
+        libc::setsockopt(
+            gui.as_raw_fd(),
+            libc::SOL_SOCKET,
+            libc::SO_RCVBUF,
+            &small as *const _ as *const libc::c_void,
+            std::mem::size_of_val(&small) as libc::socklen_t,
+        );
+    }
+    send(&mut gui, Frame::Attach { generation: 1 });
+    send(&mut gui, Frame::Credit(256 * 1024));
+
+    // Do not drain while the child is flooding. A test that reads every step
+    // never fills the socket, so `write_all` never WouldBlock and the
+    // required mutation is a no-op.
+    let flood_until = Instant::now() + Duration::from_millis(800);
+    while Instant::now() < flood_until {
+        let _ = daemon.step(5);
+    }
+
+    let mut decoder = Decoder::new();
+    let mut bytes = Vec::new();
+    let start = Instant::now();
+    let mut buf = [0u8; 65536];
+    gui.set_nonblocking(true).ok();
+    while start.elapsed() < Duration::from_secs(4) {
+        let _ = daemon.step(5);
+        match gui.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                for f in decoder.push(&buf[..n]).expect("decode") {
+                    if let Frame::Data(b) = f {
+                        bytes.extend_from_slice(&b);
+                    }
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(_) => break,
+        }
+    }
+
+    let text = String::from_utf8_lossy(&bytes);
+    let mut seen = std::collections::BTreeSet::new();
+    let mut dup = None;
+    for line in text.lines() {
+        let Some(rest) = line.strip_prefix("RILL-UNIQ-") else {
+            continue;
+        };
+        let Some(n) = rest.strip_suffix("-END") else {
+            continue;
+        };
+        if n.is_empty() || !n.bytes().all(|b| b.is_ascii_digit()) {
+            continue;
+        }
+        if !seen.insert(n.to_string()) {
+            dup = Some(n.to_string());
+            break;
+        }
+    }
+    assert!(
+        dup.is_none(),
+        "DATA frame was replayed; marker RILL-UNIQ-{}-END appeared twice",
+        dup.unwrap_or_default()
+    );
+    assert!(
+        seen.len() > 50,
+        "too few unique markers to exercise backpressure ({})",
+        seen.len()
+    );
+}

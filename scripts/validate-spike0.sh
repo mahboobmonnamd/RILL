@@ -229,14 +229,22 @@ if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
     cargo test -p rilld --offline --features mutate t_attach -- --test-threads=1
   run_control "T-RESYNC" no_resync \
     cargo test -p rilld --offline --features mutate t_resync -- --test-threads=1
+  run_control "T-PARTIAL-WRITE" replay_full_frame \
+    cargo test -p rilld --offline --features mutate t_outbound_partial_write -- --test-threads=1
+  run_control "T-ATTACHED-POLL" idle_poll_while_attached \
+    cargo test -p rilld --offline --features mutate t_attached_session_poll_does_not_sleep -- --test-threads=1
   if [ "${RILL_NFR_OPTIONAL:-}" = 1 ]; then
     printf '{"gate":"T-NFR","mutation":"timer_pump","went_red":null}\n' >> "$CONTROLS"
   else
     run_control "T-NFR" timer_pump run_t_nfr
   fi
-  run_control "T-KILL" drop_POSIX_SPAWN_SETSID \
-    env RILL_RILLD_BIN="$RILLD" RILL_GUI_APP="$ROOT/dist/Rill.app" \
-    cargo test -p rilld --offline --test persist_e2e -- --nocapture
+  run_t_kill_setsid() {
+    mut_app="$TMP/Rill-nosetsid.app"
+    RILL_MUTATE=drop_POSIX_SPAWN_SETSID RILL_APP="$mut_app" sh scripts/package-macos.sh
+    env RILL_RILLD_BIN="$mut_app/Contents/MacOS/rilld" RILL_GUI_APP="$mut_app" \
+      cargo test -p rilld --offline --test persist_e2e -- --nocapture
+  }
+  run_control "T-KILL" drop_POSIX_SPAWN_SETSID run_t_kill_setsid
   run_t_spawn_openpty() {
     mut_app="$TMP/Rill-openpty.app"
     RILL_MUTATE=openpty_in_main_m RILL_APP="$mut_app" sh scripts/package-macos.sh

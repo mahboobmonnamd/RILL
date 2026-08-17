@@ -56,6 +56,7 @@ int rill_client_exit_status(const RillClient *client); /* INT32_MIN while alive 
 
 const char *rill_client_font_family(const RillClient *client);
 float rill_client_font_size(const RillClient *client);
+const char *rill_client_font_fallback(const RillClient *client, uint32_t index);
 
 int rill_client_snapshot(RillClient *client, RillPodGrid *out);
 

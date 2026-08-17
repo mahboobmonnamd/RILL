@@ -11,7 +11,7 @@ help:
 	@echo "make negative-controls assert each gate goes red under its own mutation"
 	@echo "make package           dist/Rill.app (after setup)"
 	@echo ""
-	@echo "Spike 0 is RED. See docs/SPIKE-0.md and docs/SPIKE-0-AUDIT.md."
+	@echo "Spike 0 is GREEN ([ADR 0010](docs/adr/0010-spike-0-closes.md)). See docs/SPIKE-0.md."
 
 setup: deps libghostty-vt
 	@echo "setup ok"
