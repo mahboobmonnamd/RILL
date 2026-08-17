@@ -116,6 +116,13 @@ run_gate "T-EXIT"         cargo test -p rill-kernel --offline t_exit -- --nocapt
 run_gate "T-EXIT-detach"  cargo test -p rilld       --offline t_exit_across_detach -- --nocapture
 run_gate "T-ATTACH"       cargo test -p rilld       --offline t_attach -- --test-threads=1 --nocapture
 run_gate "T-RESYNC"       cargo test -p rilld       --offline t_resync -- --test-threads=1 --nocapture
+run_gate "T-GRAPH-SPAWN"  cargo test -p rill-kernel --offline t_graph_two_sessions_have_distinct_child_pids -- --nocapture
+run_gate "T-GRAPH-ISOLATE" cargo test -p rill-kernel --offline t_graph_histories_do_not_mix -- --nocapture
+run_gate "T-GRAPH-ATTACH" cargo test -p rill-kernel --offline t_graph_second_attach_to_same_id_is_refused -- --nocapture
+run_gate "T-GRAPH-ATTACH-B" cargo test -p rill-kernel --offline t_graph_attach_to_a_second_id_is_accepted -- --nocapture
+run_gate "T-GRAPH-TERMINATE" cargo test -p rill-kernel --offline t_graph_terminate_one_leaf_leaves_the_other_alive -- --nocapture
+run_gate "T-ATTACH-NAMED" cargo test -p rilld       --offline t_attach_named_id -- --test-threads=1 --nocapture
+run_gate "T-GRAPH-FLOOD"  cargo test -p rilld       --offline t_graph_flood -- --test-threads=1 --nocapture
 
 # ---------------------------------------------------------------------- package
 echo "== package =="
@@ -229,6 +236,18 @@ if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
     cargo test -p rilld --offline --features mutate t_attach -- --test-threads=1
   run_control "T-RESYNC" no_resync \
     cargo test -p rilld --offline --features mutate t_resync -- --test-threads=1
+  run_control "T-GRAPH-SPAWN" single_session \
+    cargo test -p rill-kernel --offline --features mutate t_graph_two_sessions_have_distinct_child_pids
+  run_control "T-GRAPH-ISOLATE" single_session \
+    cargo test -p rill-kernel --offline --features mutate t_graph_histories_do_not_mix
+  run_control "T-GRAPH-ATTACH-B" single_session \
+    cargo test -p rill-kernel --offline --features mutate t_graph_attach_to_a_second_id_is_accepted
+  run_control "T-GRAPH-TERMINATE" terminate_all_leaves \
+    cargo test -p rill-kernel --offline --features mutate t_graph_terminate_one_leaf_leaves_the_other_alive
+  run_control "T-ATTACH-NAMED" ignore_session_id \
+    cargo test -p rilld --offline --features mutate t_attach_named_id -- --test-threads=1
+  run_control "T-GRAPH-FLOOD" starve_other_leaves \
+    cargo test -p rilld --offline --features mutate t_graph_flood -- --test-threads=1
   run_control "T-PARTIAL-WRITE" replay_full_frame \
     cargo test -p rilld --offline --features mutate t_outbound_partial_write -- --test-threads=1
   run_control "T-ATTACHED-POLL" idle_poll_while_attached \

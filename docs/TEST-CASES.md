@@ -412,13 +412,30 @@ budget=8.33ms, cadence p50=p95=8.33ms, `ax_trusted=1`, `pmset` Battery Power
 
 ## Milestone 1 — session graph
 
-Authority: [ADR 0011](adr/0011-session-graph.md), [SPEC-GRAPH](spec/SPEC-GRAPH.md),
+Authority: [ADR 0011](adr/0011-session-graph.md),
+[ADR 0014](adr/0014-m1-first-slice-closes.md),
+[SPEC-GRAPH](spec/SPEC-GRAPH.md),
 [#16](https://github.com/mahboobmonnamd/RILL/issues/16),
 [#28](https://github.com/mahboobmonnamd/RILL/issues/28),
-[#29](https://github.com/mahboobmonnamd/RILL/issues/29).
+[#29](https://github.com/mahboobmonnamd/RILL/issues/29),
+[#31](https://github.com/mahboobmonnamd/RILL/issues/31),
+[#254](https://github.com/mahboobmonnamd/RILL/issues/254).
 Library tests live in `crates/rill-kernel/tests/gates.rs` and
 `crates/rilld/tests/gates.rs`. Packaged multi-leaf persist is **not** these
-gates (SPEC-GRAPH §4).
+gates ([#255](https://github.com/mahboobmonnamd/RILL/issues/255)).
+
+Every gate below is **Proven** ([ADR 0014](adr/0014-m1-first-slice-closes.md) D1).
+Kernel suite: `fast.yml` on `main` after those PRs, mutations red in this closer.
+Named-id / flood: PRs #30 / #32, wired into `validate-spike0.sh`.
+
+| ID | Status | Negative control | Notes |
+|---|---|---|---|
+| T-GRAPH-SPAWN | **Proven** | `single_session` automated | [#16](https://github.com/mahboobmonnamd/RILL/issues/16) / [PR #27](https://github.com/mahboobmonnamd/RILL/pull/27) |
+| T-GRAPH-ISOLATE | **Proven** | `single_session` automated | PR #27 |
+| T-GRAPH-ATTACH | **Proven** | `single_session` automated | PR #27 |
+| T-GRAPH-TERMINATE | **Proven** | `terminate_all_leaves` automated | [#29](https://github.com/mahboobmonnamd/RILL/issues/29) / [PR #30](https://github.com/mahboobmonnamd/RILL/pull/30) |
+| T-ATTACH-NAMED | **Proven** | `ignore_session_id` automated | [#28](https://github.com/mahboobmonnamd/RILL/issues/28) / PR #30 |
+| T-GRAPH-FLOOD | **Proven** | `starve_other_leaves` automated | [#31](https://github.com/mahboobmonnamd/RILL/issues/31) / [PR #32](https://github.com/mahboobmonnamd/RILL/pull/32) |
 
 ### T-GRAPH-SPAWN — two leaves, two pids
 

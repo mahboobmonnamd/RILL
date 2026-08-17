@@ -5,8 +5,8 @@
 [ADR 0002](adr/0002-falsifiable-evidence.md) D2–D6. Library and packaged gates
 cite GitHub Actions
 [run 31993832263](https://github.com/mahboobmonnamd/RILL/actions/runs/31993832263).
-T-NFR cites packaged battery hid (ADR 0009 D4). Milestone 1 is
-[ADR 0011](adr/0011-session-graph.md) / [#16](https://github.com/mahboobmonnamd/RILL/issues/16).
+T-NFR cites packaged battery hid (ADR 0009 D4). Milestone 1 first slice is
+closed ([ADR 0014](adr/0014-m1-first-slice-closes.md)).
 
 The 2026-08-16 marks remain withdrawn ([SPIKE-0-AUDIT](SPIKE-0-AUDIT.md)).
 `T-NFR p95=0.032ms` is still a **null result** and must not be cited.

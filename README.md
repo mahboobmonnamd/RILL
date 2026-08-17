@@ -8,9 +8,9 @@ library suite in [run 31993832263](https://github.com/mahboobmonnamd/RILL/action
 T-NFR on packaged battery hid. The 2026-08-16 marks remain withdrawn; the
 [audit](docs/SPIKE-0-AUDIT.md) is that day's defect list, closed by ADR 0010.
 
-Milestone 1 is the session graph ([ADR 0011](docs/adr/0011-session-graph.md),
-[#16](https://github.com/mahboobmonnamd/RILL/issues/16)). Do not add agents,
-Blocks, or chrome to hide a later NFR miss. Run `make gates` for regression.
+Milestone 1 first slice is **Proven** ([ADR 0014](docs/adr/0014-m1-first-slice-closes.md)).
+Do not add agents, Blocks, or chrome to hide a later NFR miss. Run `make gates`
+for regression. Launch the window with `make run`.
 
 ## In one page
 
@@ -50,6 +50,7 @@ Warm typing never touches JSON, cell dumps, or the graph.
 
 ```sh
 make setup
+make run
 ```
 
 Installs or checks Rust (`rustc` ≥ 1.85), Zig (≥ 0.16, for Chip 0 / `libghostty-vt` only), and Xcode Command Line Tools. Then fetches Ghostty source as a build-time dep and builds the VT library — not Ghostty.app. `third_party/ghostty` is gitignored.
@@ -65,7 +66,7 @@ Installs or checks Rust (`rustc` ≥ 1.85), Zig (≥ 0.16, for Chip 0 / `libghos
 7. [Spike 0](docs/SPIKE-0.md) — named gates ([validation](docs/SPIKE-0-VALIDATION.md), [test cases](docs/TEST-CASES.md))
 8. [SPIKE-0-AUDIT](docs/SPIKE-0-AUDIT.md) — historical: why 2026-08-16 was Red
 9. [Specs](docs/spec/) — [kernel](docs/spec/SPEC-KERNEL.md), [attach](docs/spec/SPEC-ATTACH.md), [chip 0](docs/spec/SPEC-CHIP0.md), [display](docs/spec/SPEC-DISPLAY.md), [graph](docs/spec/SPEC-GRAPH.md), [chip 1](docs/spec/SPEC-CHIP1.md)
-10. [ADR 0011](docs/adr/0011-session-graph.md) — Milestone 1
+10. [ADR 0011](docs/adr/0011-session-graph.md) / [ADR 0014](docs/adr/0014-m1-first-slice-closes.md) — Milestone 1 first slice
 11. [ADR 0012](docs/adr/0012-chip1-isolated-vt.md) / [M4-HANDOFF](docs/M4-HANDOFF.md) — isolated Chip 1 (not live)
 12. [Lanes](docs/LANES.md) — how 3–5 people work in parallel
 13. [CONTRIBUTING](CONTRIBUTING.md) — issues, PRs, TDD

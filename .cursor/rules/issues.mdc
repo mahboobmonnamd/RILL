@@ -10,6 +10,6 @@ alwaysApply: true
 - Named SPEC-style test first. For a user-reported bug, the test name states the bug and fails for that reason.
 - Implementation is the smallest change that turns those tests green.
 - Close an issue only with files, named tests, packaged e2e if user-visible, commands, and results in the PR. Socket-only tests do not close persist, paint, spawn, or NFR-KEY.
-- Spike 0 is Proven ([ADR 0010](../../docs/adr/0010-spike-0-closes.md)). Do not merge Milestone 1 UI that hides a later NFR miss.
+- Spike 0 is Proven ([ADR 0010](../../docs/adr/0010-spike-0-closes.md)). M1 first slice is Proven ([ADR 0014](../../docs/adr/0014-m1-first-slice-closes.md)). Do not merge chrome that hides a later NFR miss.
 - Chip 1 is isolated until M7 ([ADR 0012](../../docs/adr/0012-chip1-isolated-vt.md)). GitHub Issues only; no beads.
 - This repo is self-contained. Do not cite another application tree as authority.

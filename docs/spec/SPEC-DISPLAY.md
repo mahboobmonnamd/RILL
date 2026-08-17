@@ -65,7 +65,8 @@ Per ADR 0003 D1:
 - `CAMetalLayer.maximumDrawableCount = 2`; `displaySyncEnabled` on for gate
   runs. At most one present outstanding (ADR 0009). Do not keep-alive present.
 - Colour emoji render as an explicit tofu box and are **counted and reported**.
-  Silent mis-rendering is not acceptable; a BGRA atlas is Milestone 1.
+  Silent mis-rendering is not acceptable; a BGRA atlas is later display work,
+  not the M1 session-graph slice ([ADR 0014](../adr/0014-m1-first-slice-closes.md) D4).
 
 ## 5. Geometry
 

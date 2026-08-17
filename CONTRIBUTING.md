@@ -17,7 +17,8 @@ A PR that implements without 1–3 is rejected.
 ## Tracker
 
 GitHub Issues and Milestones are the only work tracker. Do not add beads.
-Spike 0 is Proven ([ADR 0010](docs/adr/0010-spike-0-closes.md)). Chip 1
+Spike 0 is Proven ([ADR 0010](docs/adr/0010-spike-0-closes.md)). M1 first slice
+is Proven ([ADR 0014](docs/adr/0014-m1-first-slice-closes.md)). Chip 1
 handoff: [M4-HANDOFF](docs/M4-HANDOFF.md). An issue is not a license to
 hide a later NFR miss with chrome.
 

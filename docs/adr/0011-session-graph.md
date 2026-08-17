@@ -1,8 +1,10 @@
 # ADR 0011: Session graph
 
-- **Status:** Accepted — 2026-08-17
+- **Status:** Accepted — 2026-08-17. First slice closed by
+  [ADR 0014](0014-m1-first-slice-closes.md).
 - **Tree:** this repository only
 - **Issue:** [#16](https://github.com/mahboobmonnamd/RILL/issues/16)
+- **Amended by:** [ADR 0014](0014-m1-first-slice-closes.md) (Proven + catalog)
 - **Requires:** [ADR 0001](0001-session-operating-system.md),
   [ADR 0010](0010-spike-0-closes.md) (Spike 0 Proven). Presenter remains
   [ADR 0009](0009-direct-to-display-echo.md).
@@ -74,7 +76,8 @@ path of an attached leaf. T-NFR is not re-cut. Chip 1 stays isolated until M7
   slice: map, spawn two, refuse second attach on the same id.
 - [SPEC-KERNEL](../spec/SPEC-KERNEL.md) §11 no longer forbids multiple sessions;
   it defers the contract to this ADR and SPEC-GRAPH.
-- Named tests in [TEST-CASES](../TEST-CASES.md) (T-GRAPH-*) start **Red**.
+- Named tests in [TEST-CASES](../TEST-CASES.md) (T-GRAPH-*) are **Proven**
+  ([ADR 0014](0014-m1-first-slice-closes.md)).
 
 ## Rejected alternatives
 

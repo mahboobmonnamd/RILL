@@ -1,12 +1,15 @@
 # SPEC-GRAPH — session graph (Milestone 1, `lane:kernel`)
 
-- **Status:** Accepted for the first slice — 2026-08-17
-- **Authority:** [ADR 0011](../adr/0011-session-graph.md)
-- **Issue:** [#16](https://github.com/mahboobmonnamd/RILL/issues/16), attach naming: [#28](https://github.com/mahboobmonnamd/RILL/issues/28), terminate: [#29](https://github.com/mahboobmonnamd/RILL/issues/29), flood isolation: [#31](https://github.com/mahboobmonnamd/RILL/issues/31)
+- **Status:** Accepted — first slice **Proven** 2026-08-17
+  ([ADR 0014](../adr/0014-m1-first-slice-closes.md)).
+- **Authority:** [ADR 0011](../adr/0011-session-graph.md),
+  [ADR 0014](../adr/0014-m1-first-slice-closes.md)
+- **Issue:** [#16](https://github.com/mahboobmonnamd/RILL/issues/16), attach naming: [#28](https://github.com/mahboobmonnamd/RILL/issues/28), terminate: [#29](https://github.com/mahboobmonnamd/RILL/issues/29), flood isolation: [#31](https://github.com/mahboobmonnamd/RILL/issues/31), close: [#254](https://github.com/mahboobmonnamd/RILL/issues/254)
 - **Crates:** `crates/rill-kernel`, `crates/rilld`, `crates/rill-attach`
 - **Gates:** T-GRAPH-SPAWN, T-GRAPH-ISOLATE, T-GRAPH-ATTACH, T-GRAPH-TERMINATE,
-  T-ATTACH-NAMED, T-GRAPH-FLOOD. `Kernel` holds the map; default daemon start
-  still spawns one leaf. Packaged host still sends 8-byte ATTACH (default leaf).
+  T-ATTACH-NAMED, T-GRAPH-FLOOD — **Proven**. `Kernel` holds the map; default
+  daemon start still spawns one leaf. Packaged host still sends 8-byte ATTACH
+  (default leaf). Packaged N-leaf persist is [#255](https://github.com/mahboobmonnamd/RILL/issues/255).
 
 Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
@@ -48,8 +51,9 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
 - GUI quit / `SIGKILL` of the window process MUST NOT kill any leaf (existing
   T-KILL, now for every live id once a packaged graph exists).
-- This slice's tests are library-level. Packaged multi-leaf persist is a later
-  issue; socket-only tests do not close it.
+- This slice's tests are library-level. Packaged multi-leaf persist is
+  [#255](https://github.com/mahboobmonnamd/RILL/issues/255); socket-only tests
+  do not close it.
 
 ## 5. Out of scope
 
