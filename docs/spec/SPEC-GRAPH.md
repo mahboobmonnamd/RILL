@@ -1,15 +1,17 @@
 # SPEC-GRAPH — session graph (Milestone 1, `lane:kernel`)
 
 - **Status:** Accepted — first slice **Proven** 2026-08-17
-  ([ADR 0014](../adr/0014-m1-first-slice-closes.md)).
+  ([ADR 0014](../adr/0014-m1-first-slice-closes.md)); persist remainder
+  [ADR 0015](../adr/0015-m1-persist-remainder.md).
 - **Authority:** [ADR 0011](../adr/0011-session-graph.md),
-  [ADR 0014](../adr/0014-m1-first-slice-closes.md)
-- **Issue:** [#16](https://github.com/mahboobmonnamd/RILL/issues/16), attach naming: [#28](https://github.com/mahboobmonnamd/RILL/issues/28), terminate: [#29](https://github.com/mahboobmonnamd/RILL/issues/29), flood isolation: [#31](https://github.com/mahboobmonnamd/RILL/issues/31), close: [#254](https://github.com/mahboobmonnamd/RILL/issues/254)
+  [ADR 0014](../adr/0014-m1-first-slice-closes.md),
+  [ADR 0015](../adr/0015-m1-persist-remainder.md)
+- **Issue:** [#16](https://github.com/mahboobmonnamd/RILL/issues/16), attach naming: [#28](https://github.com/mahboobmonnamd/RILL/issues/28), terminate: [#29](https://github.com/mahboobmonnamd/RILL/issues/29), flood isolation: [#31](https://github.com/mahboobmonnamd/RILL/issues/31), persist remainder: [#69](https://github.com/mahboobmonnamd/RILL/issues/69)–[#84](https://github.com/mahboobmonnamd/RILL/issues/84), N-leaf persist: [#255](https://github.com/mahboobmonnamd/RILL/issues/255), close: [#254](https://github.com/mahboobmonnamd/RILL/issues/254)
 - **Crates:** `crates/rill-kernel`, `crates/rilld`, `crates/rill-attach`
-- **Gates:** T-GRAPH-SPAWN, T-GRAPH-ISOLATE, T-GRAPH-ATTACH, T-GRAPH-TERMINATE,
-  T-ATTACH-NAMED, T-GRAPH-FLOOD — **Proven**. `Kernel` holds the map; default
-  daemon start still spawns one leaf. Packaged host still sends 8-byte ATTACH
-  (default leaf). Packaged N-leaf persist is [#255](https://github.com/mahboobmonnamd/RILL/issues/255).
+- **Gates:** T-GRAPH-* first slice **Proven** (ADR 0014). Persist remainder
+  gates in TEST-CASES (protocol, nested, delivery, events, layout, ephemeral,
+  observe, N-leaf T-KILL). Packaged host still sends 8-byte ATTACH (default
+  leaf). Window chrome stays one attached leaf (ADR 0011 D5).
 
 Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
@@ -49,19 +51,32 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
 ## 4. Persist
 
-- GUI quit / `SIGKILL` of the window process MUST NOT kill any leaf (existing
-  T-KILL, now for every live id once a packaged graph exists).
-- This slice's tests are library-level. Packaged multi-leaf persist is
-  [#255](https://github.com/mahboobmonnamd/RILL/issues/255); socket-only tests
-  do not close it.
+- GUI quit / `SIGKILL` of the window process MUST NOT kill any live leaf
+  (T-KILL, N children via `RILL_TEST_SECOND_LEAF`, ADR 0015 D8).
+- Socket-only tests do not close packaged persist. Packaged T-KILL must keep
+  every pid named in the test pidfiles.
 
-## 5. Out of scope
+## 5. Persist remainder (ADR 0015)
+
+- Nested `rilld` MUST refuse when `RILL_INSIDE=1` unless `RILL_ALLOW_NESTED=1`.
+- Input delivery is `Pending` / `Dispatched` / `Unknown` on the session, not a
+  warm frame.
+- Event ids are unique; `terminate` of a dead leaf is a no-op.
+- `RILL_EPHEMERAL=1` makes `Drop` kill that child. Default remains persist.
+- `layout_snapshot` is kernel state (ids, winsize, pid, cwd), not chrome.
+- A second connection MAY observe a leaf that already has a writer. A second
+  writer is still `REFUSED{AlreadyAttached}`.
+
+## 6. Out of scope
 
 Tabs, splits, sidebar, session titles in the window, conversations, agents,
-Chip 1 live, daemon-crash survival, reconnect tokens, JSON on the typing path.
+Chip 1 live, daemon-crash survival, reconnect tokens, JSON on the typing path,
+`SCM_RIGHTS` of the PTY master.
 
-## 6. What we will not do
+## 7. What we will not do
 
 - Dump a graph into `Text` or a second VT.
 - Replace Chip 0.
 - Re-dispatch hosted `gates.yml` to chase hid.
+- Relaunch Claude/Codex, SIGTERM user shells to hibernate agents, or pass the
+  master fd to a replacement binary (ADR 0015 D9).

@@ -4,7 +4,8 @@
   [ADR 0014](0014-m1-first-slice-closes.md).
 - **Tree:** this repository only
 - **Issue:** [#16](https://github.com/mahboobmonnamd/RILL/issues/16)
-- **Amended by:** [ADR 0014](0014-m1-first-slice-closes.md) (Proven + catalog)
+- **Amended by:** [ADR 0014](0014-m1-first-slice-closes.md) (Proven + catalog),
+  [ADR 0015](0015-m1-persist-remainder.md) (observe + persist remainder)
 - **Requires:** [ADR 0001](0001-session-operating-system.md),
   [ADR 0010](0010-spike-0-closes.md) (Spike 0 Proven). Presenter remains
   [ADR 0009](0009-direct-to-display-echo.md).
@@ -40,11 +41,13 @@ MUST NOT kill the child (ADR 0001 persist wedge).
 
 Daemon crash, logout, and app update stay out of wedge (ADR 0001 §7).
 
-### D3 — One attach per leaf, N leaves per daemon
+### D3 — One writer per leaf, N leaves per daemon
 
-A second `ATTACH` for an id that already has a client is `REFUSED{AlreadyAttached}`
-and MUST NOT disturb the first client (FR-ONE, per leaf). A second `ATTACH` for
-a **different** id is accepted.
+A second **writer** `ATTACH` for an id that already has a writer is
+`REFUSED{AlreadyAttached}` and MUST NOT disturb the first client (FR-ONE, per
+leaf). A second `ATTACH` for a **different** id is accepted. A second
+connection MAY **observe** a leaf that already has a writer
+([ADR 0015](0015-m1-persist-remainder.md) D7); observe MUST NOT write the PTY.
 
 The listener remains one `SOCK_STREAM` accept path. How a connection names the
 id (ATTACH payload vs a later multiplex tag) is specified in

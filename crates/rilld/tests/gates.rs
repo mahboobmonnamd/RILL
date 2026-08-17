@@ -106,13 +106,7 @@ fn t_resync_reopen_over_a_live_shell_restores_the_screen() {
 
     let mut gui = UnixStream::connect(&sock).expect("connect");
     pump(&mut daemon, Duration::from_millis(50)).ok();
-    send(
-        &mut gui,
-        Frame::Attach {
-            generation: 1,
-            session_id: None,
-        },
-    );
+    send(&mut gui, Frame::attach(1, None));
     send(&mut gui, Frame::Credit(256 * 1024));
     pump(&mut daemon, Duration::from_millis(80)).ok();
     send(
@@ -128,13 +122,7 @@ fn t_resync_reopen_over_a_live_shell_restores_the_screen() {
     pump(&mut daemon, Duration::from_millis(80)).ok();
 
     let mut gui2 = UnixStream::connect(&sock).expect("reconnect");
-    send(
-        &mut gui2,
-        Frame::Attach {
-            generation: 2,
-            session_id: None,
-        },
-    );
+    send(&mut gui2, Frame::attach(2, None));
     send(&mut gui2, Frame::Credit(256 * 1024));
     pump(&mut daemon, Duration::from_millis(300)).ok();
     let mut d2 = Decoder::new();
@@ -185,13 +173,7 @@ fn t_attach_detach_attach_grids_do_not_diverge() {
     let mut daemon = Daemon::bind(&sock, "/bin/sh", &[], Winsize::default()).expect("bind");
 
     let mut gui = UnixStream::connect(&sock).expect("c1");
-    send(
-        &mut gui,
-        Frame::Attach {
-            generation: 1,
-            session_id: None,
-        },
-    );
+    send(&mut gui, Frame::attach(1, None));
     send(&mut gui, Frame::Credit(256 * 1024));
     pump(&mut daemon, Duration::from_millis(80)).ok();
     send(&mut gui, Frame::Data(b"printf 'GRID-A\\n'\n".to_vec()));
@@ -202,13 +184,7 @@ fn t_attach_detach_attach_grids_do_not_diverge() {
     pump(&mut daemon, Duration::from_millis(80)).ok();
 
     let mut gui2 = UnixStream::connect(&sock).expect("c2");
-    send(
-        &mut gui2,
-        Frame::Attach {
-            generation: 2,
-            session_id: None,
-        },
-    );
+    send(&mut gui2, Frame::attach(2, None));
     send(&mut gui2, Frame::Credit(256 * 1024));
     pump(&mut daemon, Duration::from_millis(300)).ok();
     let mut d2 = Decoder::new();
@@ -230,23 +206,11 @@ fn t_attach_second_attach_is_refused() {
     .expect("bind");
 
     let mut a = UnixStream::connect(&sock).expect("a");
-    send(
-        &mut a,
-        Frame::Attach {
-            generation: 1,
-            session_id: None,
-        },
-    );
+    send(&mut a, Frame::attach(1, None));
     pump(&mut daemon, Duration::from_millis(80)).ok();
 
     let mut b = UnixStream::connect(&sock).expect("b");
-    send(
-        &mut b,
-        Frame::Attach {
-            generation: 2,
-            session_id: None,
-        },
-    );
+    send(&mut b, Frame::attach(2, None));
     pump(&mut daemon, Duration::from_millis(80)).ok();
     let mut db = Decoder::new();
     let frames = recv_frames(&mut b, &mut db, Duration::from_millis(200));
@@ -274,13 +238,7 @@ fn t_attach_a_bare_connection_cannot_displace_the_attached_client() {
     let mut daemon = Daemon::bind(&sock, "/bin/sh", &[], Winsize::default()).expect("bind");
 
     let mut a = UnixStream::connect(&sock).expect("a");
-    send(
-        &mut a,
-        Frame::Attach {
-            generation: 1,
-            session_id: None,
-        },
-    );
+    send(&mut a, Frame::attach(1, None));
     send(&mut a, Frame::Credit(256 * 1024));
     pump(&mut daemon, Duration::from_millis(150)).ok();
 
@@ -319,13 +277,7 @@ fn t_exit_across_detach_is_delivered_to_the_reattaching_client() {
     let gui = UnixStream::connect(&sock).expect("c1");
     pump(&mut daemon, Duration::from_millis(50)).ok();
     let mut gui = gui;
-    send(
-        &mut gui,
-        Frame::Attach {
-            generation: 1,
-            session_id: None,
-        },
-    );
+    send(&mut gui, Frame::attach(1, None));
     pump(&mut daemon, Duration::from_millis(50)).ok();
     drop(gui);
 
@@ -333,13 +285,7 @@ fn t_exit_across_detach_is_delivered_to_the_reattaching_client() {
     pump(&mut daemon, Duration::from_millis(1200)).ok();
 
     let mut gui2 = UnixStream::connect(&sock).expect("c2");
-    send(
-        &mut gui2,
-        Frame::Attach {
-            generation: 2,
-            session_id: None,
-        },
-    );
+    send(&mut gui2, Frame::attach(2, None));
     send(&mut gui2, Frame::Credit(64 * 1024));
     pump(&mut daemon, Duration::from_millis(300)).ok();
     let mut d = Decoder::new();
@@ -409,13 +355,7 @@ fn t_attached_session_poll_does_not_sleep() {
     );
 
     let mut gui = UnixStream::connect(&sock).expect("connect");
-    send(
-        &mut gui,
-        Frame::Attach {
-            generation: 1,
-            session_id: None,
-        },
-    );
+    send(&mut gui, Frame::attach(1, None));
     send(&mut gui, Frame::Credit(256 * 1024));
     for _ in 0..30 {
         let _ = daemon.step(5);
@@ -471,13 +411,7 @@ fn t_outbound_partial_write_does_not_replay_a_frame() {
             std::mem::size_of_val(&small) as libc::socklen_t,
         );
     }
-    send(
-        &mut gui,
-        Frame::Attach {
-            generation: 1,
-            session_id: None,
-        },
-    );
+    send(&mut gui, Frame::attach(1, None));
     send(&mut gui, Frame::Credit(256 * 1024));
 
     // Do not drain while the child is flooding. A test that reads every step
@@ -561,13 +495,7 @@ fn t_attach_named_id_reaches_that_leaf() {
         .expect("spawn B");
 
     let mut gui = UnixStream::connect(&sock).expect("connect");
-    send(
-        &mut gui,
-        Frame::Attach {
-            generation: 1,
-            session_id: Some(b.as_u64()),
-        },
-    );
+    send(&mut gui, Frame::attach(1, Some(b.as_u64())));
     send(&mut gui, Frame::Credit(64 * 1024));
     pump(&mut daemon, Duration::from_millis(400)).ok();
     let mut d = Decoder::new();
@@ -600,13 +528,7 @@ fn t_attach_unknown_id_is_refused() {
     )
     .expect("bind");
     let mut gui = UnixStream::connect(&sock).expect("connect");
-    send(
-        &mut gui,
-        Frame::Attach {
-            generation: 1,
-            session_id: Some(0xDEAD_BEEF),
-        },
-    );
+    send(&mut gui, Frame::attach(1, Some(0xDEAD_BEEF)));
     pump(&mut daemon, Duration::from_millis(80)).ok();
     let mut d = Decoder::new();
     let frames = recv_frames(&mut gui, &mut d, Duration::from_millis(200));
@@ -637,23 +559,11 @@ fn t_attach_second_connection_to_other_id_is_accepted() {
         .expect("spawn B");
 
     let mut a = UnixStream::connect(&sock).expect("a");
-    send(
-        &mut a,
-        Frame::Attach {
-            generation: 1,
-            session_id: None,
-        },
-    );
+    send(&mut a, Frame::attach(1, None));
     pump(&mut daemon, Duration::from_millis(80)).ok();
 
     let mut gui_b = UnixStream::connect(&sock).expect("b");
-    send(
-        &mut gui_b,
-        Frame::Attach {
-            generation: 1,
-            session_id: Some(b.as_u64()),
-        },
-    );
+    send(&mut gui_b, Frame::attach(1, Some(b.as_u64())));
     pump(&mut daemon, Duration::from_millis(80)).ok();
     let mut db = Decoder::new();
     let frames = recv_frames(&mut gui_b, &mut db, Duration::from_millis(200));
@@ -684,23 +594,11 @@ fn t_graph_flood_on_one_leaf_does_not_drop_bytes_on_the_other() {
         .expect("spawn B");
 
     let mut gui_a = UnixStream::connect(&sock).expect("a");
-    send(
-        &mut gui_a,
-        Frame::Attach {
-            generation: 1,
-            session_id: None,
-        },
-    );
+    send(&mut gui_a, Frame::attach(1, None));
     send(&mut gui_a, Frame::Credit(8 * 1024));
 
     let mut gui_b = UnixStream::connect(&sock).expect("b");
-    send(
-        &mut gui_b,
-        Frame::Attach {
-            generation: 1,
-            session_id: Some(b.as_u64()),
-        },
-    );
+    send(&mut gui_b, Frame::attach(1, Some(b.as_u64())));
     send(&mut gui_b, Frame::Credit(64 * 1024));
 
     let start = Instant::now();
@@ -738,4 +636,142 @@ fn t_graph_flood_on_one_leaf_does_not_drop_bytes_on_the_other() {
     );
 
     let _ = std::fs::remove_file(&path);
+}
+
+/// T-ATTACH-PROTO. Required mutation: `ignore_protocol_version`.
+#[test]
+fn t_attach_protocol_mismatch_is_refused() {
+    let sock = temp_sock("proto");
+    let mut daemon = Daemon::bind(&sock, "/bin/sleep", &["30"], Winsize::default()).expect("bind");
+    let mut gui = UnixStream::connect(&sock).expect("connect");
+    gui.set_nonblocking(true).ok();
+    send(
+        &mut gui,
+        Frame::Attach {
+            generation: 1,
+            session_id: None,
+            protocol: 99,
+            observe: false,
+        },
+    );
+    let _ = pump(&mut daemon, Duration::from_millis(80));
+    let mut dec = Decoder::new();
+    let frames = recv_frames(&mut gui, &mut dec, Duration::from_millis(200));
+    assert!(
+        frames.iter().any(|f| matches!(
+            f,
+            Frame::Refused {
+                reason: RefuseReason::ProtocolMismatch
+            }
+        )),
+        "mismatch was not refused, got {frames:?}"
+    );
+}
+
+/// T-GRAPH-NESTED. Required mutation: `skip_nested_guard`.
+#[test]
+fn t_nested_rilld_bind_is_refused() {
+    std::env::set_var("RILL_INSIDE", "1");
+    let sock = temp_sock("nested");
+    let err = Daemon::bind(&sock, "/bin/sleep", &["30"], Winsize::default());
+    std::env::remove_var("RILL_INSIDE");
+    assert!(
+        matches!(err, Err(rilld::Error::NestedLaunch)),
+        "nested bind succeeded"
+    );
+}
+
+/// T-GRAPH-OBSERVE. Observer gets DATA; must not write the PTY.
+/// Required mutation: `allow_observer_write`.
+#[test]
+fn t_observe_attach_receives_data_and_cannot_write() {
+    let sock = temp_sock("observe");
+    let marker = format!("RILL-OBS-{}", std::process::id());
+    let path = PathBuf::from(format!("/tmp/{marker}"));
+    std::fs::write(&path, &marker).expect("fixture");
+    let mut daemon = Daemon::bind(
+        &sock,
+        "/bin/sh",
+        &["-c", &format!("cat {}; exec cat", path.display())],
+        Winsize::default(),
+    )
+    .expect("bind");
+    let id = daemon.default_id().as_u64();
+
+    let mut writer = UnixStream::connect(&sock).expect("w");
+    writer.set_nonblocking(true).ok();
+    send(&mut writer, Frame::attach(1, Some(id)));
+    send(&mut writer, Frame::Credit(64 * 1024));
+    let _ = pump(&mut daemon, Duration::from_millis(200));
+
+    let mut observer = UnixStream::connect(&sock).expect("o");
+    observer.set_nonblocking(true).ok();
+    send(
+        &mut observer,
+        Frame::Attach {
+            generation: 2,
+            session_id: Some(id),
+            protocol: rill_attach::PROTOCOL_VERSION,
+            observe: true,
+        },
+    );
+    send(&mut observer, Frame::Credit(64 * 1024));
+    let _ = pump(&mut daemon, Duration::from_millis(200));
+
+    send(
+        &mut observer,
+        Frame::Data(b"SHOULD-NOT-REACH-PTY\n".to_vec()),
+    );
+    let _ = pump(&mut daemon, Duration::from_millis(80));
+
+    let mut dec = Decoder::new();
+    let frames = recv_frames(&mut observer, &mut dec, Duration::from_millis(300));
+    let mut bytes = Vec::new();
+    for f in &frames {
+        if let Frame::Data(b) = f {
+            bytes.extend_from_slice(b);
+        }
+    }
+    let text = String::from_utf8_lossy(&bytes);
+    assert!(
+        text.contains(&marker),
+        "observer did not see child output: {text:?}"
+    );
+    assert!(
+        !text.contains("SHOULD-NOT-REACH-PTY"),
+        "observer DATA was written through to the PTY"
+    );
+    let _ = std::fs::remove_file(&path);
+}
+
+/// T-GRAPH-KILL-N. Dropping the daemon must not kill either child.
+#[test]
+fn t_graph_dropping_the_daemon_does_not_kill_either_child() {
+    let sock = temp_sock("drop-n");
+    let mut daemon = Daemon::bind(
+        &sock,
+        "/bin/sh",
+        &["-c", "exec sleep 60"],
+        Winsize::default(),
+    )
+    .expect("bind");
+    let a = daemon.child_pid();
+    let b = daemon
+        .spawn_leaf("/bin/sh", &["-c", "exec sleep 60"], Winsize::default())
+        .expect("B");
+    let pid_b = daemon.child_pid_of(b).expect("B pid");
+    drop(daemon);
+    std::thread::sleep(Duration::from_millis(80));
+    assert!(
+        unsafe { libc::kill(a as i32, 0) } == 0,
+        "dropping daemon killed default child {a}"
+    );
+    assert!(
+        unsafe { libc::kill(pid_b as i32, 0) } == 0,
+        "dropping daemon killed leaf B {pid_b}"
+    );
+    unsafe {
+        libc::kill(a as i32, libc::SIGKILL);
+        libc::kill(pid_b as i32, libc::SIGKILL);
+    }
 }

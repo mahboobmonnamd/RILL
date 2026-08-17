@@ -62,6 +62,10 @@ jobs:
           red T-GRAPH-ISOLATE single_session t_graph_histories_do_not_mix
           red T-GRAPH-ATTACH single_session t_graph_attach_to_a_second_id_is_accepted
           red T-GRAPH-TERMINATE terminate_all_leaves t_graph_terminate_one_leaf_leaves_the_other_alive
+          red T-GRAPH-DELIVERY always_pending t_graph_input_write_is_dispatched
+          red T-GRAPH-EVENTS duplicate_event_ids t_graph_event_ids_are_unique_and_terminate_is_idempotent
+          red T-GRAPH-LAYOUT omit_second_leaf t_graph_layout_snapshot_names_every_live_leaf
+          red T-GRAPH-EPHEMERAL ignore_ephemeral t_graph_ephemeral_drop_terminates_the_child
 
   fuzz-codec:
     runs-on: ubuntu-latest

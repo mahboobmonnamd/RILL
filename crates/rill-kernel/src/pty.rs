@@ -69,7 +69,8 @@ impl Pty {
             .stdin(Stdio::from(slave_in))
             .stdout(Stdio::from(slave_out))
             .stderr(Stdio::from(slave_err))
-            .env("TERM", "xterm-256color");
+            .env("TERM", "xterm-256color")
+            .env("RILL_INSIDE", "1");
         // SAFETY: only async-signal-safe calls between fork and exec.
         unsafe {
             cmd.pre_exec(|| {

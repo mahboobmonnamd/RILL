@@ -25,6 +25,14 @@ pub enum IoEvent {
 
 const JOURNAL_CAP: usize = 4096;
 
+/// ADR 0015 D3. Downstream of the PTY write, not of a copied input buffer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InputDelivery {
+    Pending,
+    Dispatched,
+    Unknown,
+}
+
 pub struct Session {
     pty: Pty,
     ring: ByteRing,
@@ -42,6 +50,9 @@ pub struct Session {
     seq: u64,
     size: Winsize,
     last_cwd: Option<PathBuf>,
+    last_delivery: InputDelivery,
+    observers: u32,
+    terminated: bool,
 }
 
 impl Session {
@@ -76,6 +87,9 @@ impl Session {
             seq: 0,
             size,
             last_cwd: None,
+            last_delivery: InputDelivery::Unknown,
+            observers: 0,
+            terminated: false,
         })
     }
 
@@ -145,7 +159,15 @@ impl Session {
     }
 
     pub fn terminate(&mut self) -> Result<(), Error> {
+        if self.terminated {
+            return Ok(());
+        }
+        self.terminated = true;
         self.pty.terminate()
+    }
+
+    pub fn is_terminated(&self) -> bool {
+        self.terminated
     }
 
     /// Foreground process cwd (ADR 0013). Cold. Not an attach frame.
@@ -184,6 +206,26 @@ impl Session {
         self.last_cwd.as_deref()
     }
 
+    pub fn last_delivery(&self) -> InputDelivery {
+        self.last_delivery
+    }
+
+    pub fn size(&self) -> Winsize {
+        self.size
+    }
+
+    pub fn release_observer(&mut self) {
+        self.observers = self.observers.saturating_sub(1);
+    }
+
+    fn has_listeners(&self) -> bool {
+        self.attach_generation.is_some() || self.observers > 0
+    }
+
+    fn ephemeral() -> bool {
+        std::env::var("RILL_EPHEMERAL").as_deref() == Ok("1")
+    }
+
     // ---------------------------------------------------------------- outbound
 
     pub fn enqueue_outbound(&mut self, frame: Frame) {
@@ -209,21 +251,24 @@ impl Session {
 
     // ---------------------------------------------------------------- lifecycle
 
-    pub fn poll_child(&mut self) -> Result<(), Error> {
+    /// Returns `true` when the child is observed to have exited on this call.
+    pub fn poll_child(&mut self) -> Result<bool, Error> {
         if self.child_exit.is_some() {
-            return Ok(());
+            return Ok(false);
         }
         if let Some(status) = self.pty.try_wait()? {
             self.child_exit = Some(status);
             self.record(IoEvent::ChildExit(status));
             // Only queue for delivery if someone is listening. If not, the
             // status is retained and replayed on the next ATTACH (§6).
-            if self.attach_generation.is_some() {
+            // Observers count (ADR 0015 D7).
+            if self.has_listeners() {
                 self.outbound.push_back(Frame::Exit { status });
                 self.exit_delivered = true;
             }
+            return Ok(true);
         }
-        Ok(())
+        Ok(false)
     }
 
     /// Detach must not destroy a pending `EXIT`.
@@ -236,6 +281,15 @@ impl Session {
     pub fn detach(&mut self) {
         self.attach_generation = None;
         self.credit = 0;
+
+        if Self::ephemeral() {
+            let _ = self.pty.terminate();
+        }
+
+        if !self.pending_input.is_empty() {
+            self.last_delivery = InputDelivery::Unknown;
+            self.pending_input.clear();
+        }
 
         #[cfg(feature = "mutate")]
         if std::env::var("RILL_MUTATE").as_deref() == Ok("clear_outbound_on_detach") {
@@ -256,7 +310,13 @@ impl Session {
             Frame::Attach {
                 generation,
                 session_id: _,
+                protocol: _,
+                observe,
             } => {
+                if observe {
+                    self.observers = self.observers.saturating_add(1);
+                    return Ok(());
+                }
                 if self.attach_generation.is_some() {
                     self.outbound.push_back(Frame::Refused {
                         reason: RefuseReason::AlreadyAttached,
@@ -329,8 +389,13 @@ impl Session {
                 if self.child_exit.is_some() {
                     return Err(Error::Dead);
                 }
+                self.last_delivery = InputDelivery::Pending;
                 self.pending_input.push_back(bytes);
                 // Queue without writing so Resize can overtake (T-RESIZE mutation).
+                #[cfg(feature = "mutate")]
+                if std::env::var("RILL_MUTATE").as_deref() == Ok("always_pending") {
+                    return Ok(());
+                }
                 #[cfg(feature = "mutate")]
                 if std::env::var("RILL_MUTATE").as_deref() == Ok("resize_before_data") {
                     return Ok(());
@@ -346,6 +411,7 @@ impl Session {
         while let Some(buf) = self.pending_input.pop_front() {
             self.pty.write_all(&buf)?;
             self.record(IoEvent::PtyWrite(buf.len()));
+            self.last_delivery = InputDelivery::Dispatched;
         }
         Ok(())
     }
@@ -388,7 +454,7 @@ impl Session {
         self.credit -= got as u64;
         self.bytes_delivered = self.bytes_delivered.saturating_add(got as u64);
         self.record(IoEvent::PtyRead(got));
-        if self.attach_generation.is_some() {
+        if self.has_listeners() {
             self.outbound.push_back(Frame::Data(buf));
         }
         Ok(got)
@@ -401,5 +467,17 @@ impl Session {
         }
         let seq = self.seq;
         self.journal.push_back((seq, event));
+    }
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        #[cfg(feature = "mutate")]
+        if std::env::var("RILL_MUTATE").as_deref() == Ok("ignore_ephemeral") {
+            return;
+        }
+        if Self::ephemeral() {
+            let _ = self.pty.terminate();
+        }
     }
 }

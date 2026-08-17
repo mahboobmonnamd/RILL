@@ -2,7 +2,7 @@
 
 mod error;
 
-use rill_attach::{Decoder, Frame};
+use rill_attach::{Decoder, Frame, PROTOCOL_VERSION};
 use rill_chip0::Chip0;
 use rill_kernel::{Kernel, Session, SessionId, Winsize};
 use std::collections::VecDeque;
@@ -35,6 +35,7 @@ struct Client {
     /// the whole frame duplicated DATA (quality audit Q1).
     outbox: VecDeque<u8>,
     leaf: Option<SessionId>,
+    observe: bool,
 }
 
 impl Daemon {
@@ -44,6 +45,9 @@ impl Daemon {
         args: &[&str],
         size: Winsize,
     ) -> Result<Self, Error> {
+        if nested_launch_blocked() {
+            return Err(Error::NestedLaunch);
+        }
         let socket_path = socket_path.as_ref().to_path_buf();
         if let Some(dir) = socket_path.parent() {
             std::fs::create_dir_all(dir)?;
@@ -92,6 +96,16 @@ impl Daemon {
         if let Ok(path) = std::env::var("RILL_TEST_DAEMON_PIDFILE") {
             std::fs::write(path, format!("{}\n", std::process::id()))?;
         }
+        if std::env::var("RILL_TEST_SECOND_LEAF").is_ok() {
+            let second = kernel.spawn_leaf(shell, args, size)?;
+            let pid = kernel
+                .session(second)
+                .ok_or(rill_kernel::Error::UnknownSession)?
+                .child_pid();
+            if let Ok(path) = std::env::var("RILL_TEST_SECOND_PIDFILE") {
+                std::fs::write(path, format!("{pid}\n"))?;
+            }
+        }
         let chip = Chip0::new(size.cols, size.rows)?;
         Ok(Self {
             listener,
@@ -132,6 +146,10 @@ impl Daemon {
         self.leaf().map(Session::child_pid).unwrap_or(0)
     }
 
+    pub fn child_pid_of(&self, id: SessionId) -> Option<u32> {
+        self.kernel.session(id).map(Session::child_pid)
+    }
+
     pub fn socket_path(&self) -> &Path {
         &self.socket_path
     }
@@ -152,9 +170,7 @@ impl Daemon {
 
     pub fn step(&mut self, timeout_ms: i32) -> Result<(), Error> {
         for id in self.kernel.ids() {
-            if let Some(s) = self.kernel.session_mut(id) {
-                s.poll_child()?;
-            }
+            self.kernel.reap(id)?;
         }
         self.poll_io(timeout_ms)?;
         self.flush_outbound()?;
@@ -314,6 +330,7 @@ impl Daemon {
                     decoder: Decoder::new(),
                     outbox: VecDeque::new(),
                     leaf: None,
+                    observe: false,
                 });
             }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
@@ -356,7 +373,31 @@ impl Daemon {
             Frame::Attach {
                 generation,
                 session_id,
+                protocol,
+                observe,
             } => {
+                let proto_ok = {
+                    #[cfg(feature = "mutate")]
+                    {
+                        std::env::var("RILL_MUTATE").as_deref() == Ok("ignore_protocol_version")
+                            || protocol == PROTOCOL_VERSION
+                    }
+                    #[cfg(not(feature = "mutate"))]
+                    {
+                        protocol == PROTOCOL_VERSION
+                    }
+                };
+                if !proto_ok {
+                    if let Some(c) = self.clients.get_mut(idx) {
+                        c.outbox.extend(
+                            Frame::Refused {
+                                reason: rill_attach::RefuseReason::ProtocolMismatch,
+                            }
+                            .encode()?,
+                        );
+                    }
+                    return Ok(());
+                }
                 let id = match self.resolve_attach(session_id) {
                     Ok(id) => id,
                     Err(_) => {
@@ -373,7 +414,7 @@ impl Daemon {
                 };
                 let already = self.kernel.session(id).is_some_and(Session::attached);
                 let mine = self.clients.get(idx).and_then(|c| c.leaf) == Some(id);
-                if already && !mine {
+                if already && !mine && !observe {
                     if let Some(c) = self.clients.get_mut(idx) {
                         c.outbox.extend(
                             Frame::Refused {
@@ -389,19 +430,45 @@ impl Daemon {
                     Frame::Attach {
                         generation,
                         session_id,
+                        protocol,
+                        observe,
                     },
                 ) {
                     Ok(()) => {}
                     Err(rill_kernel::Error::Dead) => {}
                     Err(e) => return Err(e.into()),
                 }
-                if self.kernel.session(id).is_some_and(Session::attached) {
+                if observe || self.kernel.session(id).is_some_and(Session::attached) {
                     if let Some(c) = self.clients.get_mut(idx) {
                         c.leaf = Some(id);
+                        c.observe = observe;
+                    }
+                    if observe {
+                        if let Some(s) = self.kernel.session(id) {
+                            let hist = s.history();
+                            if !hist.is_empty() {
+                                if let Some(c) = self.clients.get_mut(idx) {
+                                    c.outbox.extend(Frame::Data(hist).encode()?);
+                                }
+                            }
+                        }
                     }
                 }
             }
             other => {
+                let observe = self.clients.get(idx).is_some_and(|c| c.observe);
+                if observe && matches!(other, Frame::Data(_)) {
+                    #[cfg(feature = "mutate")]
+                    if std::env::var("RILL_MUTATE").as_deref() == Ok("allow_observer_write") {
+                        // fall through — mutation must turn T-GRAPH-OBSERVE red
+                    } else {
+                        return Ok(());
+                    }
+                    #[cfg(not(feature = "mutate"))]
+                    {
+                        return Ok(());
+                    }
+                }
                 let id = self
                     .clients
                     .get(idx)
@@ -422,9 +489,14 @@ impl Daemon {
             return;
         }
         let leaf = self.clients[idx].leaf;
+        let observe = self.clients[idx].observe;
         if let Some(id) = leaf {
             if let Some(s) = self.kernel.session_mut(id) {
-                s.detach();
+                if observe {
+                    s.release_observer();
+                } else {
+                    s.detach();
+                }
             }
         }
         self.clients.remove(idx);
@@ -451,18 +523,25 @@ impl Daemon {
             }
         }
 
+        let mut pending: std::collections::HashMap<SessionId, Vec<Frame>> =
+            std::collections::HashMap::new();
+        for id in &claimed {
+            if pending.contains_key(id) {
+                continue;
+            }
+            let mut frames = Vec::new();
+            if let Some(session) = self.kernel.session_mut(*id) {
+                while let Some(f) = session.pop_outbound() {
+                    frames.push(f);
+                }
+            }
+            pending.insert(*id, frames);
+        }
+
         let mut drop_idx = None;
         for i in 0..self.clients.len() {
             if let Some(id) = self.clients[i].leaf {
-                let frames = if let Some(session) = self.kernel.session_mut(id) {
-                    let mut frames = Vec::new();
-                    while let Some(f) = session.pop_outbound() {
-                        frames.push(f);
-                    }
-                    frames
-                } else {
-                    Vec::new()
-                };
+                let frames = pending.get(&id).cloned().unwrap_or_default();
                 #[cfg(feature = "mutate")]
                 if std::env::var("RILL_MUTATE").as_deref() == Ok("replay_full_frame") {
                     let client = &mut self.clients[i];
@@ -539,6 +618,16 @@ pub fn default_socket() -> PathBuf {
 
 pub fn default_shell() -> String {
     std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into())
+}
+
+/// ADR 0015 D2. Mutation `skip_nested_guard` must turn the gate red.
+pub fn nested_launch_blocked() -> bool {
+    #[cfg(feature = "mutate")]
+    if std::env::var("RILL_MUTATE").as_deref() == Ok("skip_nested_guard") {
+        return false;
+    }
+    std::env::var("RILL_INSIDE").as_deref() == Ok("1")
+        && std::env::var("RILL_ALLOW_NESTED").as_deref() != Ok("1")
 }
 
 /// Drive the daemon for a bounded time. Used by named tests.

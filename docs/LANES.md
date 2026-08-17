@@ -3,7 +3,8 @@
 Five people can work without sharing a paste of another repository. Contracts
 are the files in `docs/`. Spike 0 is Proven
 ([ADR 0010](adr/0010-spike-0-closes.md)). Milestone 1 first slice is Proven
-([ADR 0014](adr/0014-m1-first-slice-closes.md)). Chip 1 isolated crate is M4
+([ADR 0014](adr/0014-m1-first-slice-closes.md), persist remainder
+[ADR 0015](adr/0015-m1-persist-remainder.md)). Chip 1 isolated crate is M4
 ([ADR 0012](adr/0012-chip1-isolated-vt.md), [M4-HANDOFF](M4-HANDOFF.md),
 [#6](https://github.com/mahboobmonnamd/RILL/issues/6)). Merge of chrome must
 not hide a later NFR miss. Chrome is M2. Chip 1 is not the live chip until M7.

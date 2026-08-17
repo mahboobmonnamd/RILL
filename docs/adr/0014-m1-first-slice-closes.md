@@ -6,9 +6,10 @@
 - **Requires:** [ADR 0010](0010-spike-0-closes.md) (Spike 0 Proven),
   [ADR 0011](0011-session-graph.md) (session graph). Presenter remains
   [ADR 0009](0009-direct-to-display-echo.md).
+- **Amended by:** [ADR 0015](0015-m1-persist-remainder.md) (persist remainder on M1)
 - **Does not authorize:** chrome, Blocks, agents, Chip 1 as the live chip,
-  JSON on the warm path, a second T-NFR instrument, packaged N-leaf persist,
-  implementing inventory `F-*` rows from another catalog.
+  JSON on the warm path, a second T-NFR instrument, `SCM_RIGHTS` of the PTY
+  master. Packaged N-leaf persist and inventory persist rows are ADR 0015.
 
 ## Context
 
@@ -40,35 +41,36 @@ cite [#30](https://github.com/mahboobmonnamd/RILL/pull/30) and
 names into `fast.yml` (kernel, no Zig) and `validate-spike0.sh` (including
 rilld) so D8 keeps holding.
 
-### D2 — Packaged N-leaf persist is not this close
+### D2 — Packaged N-leaf persist is ADR 0015
 
-SPEC-GRAPH §4 stands. The window still sends 8-byte ATTACH to the default leaf
-(ADR 0011 D5). Packaged SIGKILL of N live children is
-[#255](https://github.com/mahboobmonnamd/RILL/issues/255), M2, blocked until a
-host issue names a second leaf. Socket-only tests do not close it.
+Superseded by [ADR 0015](0015-m1-persist-remainder.md) D8. The window still
+sends 8-byte ATTACH to the default leaf (ADR 0011 D5). A second live child at
+daemon bind (`RILL_TEST_SECOND_LEAF`) is how packaged T-KILL names N pids.
+Socket-only tests still do not close it.
 
-### D3 — Catalog rows on this milestone are classified, not built
+### D3 — Catalog rows: first-slice classification, persist remainder in 0015
+
+The first-slice close classified rows. [ADR 0015](0015-m1-persist-remainder.md)
+keeps the persist remainder on M1 and names tests. D9 of that ADR is the
+honest refuse for agents, binary-replace handoff, and tab chrome.
 
 | Issue | Catalog | This tree |
 |---|---|---|
 | [#68](https://github.com/mahboobmonnamd/RILL/issues/68) F-031 Reattach same IDs | workspace/tab identity | **Done for a leaf:** stable `SessionId`, 16-byte ATTACH, T-KILL reopen. Tabs/workspace chrome is M2. |
-| [#69](https://github.com/mahboobmonnamd/RILL/issues/69) F-032 Event replay | stable event IDs | **Later.** Needs an orchestration ADR. Not the attach typing path. |
+| [#69](https://github.com/mahboobmonnamd/RILL/issues/69) F-032 Event replay | stable event IDs | **ADR 0015 D4.** `GraphEvent` monotonic ids; terminate of a dead leaf is a no-op. |
 | [#71](https://github.com/mahboobmonnamd/RILL/issues/71) F-034 Runtime crash honesty | no auto-respawn | **Done:** T-EXIT. A dead child stays dead. Window hollow cursor is [#17](https://github.com/mahboobmonnamd/RILL/issues/17). |
-| [#72](https://github.com/mahboobmonnamd/RILL/issues/72) F-035 Layout snapshot | restore shape/focus | **M2 chrome.** Cwd tap is ADR 0013, not a layout file. |
+| [#72](https://github.com/mahboobmonnamd/RILL/issues/72) F-035 Layout snapshot | restore shape/focus | **ADR 0015 D6** kernel snapshot (ids, winsize, pid, cwd). Tab chrome is M2. |
 | [#73](https://github.com/mahboobmonnamd/RILL/issues/73) F-036 Block/scrollback restore | restore recent output | **Done for bytes:** kernel ring + T-RESYNC. Blocks are M6 ([#22](https://github.com/mahboobmonnamd/RILL/issues/22)). |
-| [#74](https://github.com/mahboobmonnamd/RILL/issues/74) F-037 Agent session resume | relaunch Claude/Codex | **M3.** Agents are not M1. |
-| [#75](https://github.com/mahboobmonnamd/RILL/issues/75) F-038 Live server handoff | transfer PTYs on binary replace | **Out of wedge** (ADR 0001 §7). Needs its own ADR. |
-| [#77](https://github.com/mahboobmonnamd/RILL/issues/77) F-040 Input delivery states | pending → dispatched | **Later attach ADR.** Warm path is still DATA bytes. |
-| [#78](https://github.com/mahboobmonnamd/RILL/issues/78) F-041 Multi-client attach | observe / takeover | **Forbidden until an ADR amends FR-ONE.** ADR 0011 D3 is one attach per leaf. |
+| [#74](https://github.com/mahboobmonnamd/RILL/issues/74) F-037 Agent session resume | relaunch Claude/Codex | **ADR 0015 D9.** `SessionId` is the resume handle. No provider relaunch. |
+| [#75](https://github.com/mahboobmonnamd/RILL/issues/75) F-038 Live server handoff | transfer PTYs on binary replace | **ADR 0015 D9.** Second `rilld` on a live socket is `AlreadyRunning`. No `SCM_RIGHTS`. |
+| [#77](https://github.com/mahboobmonnamd/RILL/issues/77) F-040 Input delivery states | pending → dispatched | **ADR 0015 D3.** `InputDelivery` on the session, not a warm tag. |
+| [#78](https://github.com/mahboobmonnamd/RILL/issues/78) F-041 Multi-client attach | observe / takeover | **ADR 0015 D7.** Observe is not a second writer. Takeover is still refused. |
 | [#79](https://github.com/mahboobmonnamd/RILL/issues/79) F-042 Quit vs detach | GUI close detaches | **Done:** T-KILL. Stopping `rilld` is not a warn UI (M2). |
-| [#80](https://github.com/mahboobmonnamd/RILL/issues/80) F-043 Nested-launch guard | block rill-in-rill | **Later.** Needs an ADR. |
-| [#81](https://github.com/mahboobmonnamd/RILL/issues/81) F-044 Protocol version handshake | mismatch visible | **Later attach ADR.** |
-| [#82](https://github.com/mahboobmonnamd/RILL/issues/82) F-045 Single-process escape hatch | `--no-session` debug | **Later.** |
-| [#83](https://github.com/mahboobmonnamd/RILL/issues/83) F-046 Idle agent hibernation | SIGTERM restorable agents | **M5.** Never arbitrary shells. |
+| [#80](https://github.com/mahboobmonnamd/RILL/issues/80) F-043 Nested-launch guard | block rill-in-rill | **ADR 0015 D2.** `RILL_INSIDE=1` refuses bind unless `RILL_ALLOW_NESTED=1`. |
+| [#81](https://github.com/mahboobmonnamd/RILL/issues/81) F-044 Protocol version handshake | mismatch visible | **ADR 0015 D1.** 18-byte ATTACH; `REFUSED{ProtocolMismatch}`. |
+| [#82](https://github.com/mahboobmonnamd/RILL/issues/82) F-045 Single-process escape hatch | `--no-session` debug | **ADR 0015 D5.** `RILL_EPHEMERAL=1` Drop terminates that child. |
+| [#83](https://github.com/mahboobmonnamd/RILL/issues/83) F-046 Idle agent hibernation | SIGTERM restorable agents | **ADR 0015 D9.** MUST NOT SIGTERM user shells. |
 | [#84](https://github.com/mahboobmonnamd/RILL/issues/84) F-047 Move pane without new PTY | move to another tab | **Done for identity:** `SessionId` is not a GUI index (ADR 0011 D1). Moving chrome is M2. |
-
-Unblock for a **Later** row is: Accepted ADR in this tree → spec → named tests.
-The catalog row itself is not that ADR.
 
 ### D4 — BGRA colour-emoji atlas is not M1
 
@@ -83,15 +85,14 @@ Unchanged from ADR 0011 D6 and ADR 0002 D11. Do not re-dispatch hosted
 ## Consequences
 
 - TEST-CASES marks T-GRAPH-* **Proven**. SPEC-GRAPH first slice is closed.
-- Inventory rows in D3 close or leave M1 according to that table.
+- Persist remainder is [ADR 0015](0015-m1-persist-remainder.md), still M1.
 - M2 may take chrome. Chip 1 stays isolated until M7.
 
 ## Rejected alternatives
 
-- **Implement the fifteen catalog rows to close the milestone.** Rejected:
-  agents, tabs, takeover, and daemon handoff are not the first slice, and
-  several contradict Accepted ADRs.
-- **Wait for packaged N-leaf persist.** Rejected: SPEC-GRAPH §4 already named
-  it later; the host has no second leaf.
-- **Leave the catalog on M1 as open work.** Rejected: they block a close that
-  the kernel already shipped.
+- **Postpone persist catalog rows to later milestones so M1 can close on
+  paper.** Rejected by ADR 0015: closing the milestone does not move the work.
+- **Implement Warp agents, tab chrome, or PTY-master handoff as M1.** Rejected:
+  those contradict ADR 0001 and ADR 0011. ADR 0015 D9 names the refuse.
+- **Wait for packaged N-leaf persist before the first-slice close.** The kernel
+  map was already Proven; N-leaf T-KILL is ADR 0015 D8 on the same milestone.

@@ -123,6 +123,14 @@ run_gate "T-GRAPH-ATTACH-B" cargo test -p rill-kernel --offline t_graph_attach_t
 run_gate "T-GRAPH-TERMINATE" cargo test -p rill-kernel --offline t_graph_terminate_one_leaf_leaves_the_other_alive -- --nocapture
 run_gate "T-ATTACH-NAMED" cargo test -p rilld       --offline t_attach_named_id -- --test-threads=1 --nocapture
 run_gate "T-GRAPH-FLOOD"  cargo test -p rilld       --offline t_graph_flood -- --test-threads=1 --nocapture
+run_gate "T-ATTACH-PROTO" cargo test -p rilld       --offline t_attach_protocol_mismatch -- --test-threads=1 --nocapture
+run_gate "T-GRAPH-NESTED" cargo test -p rilld       --offline t_nested_rilld_bind -- --test-threads=1 --nocapture
+run_gate "T-GRAPH-DELIVERY" cargo test -p rill-kernel --offline t_graph_input_write_is_dispatched -- --nocapture
+run_gate "T-GRAPH-EVENTS" cargo test -p rill-kernel --offline t_graph_event_ids_are_unique -- --nocapture
+run_gate "T-GRAPH-LAYOUT" cargo test -p rill-kernel --offline t_graph_layout_snapshot -- --nocapture
+run_gate "T-GRAPH-EPHEMERAL" cargo test -p rill-kernel --offline t_graph_ephemeral_drop -- --test-threads=1 --nocapture
+run_gate "T-GRAPH-OBSERVE" cargo test -p rilld       --offline t_observe_attach -- --test-threads=1 --nocapture
+run_gate "T-GRAPH-KILL-N" cargo test -p rilld       --offline t_graph_dropping_the_daemon -- --test-threads=1 --nocapture
 
 # ---------------------------------------------------------------------- package
 echo "== package =="
@@ -248,6 +256,20 @@ if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
     cargo test -p rilld --offline --features mutate t_attach_named_id -- --test-threads=1
   run_control "T-GRAPH-FLOOD" starve_other_leaves \
     cargo test -p rilld --offline --features mutate t_graph_flood -- --test-threads=1
+  run_control "T-ATTACH-PROTO" ignore_protocol_version \
+    cargo test -p rilld --offline --features mutate t_attach_protocol_mismatch -- --test-threads=1
+  run_control "T-GRAPH-NESTED" skip_nested_guard \
+    cargo test -p rilld --offline --features mutate t_nested_rilld_bind -- --test-threads=1
+  run_control "T-GRAPH-DELIVERY" always_pending \
+    cargo test -p rill-kernel --offline --features mutate t_graph_input_write_is_dispatched
+  run_control "T-GRAPH-EVENTS" duplicate_event_ids \
+    cargo test -p rill-kernel --offline --features mutate t_graph_event_ids_are_unique
+  run_control "T-GRAPH-LAYOUT" omit_second_leaf \
+    cargo test -p rill-kernel --offline --features mutate t_graph_layout_snapshot
+  run_control "T-GRAPH-EPHEMERAL" ignore_ephemeral \
+    cargo test -p rill-kernel --offline --features mutate t_graph_ephemeral_drop -- --test-threads=1
+  run_control "T-GRAPH-OBSERVE" allow_observer_write \
+    cargo test -p rilld --offline --features mutate t_observe_attach -- --test-threads=1
   run_control "T-PARTIAL-WRITE" replay_full_frame \
     cargo test -p rilld --offline --features mutate t_outbound_partial_write -- --test-threads=1
   run_control "T-ATTACHED-POLL" idle_poll_while_attached \

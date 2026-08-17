@@ -6,6 +6,10 @@
 use std::fmt;
 
 pub const MAX_FRAME: usize = 4 * 1024 * 1024;
+/// Attach protocol this tree speaks (ADR 0015 D1). 8- and 16-byte payloads imply 1.
+pub const PROTOCOL_VERSION: u8 = 1;
+/// `flags` bit 0: observe (ADR 0015 D7). Not a second writer.
+pub const ATTACH_FLAG_OBSERVE: u8 = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -37,6 +41,7 @@ impl Tag {
 pub enum RefuseReason {
     AlreadyAttached = 1,
     Invalid = 2,
+    ProtocolMismatch = 3,
 }
 
 impl RefuseReason {
@@ -44,6 +49,7 @@ impl RefuseReason {
         match v {
             1 => Ok(Self::AlreadyAttached),
             2 => Ok(Self::Invalid),
+            3 => Ok(Self::ProtocolMismatch),
             other => Err(Error::UnknownRefuse(other)),
         }
     }
@@ -67,6 +73,10 @@ pub enum Frame {
         /// `None` is the Spike 0 8-byte payload: attach the daemon's default
         /// leaf. `Some` is a kernel `SessionId` as `u64` (SPEC-GRAPH §2).
         session_id: Option<u64>,
+        /// 8/16-byte payloads imply [`PROTOCOL_VERSION`].
+        protocol: u8,
+        /// ADR 0015 D7. Writer claim is unchanged.
+        observe: bool,
     },
     Refused {
         reason: RefuseReason,
@@ -95,6 +105,16 @@ impl Frame {
         matches!(self, Self::Data(_) | Self::Credit(_))
     }
 
+    /// Spike 0 / named-id writer attach (protocol 1, not observe).
+    pub fn attach(generation: u64, session_id: Option<u64>) -> Self {
+        Self::Attach {
+            generation,
+            session_id,
+            protocol: PROTOCOL_VERSION,
+            observe: false,
+        }
+    }
+
     pub fn encode(&self) -> Result<Vec<u8>, Error> {
         let payload = match self {
             Self::Data(b) => b.clone(),
@@ -116,10 +136,21 @@ impl Frame {
             Self::Attach {
                 generation,
                 session_id,
+                protocol,
+                observe,
             } => {
                 let mut p = generation.to_le_bytes().to_vec();
+                let extra = *protocol != PROTOCOL_VERSION || *observe;
                 if let Some(id) = session_id {
                     p.extend_from_slice(&id.to_le_bytes());
+                    if extra {
+                        p.push(*protocol);
+                        p.push(if *observe { ATTACH_FLAG_OBSERVE } else { 0 });
+                    }
+                } else if extra {
+                    p.extend_from_slice(&0u64.to_le_bytes());
+                    p.push(*protocol);
+                    p.push(if *observe { ATTACH_FLAG_OBSERVE } else { 0 });
                 }
                 p
             }
@@ -161,6 +192,8 @@ impl Frame {
                 8 => Ok(Self::Attach {
                     generation: read_u64(payload)?,
                     session_id: None,
+                    protocol: PROTOCOL_VERSION,
+                    observe: false,
                 }),
                 16 => {
                     let generation =
@@ -171,6 +204,23 @@ impl Frame {
                     Ok(Self::Attach {
                         generation,
                         session_id: Some(session_id),
+                        protocol: PROTOCOL_VERSION,
+                        observe: false,
+                    })
+                }
+                18 => {
+                    let generation =
+                        u64::from_le_bytes(payload[0..8].try_into().map_err(|_| Error::Truncated)?);
+                    let raw_id = u64::from_le_bytes(
+                        payload[8..16].try_into().map_err(|_| Error::Truncated)?,
+                    );
+                    let protocol = payload[16];
+                    let observe = payload[17] & ATTACH_FLAG_OBSERVE != 0;
+                    Ok(Self::Attach {
+                        generation,
+                        session_id: if raw_id == 0 { None } else { Some(raw_id) },
+                        protocol,
+                        observe,
                     })
                 }
                 _ => Err(Error::Truncated),
@@ -339,22 +389,11 @@ mod tests {
 
     #[test]
     fn sock_stream_partial_reads_reassemble() {
-        let full = Frame::Attach {
-            generation: 7,
-            session_id: None,
-        }
-        .encode()
-        .expect("encode");
+        let full = Frame::attach(7, None).encode().expect("encode");
         let mut d = Decoder::new();
         assert!(d.push(&full[..3]).expect("p1").is_empty());
         let rest = d.push(&full[3..]).expect("p2");
-        assert_eq!(
-            rest,
-            vec![Frame::Attach {
-                generation: 7,
-                session_id: None
-            }]
-        );
+        assert_eq!(rest, vec![Frame::attach(7, None)]);
     }
 
     #[test]
@@ -369,11 +408,7 @@ mod tests {
     fn only_data_and_credit_are_warm_path_frames() {
         assert!(Frame::Data(vec![1]).is_warm_path());
         assert!(Frame::Credit(1).is_warm_path());
-        assert!(!Frame::Attach {
-            generation: 1,
-            session_id: None
-        }
-        .is_warm_path());
+        assert!(!Frame::attach(1, None).is_warm_path());
         assert!(!Frame::Exit { status: 0 }.is_warm_path());
         assert!(!Frame::Resize {
             cols: 1,
@@ -427,12 +462,7 @@ mod tests {
 
     #[test]
     fn t_attach_eight_byte_payload_is_generation_only() {
-        let bytes = Frame::Attach {
-            generation: 9,
-            session_id: None,
-        }
-        .encode()
-        .expect("encode");
+        let bytes = Frame::attach(9, None).encode().expect("encode");
         assert_eq!(
             &bytes[1..5],
             &8u32.to_le_bytes(),
@@ -441,21 +471,13 @@ mod tests {
         let mut d = Decoder::new();
         assert_eq!(
             d.push(&bytes).expect("decode"),
-            vec![Frame::Attach {
-                generation: 9,
-                session_id: None
-            }]
+            vec![Frame::attach(9, None)]
         );
     }
 
     #[test]
     fn t_attach_sixteen_byte_payload_names_a_session_id() {
-        let bytes = Frame::Attach {
-            generation: 3,
-            session_id: Some(42),
-        }
-        .encode()
-        .expect("encode");
+        let bytes = Frame::attach(3, Some(42)).encode().expect("encode");
         assert_eq!(
             &bytes[1..5],
             &16u32.to_le_bytes(),
@@ -464,10 +486,21 @@ mod tests {
         let mut d = Decoder::new();
         assert_eq!(
             d.push(&bytes).expect("decode"),
-            vec![Frame::Attach {
-                generation: 3,
-                session_id: Some(42)
-            }]
+            vec![Frame::attach(3, Some(42))]
         );
+    }
+
+    #[test]
+    fn t_attach_eighteen_byte_payload_carries_protocol_and_observe() {
+        let f = Frame::Attach {
+            generation: 4,
+            session_id: Some(7),
+            protocol: PROTOCOL_VERSION,
+            observe: true,
+        };
+        let bytes = f.encode().expect("encode");
+        assert_eq!(&bytes[1..5], &18u32.to_le_bytes());
+        let mut d = Decoder::new();
+        assert_eq!(d.push(&bytes).expect("decode"), vec![f]);
     }
 }
