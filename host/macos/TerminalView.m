@@ -460,8 +460,11 @@ typedef struct {
         return;
     }
     _heartbeatSeq += 1;
-    int fs = (self.window.styleMask & NSWindowStyleMaskFullScreen) ? 1 : 0;
-    NSView *content = self.window.contentView;
+    NSWindow *w = self.window;
+    int fs = (w && (w.styleMask & NSWindowStyleMaskFullScreen)) ? 1 : 0;
+    int vis = (w && w.isVisible) ? 1 : 0;
+    int key = (w && w.isKeyWindow) ? 1 : 0;
+    NSView *content = w.contentView;
     uint32_t chrome = 1;
     CGFloat left = 0, center = self.bounds.size.width, right = 0;
     NSView *split = content;
@@ -480,10 +483,11 @@ typedef struct {
         right = split.subviews[2].frame.size.width;
     }
     const char *first =
-        [self.window.firstResponder isKindOfClass:[TerminalView class]] ? "terminal" : "other";
+        [w.firstResponder isKindOfClass:[TerminalView class]] ? "terminal" : "other";
     NSString *line = [NSString
-        stringWithFormat:@"seq=%u fullscreen=%d chrome=%u left=%.0f center=%.0f right=%.0f first=%s\n",
-                         _heartbeatSeq, fs, chrome, left, center, right, first];
+        stringWithFormat:
+            @"seq=%u fullscreen=%d visible=%d key=%d chrome=%u left=%.0f center=%.0f right=%.0f first=%s\n",
+            _heartbeatSeq, fs, vis, key, chrome, left, center, right, first];
     [line writeToFile:@(path) atomically:YES encoding:NSUTF8StringEncoding error:NULL];
 }
 

@@ -34,6 +34,10 @@ typedef struct {
  * cell-position-specific sentinel (ADR 0003 D5, D6). */
 - (RillNfrReport)runNfrKeyWithMode:(RillNfrMode)mode count:(uint32_t)count;
 
+/* Measurement hook (SPEC-DISPLAY §8). Writes seq / fullscreen / visible / key
+ * from the live NSWindow when RILL_TEST_HEARTBEAT is set. */
+- (void)writeTestHeartbeat;
+
 @end
 
 #endif

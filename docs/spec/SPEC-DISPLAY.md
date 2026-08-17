@@ -5,12 +5,14 @@
 - **Authority:** [ADR 0003](../adr/0003-display-pipeline.md),
   [ADR 0009](../adr/0009-direct-to-display-echo.md),
   [ADR 0016](../adr/0016-exit-fullscreen-must-not-hang.md),
-  [ADR 0018](../adr/0018-three-pane-host-chrome.md) (M2 chrome; not a Spike 0 reopen)
+  [ADR 0018](../adr/0018-three-pane-host-chrome.md) (M2 chrome; not a Spike 0 reopen),
+  [ADR 0019](../adr/0019-dock-reopen-shows-window.md)
 - **Code:** `host/macos/`, `crates/rill-host`
 - **Gates:** T-NFR, T-SPAWN, T-KILL, T-RESIZE — **Proven**. T-FS-EXIT
   ([#257](https://github.com/mahboobmonnamd/RILL/issues/257)). Three-pane
   chrome is [SPEC-CHROME](SPEC-CHROME.md) / T-SPLIT
-  ([#260](https://github.com/mahboobmonnamd/RILL/issues/260)). §6 IME and §7
+  ([#260](https://github.com/mahboobmonnamd/RILL/issues/260)). T-DOCK-REOPEN
+  ([#262](https://github.com/mahboobmonnamd/RILL/issues/262)). §6 IME and §7
   window paint of EXIT are **later**, not a reopen of those gates.
 
 ## 1. Prohibitions
@@ -44,6 +46,13 @@
   MUST complete. The main thread MUST NOT wait forever on `nextDrawable` or
   the in-flight present semaphore (ADR 0016). The in-flight wait is bounded;
   a completed handler releases the semaphore if `presentedTime` never arrives.
+- Dock click of a running app MUST show the existing window (ADR 0019).
+  `NSApp` has a delegate. `applicationShouldHandleReopen:hasVisibleWindows:`
+  unhides, deminiaturizes if needed, and `makeKeyAndOrderFront:`s that
+  window. `hasVisibleWindows=NO` is not a reason to do nothing: after a
+  Space switch the window is often not on the active Space. Become-active
+  restores the same way when the window is not visible or not on the
+  active Space. One window; do not allocate a second. T-NFR is unchanged.
 - Present is echo-only `nextDrawable`, one in flight until `presentedTime`.
   A `CADisplayLink` supplies `targetTimestamp` and does not take a drawable.
   After `send_input`, the host may `poll` the attach socket for ≤2 ms and
