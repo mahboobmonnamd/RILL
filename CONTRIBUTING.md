@@ -16,8 +16,9 @@ A PR that implements without 1–3 is rejected.
 
 ## Tracker
 
-GitHub Issues and Milestones are the only work tracker. Spike 0 is Proven
-([ADR 0010](docs/adr/0010-spike-0-closes.md)). An issue is not a license to
+GitHub Issues and Milestones are the only work tracker. Do not add beads.
+Spike 0 is Proven ([ADR 0010](docs/adr/0010-spike-0-closes.md)). Chip 1
+handoff: [M4-HANDOFF](docs/M4-HANDOFF.md). An issue is not a license to
 hide a later NFR miss with chrome.
 
 Required on every issue:

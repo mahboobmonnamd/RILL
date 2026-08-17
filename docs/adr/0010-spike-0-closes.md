@@ -13,6 +13,8 @@
   [run 31993832263](https://github.com/mahboobmonnamd/RILL/actions/runs/31993832263)
   (`d20568e`, `spike0-20260817T041912Z.json`); packaged battery hid p95
   **7.011 ms**; `timer_pump` p95 **30.823 ms**.
+- **Amended by:** [ADR 0012](0012-chip1-isolated-vt.md) — Chip 1 stays isolated
+  until **M7** (live swap). M4 is the crate.
 
 ## Context
 

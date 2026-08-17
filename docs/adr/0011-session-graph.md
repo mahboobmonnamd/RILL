@@ -65,7 +65,8 @@ is still one `Session`.
 ### D6 — Do not hide NFR-KEY
 
 Adding a leaf MUST NOT put JSON, cell dumps, or extra control RPCs on the key
-path of an attached leaf. T-NFR is not re-cut. Chip 1 stays isolated until M4.
+path of an attached leaf. T-NFR is not re-cut. Chip 1 stays isolated until M7
+([ADR 0012](0012-chip1-isolated-vt.md)).
 
 ## Consequences
 

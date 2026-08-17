@@ -451,3 +451,92 @@ multiplex is a Lane B follow-on.
 
 **Required mutation.** Treating every attach as one session MUST turn the
 second-id clause red.
+
+---
+
+## Milestone 4 — Chip 1 isolated VT (Red)
+
+Authority: [ADR 0012](adr/0012-chip1-isolated-vt.md), [SPEC-CHIP1](spec/SPEC-CHIP1.md),
+[M4-HANDOFF](M4-HANDOFF.md), [#6](https://github.com/mahboobmonnamd/RILL/issues/6).
+These gates are **Red**. Named here first. No `vt-engine` behaviour until they
+exist and have been observed failing (ADR 0002 D2). Not live. Not T-NFR.
+
+Oracle for every gate: `snapshot()` (codepoint, cursor, attrs, `cells.len()`),
+or a second instance’s grid after resync emit. Never a copy of the input, never
+the `\x1b[2J` prefix the emit path prepends.
+
+### T-CHIP1-ASCII — printable lands in the POD grid
+
+**Oracle.** After `feed(b"Hello")`, row 0 cells 0..4 are `H e l l o`.
+
+**Procedure.** In-process Chip 1, 80×24 (or 40×5). No PTY.
+
+**Required mutation.** Drop `feed` / do not write cells.
+
+### T-CHIP1-BYTES — invalid UTF-8 reaches the parser
+
+**Oracle.** Same fixtures as T-BYTES. ASCII `A` present when the fixture
+contains `0x41`. High bytes produce a non-ASCII cell except CSI-high-param,
+which MAY consume the high byte without a cell. MUST NOT drop `>= 0x80`
+before parse.
+
+**Required mutation.** Drop bytes `>= 0x80` before parse.
+**Negative control.** `RILL_MUTATE=drop_high_bytes` (`feature = "mutate"`).
+
+### T-CHIP1-GRAPHEME — long cluster does not overrun
+
+**Oracle.** `e` + 40× U+0301: snapshot survives; `grapheme_truncated >= 1`
+or the base is still a visible cell. No panic.
+
+**Required mutation.** Fixed 8-slot stack buffer / silent drop of extras.
+
+### T-CHIP1-CRLF — CR LF moves the cursor
+
+**Oracle.** `A\r\nB` → `B` at row 1 col 0 (or documented equivalent).
+
+**Required mutation.** Ignore CR/LF.
+
+### T-CHIP1-CUP — CSI CUP positions the cursor
+
+**Oracle.** `ESC[5;10H` → cursor at 1-based (5,10), i.e. row 4 col 9
+0-based, documented in the test.
+
+**Required mutation.** Ignore CSI.
+
+### T-CHIP1-SGR — bold sets attrs bit 0
+
+**Oracle.** `ESC[1mX` → that cell `attrs & 1 != 0`.
+
+**Required mutation.** Ignore SGR.
+
+### T-CHIP1-ED — erase display clears to space
+
+**Oracle.** Feed text, `ESC[2J`, every cell codepoint is space `32`.
+
+**Required mutation.** ED is a no-op.
+
+### T-CHIP1-ALT — 1049 preserves primary
+
+**Oracle.** Feed A, `?1049h`, feed B, `?1049l` → A visible, B gone.
+
+**Required mutation.** Single buffer.
+
+### T-CHIP1-SIZE — snapshot is exactly cols×rows
+
+**Oracle.** After resize 40×5, `cells.len() == 200`.
+
+**Required mutation.** Unbounded history in the snapshot.
+
+### T-CHIP1-POD — PodCell is 16 bytes
+
+**Oracle.** `size_of::<PodCell>() == 16`. Lint `no-cell-strings`.
+
+**Required mutation.** Add a `String` field.
+
+### T-CHIP1-RESYNC — emit bytes reconstruct the grid
+
+**Oracle.** Feed a marker, emit, second instance feeds only the emit bytes,
+row 0 matches. MUST NOT assert on `\x1b[2J`.
+
+**Required mutation.** Emit empty or emit only the prefix.
+
