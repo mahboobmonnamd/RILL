@@ -2,11 +2,11 @@
 
 - **Status:** Accepted for the first slice — 2026-08-17
 - **Authority:** [ADR 0011](../adr/0011-session-graph.md)
-- **Issue:** [#16](https://github.com/mahboobmonnamd/RILL/issues/16), attach naming: [#28](https://github.com/mahboobmonnamd/RILL/issues/28), terminate: [#29](https://github.com/mahboobmonnamd/RILL/issues/29)
+- **Issue:** [#16](https://github.com/mahboobmonnamd/RILL/issues/16), attach naming: [#28](https://github.com/mahboobmonnamd/RILL/issues/28), terminate: [#29](https://github.com/mahboobmonnamd/RILL/issues/29), flood isolation: [#31](https://github.com/mahboobmonnamd/RILL/issues/31)
 - **Crates:** `crates/rill-kernel`, `crates/rilld`, `crates/rill-attach`
 - **Gates:** T-GRAPH-SPAWN, T-GRAPH-ISOLATE, T-GRAPH-ATTACH, T-GRAPH-TERMINATE,
-  T-ATTACH-NAMED. `Kernel` holds the map; default daemon start still spawns one
-  leaf. Packaged host still sends 8-byte ATTACH (default leaf).
+  T-ATTACH-NAMED, T-GRAPH-FLOOD. `Kernel` holds the map; default daemon start
+  still spawns one leaf. Packaged host still sends 8-byte ATTACH (default leaf).
 
 Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
@@ -40,6 +40,8 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 - Distinct ids MUST have distinct child pids while both are alive.
 - Bytes written by one child MUST NOT appear in the other leaf's `history()`.
 - `stalled_reads` and `credit` are per leaf.
+- A flood on one leaf MUST NOT drop bytes on another (PRD NFR-DROP when panes
+  exist).
 - `terminate(id)` MUST NOT kill any other live child.
 
 ## 4. Persist

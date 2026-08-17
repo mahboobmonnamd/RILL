@@ -479,6 +479,20 @@ second connection ATTACH to B is accepted while A stays attached.
 **Required mutation.** `RILL_MUTATE=ignore_session_id` (feature `mutate`):
 always attach the default leaf. The two-id socket tests MUST go red.
 
+### T-GRAPH-FLOOD — flood on A must not drop B
+
+**Oracle.** Leaf A runs `yes`. A's attach stream MUST contain that child's
+`y` output (if it does not, the flood never ran and the test fails as
+inconclusive). Leaf B's child `cat`s a unique fixture. Every byte of that
+marker MUST appear in B's attach stream. Downstream of the children, not of
+a buffer the test copied.
+
+**Procedure.** In-process `Daemon` over `AF_UNIX`. Two connections. Finite
+credit on A so the producer outruns the consumer. No GUI.
+
+**Required mutation.** `RILL_MUTATE=starve_other_leaves` (feature `mutate`):
+the daemon reads only the default leaf's PTY. B's marker MUST be absent.
+
 ---
 
 ## Milestone 6 — cwd tap (Red)
