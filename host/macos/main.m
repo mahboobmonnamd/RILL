@@ -157,12 +157,20 @@ int main(int argc, const char *argv[]) {
             return 1;
         }
         window.contentView = view;
+        window.delegate = view;
         [window makeFirstResponder:view];
         [window makeKeyAndOrderFront:nil];
         [NSApp activateIgnoringOtherApps:YES];
         [window toggleFullScreen:nil];
         if (!wait_until_fullscreen(window, 5.0)) {
             fprintf(stderr, "Rill: toggleFullScreen did not enter a Space\n");
+        }
+        if (getenv("RILL_TEST_EXIT_FULLSCREEN")) {
+            /* Same call as the green traffic-light (ADR 0016). */
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{
+                               [window toggleFullScreen:nil];
+                           });
         }
 
         if (nfr) {

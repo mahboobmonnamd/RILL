@@ -3,9 +3,11 @@
 - **Status:** Accepted for Spike 0 Proven clauses — 2026-08-17
   ([ADR 0010](../adr/0010-spike-0-closes.md)). Presenter: [ADR 0009](../adr/0009-direct-to-display-echo.md).
 - **Authority:** [ADR 0003](../adr/0003-display-pipeline.md),
-  [ADR 0009](../adr/0009-direct-to-display-echo.md)
+  [ADR 0009](../adr/0009-direct-to-display-echo.md),
+  [ADR 0016](../adr/0016-exit-fullscreen-must-not-hang.md)
 - **Code:** `host/macos/`, `crates/rill-host`
-- **Gates:** T-NFR, T-SPAWN, T-KILL, T-RESIZE — **Proven**. §6 IME and §7
+- **Gates:** T-NFR, T-SPAWN, T-KILL, T-RESIZE — **Proven**. T-FS-EXIT
+  ([#257](https://github.com/mahboobmonnamd/RILL/issues/257)). §6 IME and §7
   window paint of EXIT are **later**, not a reopen of those gates.
 
 ## 1. Prohibitions
@@ -35,6 +37,10 @@
 - The Spike 0 window is titled and enters a fullscreen Space via
   `toggleFullScreen:` (ADR 0009). The layer is opaque. A borderless cover of
   `screen.frame` is not this surface.
+- Leaving that Space (green traffic-light / a second `toggleFullScreen:`)
+  MUST complete. The main thread MUST NOT wait forever on `nextDrawable` or
+  the in-flight present semaphore (ADR 0016). The in-flight wait is bounded;
+  a completed handler releases the semaphore if `presentedTime` never arrives.
 - Present is echo-only `nextDrawable`, one in flight until `presentedTime`.
   A `CADisplayLink` supplies `targetTimestamp` and does not take a drawable.
   After `send_input`, the host may `poll` the attach socket for ≤2 ms and

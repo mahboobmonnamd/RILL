@@ -146,6 +146,8 @@ run_gate "T-SPAWN" cargo test -p rill-host --offline --test t_spawn -- --nocaptu
 
 run_gate "T-KILL" env RILL_RILLD_BIN="$RILLD" RILL_GUI_APP="$ROOT/dist/Rill.app" \
   cargo test -p rilld --offline --test persist_e2e -- --nocapture
+run_gate "T-FS-EXIT" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_fullscreen_exit -- --nocapture
 
 # ------------------------------------------------------------------------ T-NFR
 echo "== T-NFR =="
@@ -286,6 +288,9 @@ if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
       cargo test -p rilld --offline --test persist_e2e -- --nocapture
   }
   run_control "T-KILL" drop_POSIX_SPAWN_SETSID run_t_kill_setsid
+  run_control "T-FS-EXIT" wait_forever_on_inflight \
+    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rill-host --offline --test t_fullscreen_exit -- --nocapture
   run_t_spawn_openpty() {
     mut_app="$TMP/Rill-openpty.app"
     RILL_MUTATE=openpty_in_main_m RILL_APP="$mut_app" sh scripts/package-macos.sh
