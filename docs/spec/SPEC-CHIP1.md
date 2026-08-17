@@ -1,4 +1,4 @@
-# SPEC-CHIP1 — owned VT crate (Lane E, Milestone 4)
+# SPEC-CHIP1 — owned VT crate (`lane:chip1-vt-engine`, Milestone 4)
 
 - **Status:** Accepted for the isolated-crate contract — 2026-08-17
   ([ADR 0012](../adr/0012-chip1-isolated-vt.md)). Named tests are **Red**.

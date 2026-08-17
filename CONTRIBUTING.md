@@ -24,7 +24,7 @@ hide a later NFR miss with chrome.
 Required on every issue:
 
 - Milestone
-- `lane:` (A–E, see [LANES](docs/LANES.md))
+- `lane:` (`kernel` / `attach` / `chip0-ghostty-vt` / `host` / `chip1-vt-engine`, see [LANES](docs/LANES.md))
 - Plane (kernel / attach / display / orchestration)
 - ADR (0001 or a new Accepted ADR)
 - Named test ID

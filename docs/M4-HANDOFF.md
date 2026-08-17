@@ -1,6 +1,6 @@
 # M4 handoff — Chip 1 isolated VT
 
-**Status: ready for handover. 2026-08-17.** Lane E / Milestone 4. This track
+**Status: ready for handover. 2026-08-17.** `lane:chip1-vt-engine` / Milestone 4. This track
 stops here. A new human or agent continues from this page and the GitHub epic.
 
 Do **not** write `vt-engine` until S-VT is closed **and** T-CHIP1 tests exist

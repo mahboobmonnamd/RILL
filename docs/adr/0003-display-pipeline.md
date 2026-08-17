@@ -167,7 +167,7 @@ sockets (`lsof`-equivalent snapshot before and after, compared).
 
 ## Consequences
 
-- Lane C and Lane D grow substantially. The atlas, packer, and shaders are new
+- Chip 0 (`lane:chip0-ghostty-vt`) and host (`lane:host`) grow substantially. The atlas, packer, and shaders are new
   code with no equivalent in the tree.
 - T-NFR cannot run headless. It needs a window, a display, and — for
   gate-closing `hid` mode — Accessibility trust. CI runs `app` mode for

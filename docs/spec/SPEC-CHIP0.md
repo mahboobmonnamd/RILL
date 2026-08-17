@@ -1,4 +1,4 @@
-# SPEC-CHIP0 — display chip (Lane C)
+# SPEC-CHIP0 — Chip 0 live emulator (libghostty-vt + Metal, `lane:chip0-ghostty-vt`)
 
 - **Status:** Accepted for Spike 0 Proven clauses — 2026-08-17
   ([ADR 0010](../adr/0010-spike-0-closes.md)). Written 2026-08-16 as the
@@ -120,5 +120,5 @@ pub fn resync_from_history(&mut self, history: &[u8]) -> Result<Vec<u8>, Error>;
 
 `rill-chip0` requires the Zig-built archive, so it cannot run in `fast.yml`'s
 Linux job. `rill-attach` and the pure-Rust parts of `rill-kernel` MUST NOT
-depend on `rill-chip0`, so Lane A and Lane B can be developed and tested
-without Lane C's toolchain (audit S4-4).
+depend on `rill-chip0`, so kernel and attach can be developed and tested
+without Chip 0's toolchain (audit S4-4).

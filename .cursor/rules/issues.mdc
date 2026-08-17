@@ -6,7 +6,7 @@ alwaysApply: true
 # Issues and tests
 
 - Spike = research. After that, no code until ADR → spec → named test cases exist.
-- Claim a GitHub issue in an open milestone before coding. Set lane A–E.
+- Claim a GitHub issue in an open milestone before coding. Set `lane:kernel`, `lane:attach`, `lane:chip0-ghostty-vt` (live libghostty-vt + Metal), `lane:host`, or `lane:chip1-vt-engine` (isolated own VT).
 - Named SPEC-style test first. For a user-reported bug, the test name states the bug and fails for that reason.
 - Implementation is the smallest change that turns those tests green.
 - Close an issue only with files, named tests, packaged e2e if user-visible, commands, and results in the PR. Socket-only tests do not close persist, paint, spawn, or NFR-KEY.

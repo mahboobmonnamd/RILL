@@ -447,7 +447,7 @@ first client still receives DATA. Attach to id B succeeds. A bare connection
 MUST NOT steal A's claim (existing S3-6, per id).
 
 **Procedure.** In-process `on_frame` / map API for this slice. Socket
-multiplex is a Lane B follow-on.
+multiplex is a `lane:attach` follow-on.
 
 **Required mutation.** Treating every attach as one session MUST turn the
 second-id clause red.

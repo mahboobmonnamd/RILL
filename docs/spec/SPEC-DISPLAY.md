@@ -1,4 +1,4 @@
-# SPEC-DISPLAY — host window and renderer (Lane D)
+# SPEC-DISPLAY — host window and renderer (`lane:host`)
 
 - **Status:** Accepted for Spike 0 Proven clauses — 2026-08-17
   ([ADR 0010](../adr/0010-spike-0-closes.md)). Presenter: [ADR 0009](../adr/0009-direct-to-display-echo.md).
