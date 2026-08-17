@@ -1,6 +1,6 @@
 # Parallel lanes
 
-Five people can work without sharing a paste of another repository. Contracts are the files in `docs/`. Spike 0 is Proven ([ADR 0010](adr/0010-spike-0-closes.md)). Merge of Milestone 1 UI must not hide a later NFR miss.
+Five people can work without sharing a paste of another repository. Contracts are the files in `docs/`. Spike 0 is Proven ([ADR 0010](adr/0010-spike-0-closes.md)). Milestone 1 is the session graph ([ADR 0011](adr/0011-session-graph.md), [#16](https://github.com/mahboobmonnamd/RILL/issues/16)). Merge of Milestone 1 UI must not hide a later NFR miss. Chrome is M2.
 
 | Lane | Owns | May start before Spike 0 Proven? | Must not |
 |---|---|---|---|

@@ -1,9 +1,12 @@
 # SPEC-ATTACH — attach plane (Lane B)
 
-- **Status:** Draft for Spike 0 remediation — 2026-08-16
+- **Status:** Accepted for Spike 0 Proven clauses — 2026-08-17
+  ([ADR 0010](../adr/0010-spike-0-closes.md)). Written 2026-08-16 as the
+  remediation draft.
 - **Authority:** [ADR 0001](../adr/0001-session-operating-system.md) §2, §5, §6
 - **Crate:** `crates/rill-attach`
-- **Gates:** T-ATTACH, T-EXIT, T-RESIZE, T-DROP, T-NFR (control-RPC clause)
+- **Gates:** T-ATTACH, T-EXIT, T-RESIZE, T-DROP, T-NFR (control-RPC clause) —
+  **Proven**
 
 ## 1. Transport
 
@@ -77,6 +80,8 @@ Reasons: `1 AlreadyAttached`, `2 Invalid`.
 
 - MAY classify the byte stream: alt-screen entry/exit, OSC 52 (denied until a
   policy UI exists), OSC 9, OSC 133, title. Classification is journalled.
+  **Later — not Spike 0 Proven.** No classifier ships today; that is not a
+  gate miss.
 - MUST NOT build a grid the GUI consumes.
 - MUST NOT carry cells, JSON, or any structure derived from parsing into a
   screen model.

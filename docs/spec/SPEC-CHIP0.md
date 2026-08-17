@@ -1,10 +1,12 @@
 # SPEC-CHIP0 — display chip (Lane C)
 
-- **Status:** Draft for Spike 0 remediation — 2026-08-16
+- **Status:** Accepted for Spike 0 Proven clauses — 2026-08-17
+  ([ADR 0010](../adr/0010-spike-0-closes.md)). Written 2026-08-16 as the
+  remediation draft.
 - **Authority:** [ADR 0001](../adr/0001-session-operating-system.md) §1, §3,
   [ADR 0003](../adr/0003-display-pipeline.md)
 - **Crate:** `crates/rill-chip0`
-- **Gates:** T-BYTES, T-RESYNC, T-NFR
+- **Gates:** T-BYTES, T-RESYNC — **Proven**. T-NFR is the host (SPEC-DISPLAY).
 
 ## 1. Boundary
 
@@ -47,9 +49,12 @@ fn snapshot_damaged(&mut self, out: &mut PodBuffer) -> Result<Damage, Error>;
 - `PodCell` is `#[repr(C)]`, 16 bytes: `codepoint u32, fg u32, bg u32, attrs
   u16, _pad u16`. A `String` MUST NOT appear in any type reachable from a
   snapshot.
-- `snapshot_damaged` writes **only damaged rows** into a caller-owned buffer and
-  returns the row range. It MUST NOT allocate. This is the warm-path call
-  (ADR 0003 D3); `snapshot()` remains for tests and cold paths.
+- **Proven today:** `snapshot()` returns a POD grid; the host rewrites instance
+  rows using `damage_row0..=damage_row1` / `full_damage`.
+- **Later:** [#18](https://github.com/mahboobmonnamd/RILL/issues/18) —
+  `snapshot_damaged` as a trait method that writes **only damaged rows** into a
+  caller-owned buffer and MUST NOT allocate (ADR 0003 D3).
+  `TerminalEmulation` does not yet declare it. Not a Spike 0 reopen.
 - `full_damage` is set when libghostty-vt reports
   `GHOSTTY_RENDER_STATE_DIRTY_FULL`. `damage_row0..=damage_row1` is the
   inclusive dirty range otherwise. When dirty is `FALSE` the caller MUST be able
@@ -59,14 +64,9 @@ fn snapshot_damaged(&mut self, out: &mut PodBuffer) -> Result<Damage, Error>;
 
 ## 5. Grapheme handling — memory safety
 
-Audit S3-1. The current adapter passes a fixed `uint32_t buf[8]` to
-`GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_BUF`, whose contract requires a
-buffer of at least `graphemes_len` elements. It computes a clamp and discards
-it. A grapheme cluster with more than 8 codepoints — a ZWJ emoji sequence,
-stacked combining marks — overruns the stack, under the control of whatever
-process is writing to the PTY.
-
-Required:
+Audit S3-1. **Fixed in the closer:** query length, heap buffer, count truncations.
+The old adapter passed a fixed `uint32_t buf[8]` and discarded the clamp. Keep
+the fixture and ASan job; do not reintroduce a stack buffer.
 
 - Query `GRAPHEMES_LEN` first.
 - Either allocate to fit, or use

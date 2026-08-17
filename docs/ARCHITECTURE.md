@@ -1,6 +1,8 @@
 # Architecture
 
-Authority: [ADR 0001](adr/0001-session-operating-system.md). This file is the map. It does not authorize code by itself.
+Authority: [ADR 0001](adr/0001-session-operating-system.md). Spike 0 closed:
+[ADR 0010](adr/0010-spike-0-closes.md). Session graph: [ADR 0011](adr/0011-session-graph.md).
+This file is the map. It does not authorize code by itself.
 
 ## Four planes
 

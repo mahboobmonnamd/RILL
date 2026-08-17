@@ -1,15 +1,19 @@
 # Spike 0 — validation audit
 
-- **Date:** 2026-08-16
-- **Scope:** every file in this tree at `8960da7`.
-- **Verdict:** **Spike 0 is Red.** Every `Proven` mark in [SPIKE-0](SPIKE-0.md) and
-  [SPIKE-0-VALIDATION](SPIKE-0-VALIDATION.md) is revoked by
-  [ADR 0002](adr/0002-falsifiable-evidence.md).
-- **Authority for the fix:** [ADR 0002](adr/0002-falsifiable-evidence.md),
+- **Date:** 2026-08-16 (findings at `8960da7`)
+- **Historical verdict (that day):** **Red.** Every `Proven` mark then in
+  [SPIKE-0](SPIKE-0.md) was revoked by [ADR 0002](adr/0002-falsifiable-evidence.md).
+- **Close (do not stop here):** [ADR 0010](adr/0010-spike-0-closes.md) —
+  **Spike 0 is Proven** as of 2026-08-17. This file is the defect list the
+  closer satisfied, not the current stop rule. Milestone 1 may open
+  ([ADR 0011](adr/0011-session-graph.md)).
+- **Authority for the 2026-08-16 fix:** [ADR 0002](adr/0002-falsifiable-evidence.md),
   [ADR 0003](adr/0003-display-pipeline.md).
 
-The architecture is not the problem. The evidence is. Three gates are written so
-that they cannot fail, and the tree has been reading their green as proof.
+Do not cite this page as “Spike 0 is Red.” Do not cite `p95=0.032ms`.
+
+The architecture was not the problem. The evidence was. Three gates were written
+so that they could not fail, and the tree had been reading their green as proof.
 
 Severity: **S1** gate cannot fail · **S2** test name does not state what the test
 does · **S3** production defect · **S4** process / reproducibility.
@@ -321,5 +325,6 @@ Numbered because the dependencies are real.
    red before it is demonstrated green.
 7. **Metal renderer and true key→present instrumentation** per ADR 0003.
 
-Spike 0 remains **Red** and Milestone 1 remains closed until step 7 produces a
-p95 on battery from an oracle that can fail.
+**Superseded 2026-08-17.** Step 7 produced packaged battery hid p95 7.011 ms
+with `timer_pump` red (ADR 0009 D4, ADR 0010). Spike 0 is Proven. Milestone 1
+is open. Keep this ordered list as the record of what the closer had to do.
