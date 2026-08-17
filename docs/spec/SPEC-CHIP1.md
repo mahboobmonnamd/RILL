@@ -62,7 +62,12 @@ pub trait TerminalEmulation {
 | `_pad` | `u16` | zero |
 
 v0 default colours (match Chip 0 adapter until a colour ADR): fg `#cccccc`,
-bg `#121212`. Theme / `host-surface.toml` is the host, not this crate.
+bg `#121212`. Theme **files** are host data today (ADR 0017). Palette-index
+cells, theme-file materialisation of ANSI 0–15, and compositor opacity are
+**not** v0: they need an Accepted colour ADR and
+[#267](https://github.com/mahboobmonnamd/RILL/issues/267) under [#6](https://github.com/mahboobmonnamd/RILL/issues/6). Until then Chip 1 MUST NOT
+RGB-rewrite ANSI from a compiled-in table, and MUST NOT treat `PodCell.fg` /
+`bg` as the only colour identity.
 
 Italic, strikethrough, wide-lead/tail exist on the presenter (ADR 0003 D1) but
 **not** on Chip 0 `attrs` today. v0 MUST NOT add extra attr bits without an ADR.

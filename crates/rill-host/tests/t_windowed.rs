@@ -1,11 +1,10 @@
-//! T-FS-EXIT — leaving fullscreen must not hang the window.
+//! T-WINDOWED — launch is not fullscreen.
 //!
-//! Bug (doc comment, not the name — ADR 0002 D6): clicking the button to
-//! return to a normal window hangs; force quit is required. Default launch is
-//! windowed (ADR 0017); this test enters a Space via
-//! `RILL_TEST_EXIT_FULLSCREEN=1` then leaves.
+//! Bug (doc comment, not the name — ADR 0002 D6): `make run` called
+//! `toggleFullScreen:` after `makeKeyAndOrderFront:`, so every launch entered
+//! a Space.
 //!
-//! Required mutation: `RILL_MUTATE=wait_forever_on_inflight`.
+//! Required mutation: `RILL_MUTATE=always_toggle_fullscreen`.
 
 use std::fs;
 use std::os::unix::process::CommandExt;
@@ -32,7 +31,7 @@ fn unique_sock() -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .expect("time")
         .as_nanos();
-    PathBuf::from(format!("/tmp/rill-fs-exit-{n}.sock"))
+    PathBuf::from(format!("/tmp/rill-windowed-{n}.sock"))
 }
 
 struct Heartbeat {
@@ -83,13 +82,13 @@ fn wait_heartbeat(
     None
 }
 
-/// Clicking out of fullscreen must not hang (force quit).
+/// `make run` must open a titled window, not a fullscreen Space.
 #[test]
-fn t_exit_fullscreen_does_not_hang_the_window() {
+fn t_launch_is_windowed_not_fullscreen() {
     let gui_bin = gui_bin();
     assert!(
         gui_bin.is_file(),
-        "T-FS-EXIT needs the packaged GUI at {}. Run: sh scripts/package-macos.sh",
+        "T-WINDOWED needs the packaged GUI at {}. Run: sh scripts/package-macos.sh",
         gui_bin.display()
     );
 
@@ -101,7 +100,6 @@ fn t_exit_fullscreen_does_not_hang_the_window() {
     gui_cmd
         .env("RILL_SOCKET", &sock)
         .env("RILL_TEST_HEARTBEAT", &heartbeat)
-        .env("RILL_TEST_EXIT_FULLSCREEN", "1")
         .env("SHELL", "/bin/sh")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -113,44 +111,32 @@ fn t_exit_fullscreen_does_not_hang_the_window() {
     let mut gui = gui_cmd.spawn().expect("spawn packaged Rill");
     let pid = gui.id();
 
-    let entered = wait_heartbeat(&heartbeat, pid, Duration::from_secs(6), |h| {
-        h.fullscreen == Some(1)
+    let windowed = wait_heartbeat(&heartbeat, pid, Duration::from_secs(6), |h| {
+        h.fullscreen == Some(0) && h.seq >= 2
     });
-    if entered.is_none() || !alive(pid) {
+    if windowed.is_none() || !alive(pid) {
+        let still = alive(pid);
         let _ = gui.kill();
         let _ = gui.wait();
-        panic!(
-            "GUI died or never entered fullscreen; heartbeat={:?}",
-            fs::read_to_string(&heartbeat).ok()
-        );
-    }
-
-    let left = wait_heartbeat(&heartbeat, pid, Duration::from_secs(5), |h| {
-        h.fullscreen == Some(0)
-    });
-    if left.is_none() {
-        let still = alive(pid);
-        unsafe {
-            libc::kill(pid as i32, libc::SIGKILL);
-        }
-        let _ = gui.wait();
+        let hb = fs::read_to_string(&heartbeat).ok();
         let _ = fs::remove_file(&heartbeat);
         let _ = fs::remove_file(&sock);
-        panic!(
-            "leaving fullscreen hung or never completed; heartbeat={:?} alive={}",
-            fs::read_to_string(&heartbeat).ok(),
-            still
-        );
+        panic!("GUI died or entered fullscreen; heartbeat={hb:?} alive={still}");
     }
 
-    let seq0 = left.unwrap().seq;
-    thread::sleep(Duration::from_millis(400));
-    assert!(alive(pid), "GUI died after leaving fullscreen");
-    let after = read_heartbeat(&heartbeat).expect("heartbeat after leave");
+    let seq0 = windowed.unwrap().seq;
+    thread::sleep(Duration::from_millis(200));
+    assert!(alive(pid), "GUI died while windowed");
+    let after = read_heartbeat(&heartbeat).expect("heartbeat still advancing");
     assert!(
         after.seq > seq0,
-        "main thread stopped after leave (seq {seq0} then {}); force quit was required",
+        "main thread stopped while windowed (seq {seq0} then {})",
         after.seq
+    );
+    assert_eq!(
+        after.fullscreen,
+        Some(0),
+        "window entered fullscreen after launch"
     );
 
     unsafe {

@@ -27,6 +27,8 @@ typedef struct {
     uint8_t full_damage;
     uint16_t damage_row0;
     uint16_t damage_row1;
+    uint32_t default_fg; /* RGBA8888 VT default; host look remaps these */
+    uint32_t default_bg;
     /* Grapheme clusters whose codepoint count exceeded RILL_GRAPHEME_MAX and
      * were rendered from their base codepoint alone. Counted, never silently
      * dropped (SPEC-CHIP0 §5). */

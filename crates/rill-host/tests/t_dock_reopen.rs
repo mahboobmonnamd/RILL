@@ -1,11 +1,10 @@
-//! T-FS-EXIT — leaving fullscreen must not hang the window.
+//! T-DOCK-REOPEN — Dock click shows the window.
 //!
-//! Bug (doc comment, not the name — ADR 0002 D6): clicking the button to
-//! return to a normal window hangs; force quit is required. Default launch is
-//! windowed (ADR 0017); this test enters a Space via
-//! `RILL_TEST_EXIT_FULLSCREEN=1` then leaves.
+//! Bug (doc comment, not the name — ADR 0002 D6): after `make run`, switching
+//! to another app and clicking Rill in the Dock does not show the window;
+//! quit and `make run` again is required.
 //!
-//! Required mutation: `RILL_MUTATE=wait_forever_on_inflight`.
+//! Required mutation: `RILL_MUTATE=skip_dock_reopen`.
 
 use std::fs;
 use std::os::unix::process::CommandExt;
@@ -32,29 +31,35 @@ fn unique_sock() -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .expect("time")
         .as_nanos();
-    PathBuf::from(format!("/tmp/rill-fs-exit-{n}.sock"))
+    PathBuf::from(format!("/tmp/rill-dock-reopen-{n}.sock"))
 }
 
 struct Heartbeat {
     seq: u32,
-    fullscreen: Option<u32>,
+    visible: Option<u32>,
+    key: Option<u32>,
 }
 
 fn read_heartbeat(path: &PathBuf) -> Option<Heartbeat> {
     let s = fs::read_to_string(path).ok()?;
     let mut seq = None;
-    let mut fullscreen = None;
+    let mut visible = None;
+    let mut key = None;
     for part in s.split_whitespace() {
         if let Some(v) = part.strip_prefix("seq=") {
             seq = v.parse().ok();
         }
-        if let Some(v) = part.strip_prefix("fullscreen=") {
-            fullscreen = v.parse().ok();
+        if let Some(v) = part.strip_prefix("visible=") {
+            visible = v.parse().ok();
+        }
+        if let Some(v) = part.strip_prefix("key=") {
+            key = v.parse().ok();
         }
     }
     Some(Heartbeat {
         seq: seq?,
-        fullscreen,
+        visible,
+        key,
     })
 }
 
@@ -83,13 +88,13 @@ fn wait_heartbeat(
     None
 }
 
-/// Clicking out of fullscreen must not hang (force quit).
+/// Dock click of a running app must make the existing window key and visible.
 #[test]
-fn t_exit_fullscreen_does_not_hang_the_window() {
+fn t_dock_reopen_makes_the_window_key_and_visible() {
     let gui_bin = gui_bin();
     assert!(
         gui_bin.is_file(),
-        "T-FS-EXIT needs the packaged GUI at {}. Run: sh scripts/package-macos.sh",
+        "T-DOCK-REOPEN needs the packaged GUI at {}. Run: sh scripts/package-macos.sh",
         gui_bin.display()
     );
 
@@ -101,7 +106,7 @@ fn t_exit_fullscreen_does_not_hang_the_window() {
     gui_cmd
         .env("RILL_SOCKET", &sock)
         .env("RILL_TEST_HEARTBEAT", &heartbeat)
-        .env("RILL_TEST_EXIT_FULLSCREEN", "1")
+        .env("RILL_TEST_DOCK_REOPEN", "1")
         .env("SHELL", "/bin/sh")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -113,45 +118,61 @@ fn t_exit_fullscreen_does_not_hang_the_window() {
     let mut gui = gui_cmd.spawn().expect("spawn packaged Rill");
     let pid = gui.id();
 
-    let entered = wait_heartbeat(&heartbeat, pid, Duration::from_secs(6), |h| {
-        h.fullscreen == Some(1)
+    let shown = wait_heartbeat(&heartbeat, pid, Duration::from_secs(6), |h| {
+        h.visible == Some(1) && h.seq >= 1
     });
-    if entered.is_none() || !alive(pid) {
+    if shown.is_none() || !alive(pid) {
         let _ = gui.kill();
         let _ = gui.wait();
         panic!(
-            "GUI died or never entered fullscreen; heartbeat={:?}",
+            "GUI died or never showed a window; heartbeat={:?}",
             fs::read_to_string(&heartbeat).ok()
         );
     }
 
-    let left = wait_heartbeat(&heartbeat, pid, Duration::from_secs(5), |h| {
-        h.fullscreen == Some(0)
+    let hidden = wait_heartbeat(&heartbeat, pid, Duration::from_secs(4), |h| {
+        h.visible == Some(0)
     });
-    if left.is_none() {
+    if hidden.is_none() || !alive(pid) {
         let still = alive(pid);
         unsafe {
             libc::kill(pid as i32, libc::SIGKILL);
         }
         let _ = gui.wait();
+        let hb = fs::read_to_string(&heartbeat).ok();
+        let _ = fs::remove_file(&heartbeat);
+        let _ = fs::remove_file(&sock);
+        panic!("window never ordered out before reopen; heartbeat={hb:?} alive={still}");
+    }
+
+    let restored = wait_heartbeat(&heartbeat, pid, Duration::from_secs(4), |h| {
+        h.visible == Some(1) && h.key == Some(1)
+    });
+    if restored.is_none() {
+        let still = alive(pid);
+        unsafe {
+            libc::kill(pid as i32, libc::SIGKILL);
+        }
+        let _ = gui.wait();
+        let hb = fs::read_to_string(&heartbeat).ok();
         let _ = fs::remove_file(&heartbeat);
         let _ = fs::remove_file(&sock);
         panic!(
-            "leaving fullscreen hung or never completed; heartbeat={:?} alive={}",
-            fs::read_to_string(&heartbeat).ok(),
-            still
+            "dock reopen did not show the window; heartbeat={hb:?} alive={still}"
         );
     }
 
-    let seq0 = left.unwrap().seq;
-    thread::sleep(Duration::from_millis(400));
-    assert!(alive(pid), "GUI died after leaving fullscreen");
-    let after = read_heartbeat(&heartbeat).expect("heartbeat after leave");
+    let seq0 = restored.unwrap().seq;
+    thread::sleep(Duration::from_millis(300));
+    assert!(alive(pid), "GUI died after dock reopen");
+    let after = read_heartbeat(&heartbeat).expect("heartbeat after reopen");
     assert!(
         after.seq > seq0,
-        "main thread stopped after leave (seq {seq0} then {}); force quit was required",
+        "main thread stopped after dock reopen (seq {seq0} then {})",
         after.seq
     );
+    assert_eq!(after.visible, Some(1), "window not visible after reopen");
+    assert_eq!(after.key, Some(1), "window not key after reopen");
 
     unsafe {
         libc::kill(pid as i32, libc::SIGTERM);

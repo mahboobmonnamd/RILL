@@ -408,6 +408,177 @@ tests do not close this.
 **Required mutation.** `RILL_MUTATE=wait_forever_on_inflight`: the in-flight
 wait is unbounded again. This test MUST go red.
 
+**Launch.** Default `make run` is windowed (ADR 0017). This gate sets
+`RILL_TEST_EXIT_FULLSCREEN=1`, which **enters** a Space then leaves. It does
+not require default launch to be fullscreen.
+
+---
+
+## T-LOOK-OVERLAY — Ghostty look keys win over host-surface.toml
+
+Authority: [ADR 0017](adr/0017-ghostty-look-windowed-default.md) D2,
+[SPEC-DISPLAY](spec/SPEC-DISPLAY.md) §10,
+[#259](https://github.com/mahboobmonnamd/RILL/issues/259).
+
+**Bug (doc comment).** `host-surface.toml` was Menlo 13 on Chip 0 dark
+defaults. The user's look keys (Catppuccin Latte, JetBrainsMono Nerd Font,
+size 16, padding 8) in `~/.config/rill/config` were ignored.
+
+**Oracle.** A Ghostty-grammar fixture (unquoted `theme = Catppuccin Latte`,
+`font-size = 16`) overlaid on a host-surface with `font-size = 13` and no
+theme, with `themes/` pointing at `fixtures/look/themes/`. Resolved
+`font_size` is 16. Resolved background equals the `background =` hex
+parsed from that theme **file**, which is not the Chip 0 default
+`#121212`. Downstream of `overlay_look` reading the file, not of a Rust
+`LATTE_BG` constant and not of a string the parser copied from the
+fixture into `theme`.
+
+**Procedure.** Library test. In-memory fixture matching `~/.config/rill/config`.
+No packaged app. `look_file_candidates` names `$HOME/.config/rill/config`,
+not Ghostty or cmux paths.
+
+**Required mutation.** `RILL_MUTATE=skip_ghostty_overlay`. Font size stays
+13 and background is not Latte.
+
+---
+
+## T-LOOK-UNKNOWN — unknown theme does not replace host-surface colors
+
+Authority: ADR 0017 D2.
+
+**Oracle.** host-surface resolved from the Latte **file**, then overlay
+`theme = NotARealTheme`. Background stays the file's `background =`.
+Downstream of resolve-or-keep, not of a hardcoded pass.
+
+**Required mutation.** `RILL_MUTATE=unknown_theme_wipes`. Colors become
+unset / Chip 0 dark.
+
+---
+
+## T-LOOK-CELL — empty cell is not Chip 0 default dark
+
+Authority: ADR 0017 D3.
+
+**Oracle.** `Chip0` snapshot of an empty grid, then `apply_theme` with colours
+loaded from the Latte **file**. Cell (0,0) `bg` equals that file's
+`background =`, not `#121212`. Downstream of the VT default and the remap.
+A test that only checks `HostSurface.colors` is not this gate.
+
+**Required mutation.** `RILL_MUTATE=skip_theme_apply`.
+
+---
+
+## T-LOOK-FILE — theme file wins over a compiled-in RGB table
+
+Authority: ADR 0017 D2, SPEC-DISPLAY §10,
+[#259](https://github.com/mahboobmonnamd/RILL/issues/259).
+
+**Bug (doc comment).** `theme = Catppuccin Latte` resolved a Rust `match` of
+Catppuccin RGB, so a `themes/` file whose `background =` differed from that
+table was ignored. Values must come from the theme file.
+
+**Oracle.** A temp `themes/Catppuccin Latte` whose `background = #a1b2c3`
+(not official Latte). `parse_look_keys("theme = Catppuccin Latte")` with
+that directory. Resolved background is `#a1b2c3`, not `#eff1f5`. Downstream
+of reading the file. A test that asserts the official Latte constant can
+pass with a hardcoded table.
+
+**Procedure.** Library test. Temp directory. No packaged app.
+
+**Required mutation.** `RILL_MUTATE=invent_theme_rgb`. Resolve returns
+invented Latte RGB without reading the file.
+
+---
+
+## T-LOOK-GLASS — background-opacity must not make the window translucent
+
+Authority: ADR 0017 D3, ADR 0009, SPEC-DISPLAY §3 / §10,
+[#259](https://github.com/mahboobmonnamd/RILL/issues/259).
+
+**Bug (doc comment).** Windowed launch set `NSWindow.alphaValue` from
+`background-opacity = 0.95`, so the Metal surface was glass and the theme
+looked washed out (desktop showed through).
+
+**Oracle.** Packaged `Rill.app`, `RILL_CONFIG` with `background-opacity = 0.95`,
+not fullscreen. Heartbeat reports `opaque=1` and `alpha=100`. Downstream of
+the window, not of a flag the test wrote. Socket-only tests do not close this.
+
+**Procedure.** Packaged GUI. Same heartbeat path as T-WINDOWED.
+
+**Required mutation.** `RILL_MUTATE=window_alpha_from_opacity`. Heartbeat
+`alpha` is not 100.
+
+---
+
+## T-WINDOWED — launch is not fullscreen
+
+Authority: ADR 0017 D1, SPEC-DISPLAY §3,
+[#259](https://github.com/mahboobmonnamd/RILL/issues/259).
+
+**Bug (doc comment).** `make run` called `toggleFullScreen:` after
+`makeKeyAndOrderFront:`, so every launch entered a Space.
+
+**Oracle.** Packaged `Rill.app` with no `--nfr-key` and no
+`RILL_TEST_EXIT_FULLSCREEN`. Heartbeat file reports `fullscreen=0` and `seq`
+advances. Downstream of the window style mask, not of a flag the test wrote.
+
+**Procedure.** Packaged GUI. Socket-only tests do not close this.
+
+**Required mutation.** `RILL_MUTATE=always_toggle_fullscreen`. Heartbeat
+shows `fullscreen=1`.
+
+---
+
+## T-SPLIT — window is three panes around Chip 0
+
+Authority: [ADR 0018](adr/0018-three-pane-host-chrome.md),
+[SPEC-CHROME](spec/SPEC-CHROME.md),
+[#260](https://github.com/mahboobmonnamd/RILL/issues/260).
+
+**Bug (doc comment).** `contentView` was the `MTKView` alone, so there was no
+navigation column, no inspector, and no place for a workspace list.
+
+**Oracle.** Packaged `Rill.app` heartbeat (`RILL_TEST_HEARTBEAT`) reports
+`chrome=3`, `left` and `right` widths &gt; 0, `center` width &gt; 0, and
+`first=terminal`. Those numbers are the `NSSplitView` subview frames and the
+window first responder after layout, not a constant the test wrote.
+
+**Procedure.** Packaged GUI. No `--nfr-key`. No `RILL_TEST_EXIT_FULLSCREEN`.
+Socket-only tests do not close this.
+
+**Required mutation.** `RILL_MUTATE=no_chrome`: `contentView` is
+`TerminalView` again. Heartbeat `chrome` is not 3 (left/right collapse).
+
+Demonstrated **red** on packaged `Rill.app` at `cdac6c5` (heartbeat
+`seq=… fullscreen=1` with no chrome fields). Demonstrated **green** on this
+branch; `no_chrome` went red (`chrome=1 left=0 right=0 first=terminal`).
+CI on `gates.yml` is the D8 closer.
+
+---
+
+## T-DOCK-REOPEN — Dock click shows the window
+
+Authority: [ADR 0019](adr/0019-dock-reopen-shows-window.md),
+[SPEC-DISPLAY](spec/SPEC-DISPLAY.md) §3,
+[#262](https://github.com/mahboobmonnamd/RILL/issues/262).
+
+**Bug (doc comment).** After `make run`, switching to another app and
+clicking Rill in the Dock does not show the window. Quit and `make run`
+again is required.
+
+**Oracle.** Packaged `Rill.app`. After the window is ordered out, the Dock
+reopen selector (`applicationShouldHandleReopen:hasVisibleWindows:`) makes
+it visible and key. Heartbeat reports `visible=1` and `key=1` from
+`NSWindow.isVisible` / `isKeyWindow`, then `seq` increases. Downstream of
+the window, not of a flag the test wrote.
+
+**Procedure.** Packaged GUI. `RILL_TEST_DOCK_REOPEN=1` orders the window
+out, then sends the same reopen selector Dock uses. No GUI click in CI.
+Socket-only tests do not close this.
+
+**Required mutation.** `RILL_MUTATE=skip_dock_reopen`: reopen does not
+`makeKeyAndOrderFront:`. This test MUST go red.
+
 ---
 
 ## T-SPLIT — window is three panes around Chip 0
@@ -698,6 +869,8 @@ prompt. This test MUST go red.
 
 Authority: [ADR 0012](adr/0012-chip1-isolated-vt.md), [SPEC-CHIP1](spec/SPEC-CHIP1.md),
 [M4-HANDOFF](M4-HANDOFF.md), [#6](https://github.com/mahboobmonnamd/RILL/issues/6).
+Palette-index cells and compositor opacity are
+[#267](https://github.com/mahboobmonnamd/RILL/issues/267) (colour ADR first).
 These gates are **Red**. Named here first. No `vt-engine` behaviour until they
 exist and have been observed failing (ADR 0002 D2). Not live. Not T-NFR.
 

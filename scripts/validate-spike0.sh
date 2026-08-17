@@ -105,6 +105,7 @@ run_gate "LINT-PLANES" sh scripts/lint-planes.sh
 
 # ------------------------------------------------------------------ library tier
 run_gate "T-BYTES-chip"   cargo test -p rill-chip0 --offline t_bytes -- --nocapture
+run_gate "T-LOOK"         cargo test -p rill-chip0 --offline t_ghostty_look -- --nocapture
 # Isolate ASan: instrumented C objects in the default target dir break later
 # rilld / persist_e2e links (rustc -nodefaultlibs does not pull clang_rt).
 run_gate "T-BYTES-asan"   env CARGO_TARGET_DIR="$TMP/asan-target" RILL_ASAN=1 \
@@ -148,8 +149,14 @@ run_gate "T-KILL" env RILL_RILLD_BIN="$RILLD" RILL_GUI_APP="$ROOT/dist/Rill.app"
   cargo test -p rilld --offline --test persist_e2e -- --nocapture
 run_gate "T-FS-EXIT" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
   cargo test -p rill-host --offline --test t_fullscreen_exit -- --nocapture
+run_gate "T-WINDOWED" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_windowed -- --nocapture
+run_gate "T-LOOK-GLASS" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_look_glass -- --nocapture
 run_gate "T-SPLIT" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
   cargo test -p rill-host --offline --test t_split -- --nocapture
+run_gate "T-DOCK-REOPEN" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_dock_reopen -- --nocapture
 
 # ------------------------------------------------------------------------ T-NFR
 echo "== T-NFR =="
@@ -238,6 +245,14 @@ if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
   # (zsh does not split `$MUT`, and that red is not a demonstrated mutation).
   run_control "T-BYTES-chip" drop_high_bytes \
     cargo test -p rill-chip0 --offline --features mutate t_bytes
+  run_control "T-LOOK-OVERLAY" skip_ghostty_overlay \
+    cargo test -p rill-chip0 --offline --features mutate t_ghostty_look_overlay -- --nocapture
+  run_control "T-LOOK-UNKNOWN" unknown_theme_wipes \
+    cargo test -p rill-chip0 --offline --features mutate t_ghostty_look_unknown -- --nocapture
+  run_control "T-LOOK-CELL" skip_theme_apply \
+    cargo test -p rill-chip0 --offline --features mutate t_ghostty_look_themed_empty -- --nocapture
+  run_control "T-LOOK-FILE" invent_theme_rgb \
+    cargo test -p rill-chip0 --offline --features mutate t_ghostty_look_theme_file -- --nocapture
   run_control "T-DROP" drop_on_full \
     cargo test -p rill-kernel --offline --features mutate t_drop -- --test-threads=1
   run_control "T-RESIZE" resize_before_data \
@@ -293,9 +308,18 @@ if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
   run_control "T-FS-EXIT" wait_forever_on_inflight \
     env RILL_GUI_APP="$ROOT/dist/Rill.app" \
     cargo test -p rill-host --offline --test t_fullscreen_exit -- --nocapture
+  run_control "T-WINDOWED" always_toggle_fullscreen \
+    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rill-host --offline --test t_windowed -- --nocapture
+  run_control "T-LOOK-GLASS" window_alpha_from_opacity \
+    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rill-host --offline --test t_look_glass -- --nocapture
   run_control "T-SPLIT" no_chrome \
     env RILL_GUI_APP="$ROOT/dist/Rill.app" \
     cargo test -p rill-host --offline --test t_split -- --nocapture
+  run_control "T-DOCK-REOPEN" skip_dock_reopen \
+    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rill-host --offline --test t_dock_reopen -- --nocapture
   run_t_spawn_openpty() {
     mut_app="$TMP/Rill-openpty.app"
     RILL_MUTATE=openpty_in_main_m RILL_APP="$mut_app" sh scripts/package-macos.sh

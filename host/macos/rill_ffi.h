@@ -57,6 +57,13 @@ int rill_client_exit_status(const RillClient *client); /* INT32_MIN while alive 
 const char *rill_client_font_family(const RillClient *client);
 float rill_client_font_size(const RillClient *client);
 const char *rill_client_font_fallback(const RillClient *client, uint32_t index);
+float rill_client_padding_x(const RillClient *client);
+float rill_client_padding_y(const RillClient *client);
+float rill_client_background_opacity(const RillClient *client);
+int rill_client_macos_option_as_alt(const RillClient *client);
+uint32_t rill_client_background_rgba(const RillClient *client);
+uint32_t rill_client_foreground_rgba(const RillClient *client);
+uint32_t rill_client_cursor_rgba(const RillClient *client);
 
 int rill_client_snapshot(RillClient *client, RillPodGrid *out);
 
