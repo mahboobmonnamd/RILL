@@ -28,7 +28,7 @@ clang -fobjc-arc -O2 -fmodules \
   "$CHIP0_VT" \
   "$GHOSTTY_VT" \
   -I host/macos \
-  -framework Cocoa -framework Metal -framework QuartzCore -framework CoreText \
+  -framework Cocoa -framework Metal -framework MetalKit -framework QuartzCore -framework CoreText \
   -framework CoreGraphics -framework ApplicationServices \
   -lc++ -lSystem
 

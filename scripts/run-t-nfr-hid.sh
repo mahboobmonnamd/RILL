@@ -36,7 +36,8 @@ done
 [ -S "$SOCK" ] || require "rilld did not bind $SOCK"
 
 echo "==== T-NFR hid ===="
-echo "A Rill window should appear. Leave it in front until it quits."
+echo "Rill will enter a fullscreen Space. Leave it in front until it quits."
+echo "Cmd-Q if it does not exit. Re-add Accessibility after every rebuild."
 open -n -W --stdout "$OUT" --stderr "$ERR" \
   --env "RILL_SOCKET=$SOCK" \
   "$APP" --args --nfr-key=hid

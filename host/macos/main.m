@@ -18,6 +18,34 @@
 
 extern char **environ;
 
+@interface RillWindow : NSWindow
+@end
+@implementation RillWindow
+- (BOOL)canBecomeKeyWindow {
+    return YES;
+}
+- (BOOL)canBecomeMainWindow {
+    return YES;
+}
+@end
+
+/* Apple: direct-to-display needs toggleFullScreen: on a titled window, not a
+ * borderless cover of screen.frame. Pump until the Space is actually entered. */
+static BOOL wait_until_fullscreen(NSWindow *window, NSTimeInterval timeout) {
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:timeout];
+    while ((window.styleMask & NSWindowStyleMaskFullScreen) == 0 &&
+           [deadline timeIntervalSinceNow] > 0) {
+        NSEvent *e = [NSApp nextEventMatchingMask:NSEventMaskAny
+                                        untilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]
+                                           inMode:NSDefaultRunLoopMode
+                                          dequeue:YES];
+        if (e) {
+            [NSApp sendEvent:e];
+        }
+    }
+    return (window.styleMask & NSWindowStyleMaskFullScreen) != 0;
+}
+
 /* SETSID so the GUI's process group death cannot take the daemon or the shell
  * with it. Removing this flag is T-KILL's required mutation. */
 static pid_t spawn_rilld(NSString *rilldPath) {
@@ -105,14 +133,17 @@ int main(int argc, const char *argv[]) {
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
 
-        NSRect rect = NSMakeRect(200, 200, 800, 480);
-        NSUInteger style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
-                           NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
-        NSWindow *window = [[NSWindow alloc] initWithContentRect:rect
-                                                       styleMask:style
-                                                         backing:NSBackingStoreBuffered
-                                                           defer:NO];
-        window.title = @"RILL";
+        NSRect frame = NSMakeRect(80, 80, 800, 480);
+        RillWindow *window = [[RillWindow alloc]
+            initWithContentRect:frame
+                      styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                                 NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable)
+                        backing:NSBackingStoreBuffered
+                          defer:NO];
+        window.opaque = YES;
+        window.backgroundColor = NSColor.blackColor;
+        window.title = @"Rill";
+        window.collectionBehavior = NSWindowCollectionBehaviorFullScreenPrimary;
         TerminalView *view = [[TerminalView alloc] initWithClient:client];
         if (!view) {
             fprintf(stderr, "Rill: renderer failed to initialise\n");
@@ -123,6 +154,10 @@ int main(int argc, const char *argv[]) {
         [window makeFirstResponder:view];
         [window makeKeyAndOrderFront:nil];
         [NSApp activateIgnoringOtherApps:YES];
+        [window toggleFullScreen:nil];
+        if (!wait_until_fullscreen(window, 5.0)) {
+            fprintf(stderr, "Rill: toggleFullScreen did not enter a Space\n");
+        }
 
         if (nfr) {
             /* Do not block on AXIsProcessTrusted, and do not call

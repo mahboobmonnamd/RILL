@@ -2,6 +2,7 @@
 #define RILL_TERMINAL_VIEW_H
 
 #import <Cocoa/Cocoa.h>
+#import <MetalKit/MetalKit.h>
 #include "rill_ffi.h"
 
 /* Injection path for T-NFR (ADR 0003 D7). Only HID closes the gate. */
@@ -24,7 +25,7 @@ typedef struct {
     int ok;
 } RillNfrReport;
 
-@interface TerminalView : NSView <NSTextInputClient>
+@interface TerminalView : MTKView <MTKViewDelegate, NSTextInputClient>
 
 - (instancetype)initWithClient:(RillClient *)client;
 
