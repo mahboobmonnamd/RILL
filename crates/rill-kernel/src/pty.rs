@@ -187,11 +187,7 @@ impl Pty {
         timeout_ms: i32,
     ) -> Result<bool, Error> {
         let mut fds = Vec::with_capacity(1 + extras.len());
-        fds.push(libc::pollfd {
-            fd: self.master.as_raw_fd(),
-            events: libc::POLLIN,
-            revents: 0,
-        });
+        fds.push(self.master_pollfd(libc::POLLIN));
         fds.extend_from_slice(extras);
         // SAFETY: fds is a valid pollfd slice we own for this call.
         let rc = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, timeout_ms) };
@@ -206,6 +202,14 @@ impl Pty {
             dst.revents = src.revents;
         }
         Ok(fds[0].revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR) != 0)
+    }
+
+    pub(crate) fn master_pollfd(&self, events: i16) -> libc::pollfd {
+        libc::pollfd {
+            fd: self.master.as_raw_fd(),
+            events,
+            revents: 0,
+        }
     }
 
     pub fn set_winsize(&mut self, size: Winsize) -> Result<(), Error> {

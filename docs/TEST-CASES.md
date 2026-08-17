@@ -410,11 +410,15 @@ budget=8.33ms, cadence p50=p95=8.33ms, `ax_trusted=1`, `pmset` Battery Power
 
 ---
 
-## Milestone 1 — session graph (Red)
+## Milestone 1 — session graph
 
 Authority: [ADR 0011](adr/0011-session-graph.md), [SPEC-GRAPH](spec/SPEC-GRAPH.md),
-[#16](https://github.com/mahboobmonnamd/RILL/issues/16). These gates are **Red**.
-Named here first. Library tests live in `crates/rill-kernel/tests/gates.rs`.
+[#16](https://github.com/mahboobmonnamd/RILL/issues/16),
+[#28](https://github.com/mahboobmonnamd/RILL/issues/28),
+[#29](https://github.com/mahboobmonnamd/RILL/issues/29).
+Library tests live in `crates/rill-kernel/tests/gates.rs` and
+`crates/rilld/tests/gates.rs`. Packaged multi-leaf persist is **not** these
+gates (SPEC-GRAPH §4).
 
 ### T-GRAPH-SPAWN — two leaves, two pids
 
@@ -446,10 +450,34 @@ first client still receives DATA. Attach to id B succeeds. A bare connection
 MUST NOT steal A's claim (existing S3-6, per id).
 
 **Procedure.** In-process `on_frame` / map API for this slice. Socket
-multiplex is a `lane:attach` follow-on.
+naming is [#28](https://github.com/mahboobmonnamd/RILL/issues/28).
 
 **Required mutation.** Treating every attach as one session MUST turn the
 second-id clause red.
+
+### T-GRAPH-TERMINATE — destroy one leaf, leave the other alive
+
+**Oracle.** After `Kernel::terminate(A)`, `kill(pid_A, 0)` fails and
+`kill(pid_B, 0)` succeeds. Downstream of the OS, not of `child_alive()`.
+`Drop` still MUST NOT kill (existing T-KILL).
+
+**Procedure.** In-process kernel. Two `/bin/sh -c 'exec sleep 60'` leaves.
+Terminate A only.
+
+**Required mutation.** `RILL_MUTATE=terminate_all_leaves` (feature `mutate`)
+MUST turn this red by killing B as well.
+
+### T-ATTACH-NAMED — ATTACH payload names a leaf
+
+**Oracle.** 8-byte ATTACH is generation only. 16-byte ATTACH carries a
+`session_id`. A socket ATTACH with B's id receives B's child marker and MUST
+NOT receive the default leaf's marker. Unknown id → `REFUSED{Invalid}`. A
+second connection ATTACH to B is accepted while A stays attached.
+
+**Procedure.** Codec unit tests plus in-process `Daemon` over `AF_UNIX`.
+
+**Required mutation.** `RILL_MUTATE=ignore_session_id` (feature `mutate`):
+always attach the default leaf. The two-id socket tests MUST go red.
 
 ---
 

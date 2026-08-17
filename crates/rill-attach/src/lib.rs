@@ -64,6 +64,9 @@ pub enum Frame {
     },
     Attach {
         generation: u64,
+        /// `None` is the Spike 0 8-byte payload: attach the daemon's default
+        /// leaf. `Some` is a kernel `SessionId` as `u64` (SPEC-GRAPH §2).
+        session_id: Option<u64>,
     },
     Refused {
         reason: RefuseReason,
@@ -110,7 +113,16 @@ impl Frame {
                 p
             }
             Self::Exit { status } => status.to_le_bytes().to_vec(),
-            Self::Attach { generation } => generation.to_le_bytes().to_vec(),
+            Self::Attach {
+                generation,
+                session_id,
+            } => {
+                let mut p = generation.to_le_bytes().to_vec();
+                if let Some(id) = session_id {
+                    p.extend_from_slice(&id.to_le_bytes());
+                }
+                p
+            }
             Self::Refused { reason } => vec![*reason as u8],
         };
         if payload.len() > MAX_FRAME {
@@ -145,10 +157,24 @@ impl Frame {
                 let status = read_i32(payload)?;
                 Ok(Self::Exit { status })
             }
-            Tag::Attach => {
-                let generation = read_u64(payload)?;
-                Ok(Self::Attach { generation })
-            }
+            Tag::Attach => match payload.len() {
+                8 => Ok(Self::Attach {
+                    generation: read_u64(payload)?,
+                    session_id: None,
+                }),
+                16 => {
+                    let generation =
+                        u64::from_le_bytes(payload[0..8].try_into().map_err(|_| Error::Truncated)?);
+                    let session_id = u64::from_le_bytes(
+                        payload[8..16].try_into().map_err(|_| Error::Truncated)?,
+                    );
+                    Ok(Self::Attach {
+                        generation,
+                        session_id: Some(session_id),
+                    })
+                }
+                _ => Err(Error::Truncated),
+            },
             Tag::Refused => {
                 if payload.len() != 1 {
                     return Err(Error::Truncated);
@@ -313,11 +339,22 @@ mod tests {
 
     #[test]
     fn sock_stream_partial_reads_reassemble() {
-        let full = Frame::Attach { generation: 7 }.encode().expect("encode");
+        let full = Frame::Attach {
+            generation: 7,
+            session_id: None,
+        }
+        .encode()
+        .expect("encode");
         let mut d = Decoder::new();
         assert!(d.push(&full[..3]).expect("p1").is_empty());
         let rest = d.push(&full[3..]).expect("p2");
-        assert_eq!(rest, vec![Frame::Attach { generation: 7 }]);
+        assert_eq!(
+            rest,
+            vec![Frame::Attach {
+                generation: 7,
+                session_id: None
+            }]
+        );
     }
 
     #[test]
@@ -332,7 +369,11 @@ mod tests {
     fn only_data_and_credit_are_warm_path_frames() {
         assert!(Frame::Data(vec![1]).is_warm_path());
         assert!(Frame::Credit(1).is_warm_path());
-        assert!(!Frame::Attach { generation: 1 }.is_warm_path());
+        assert!(!Frame::Attach {
+            generation: 1,
+            session_id: None
+        }
+        .is_warm_path());
         assert!(!Frame::Exit { status: 0 }.is_warm_path());
         assert!(!Frame::Resize {
             cols: 1,
@@ -382,5 +423,51 @@ mod tests {
             got.extend(d.push(&full[split..]).expect("second half"));
             assert_eq!(got.len(), 1, "split at {split} lost or duplicated a frame");
         }
+    }
+
+    #[test]
+    fn t_attach_eight_byte_payload_is_generation_only() {
+        let bytes = Frame::Attach {
+            generation: 9,
+            session_id: None,
+        }
+        .encode()
+        .expect("encode");
+        assert_eq!(
+            &bytes[1..5],
+            &8u32.to_le_bytes(),
+            "Spike 0 payload is 8 bytes"
+        );
+        let mut d = Decoder::new();
+        assert_eq!(
+            d.push(&bytes).expect("decode"),
+            vec![Frame::Attach {
+                generation: 9,
+                session_id: None
+            }]
+        );
+    }
+
+    #[test]
+    fn t_attach_sixteen_byte_payload_names_a_session_id() {
+        let bytes = Frame::Attach {
+            generation: 3,
+            session_id: Some(42),
+        }
+        .encode()
+        .expect("encode");
+        assert_eq!(
+            &bytes[1..5],
+            &16u32.to_le_bytes(),
+            "named leaf payload is 16 bytes"
+        );
+        let mut d = Decoder::new();
+        assert_eq!(
+            d.push(&bytes).expect("decode"),
+            vec![Frame::Attach {
+                generation: 3,
+                session_id: Some(42)
+            }]
+        );
     }
 }
