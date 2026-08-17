@@ -156,14 +156,44 @@ run_t_nfr() {
   nfr_err="$TMP/T-NFR.app.err"
   : > "$nfr_out"
   : > "$nfr_err"
+  # Never `open -W`. On GitHub-hosted macos-14, CAMetalLayer nextDrawable can
+  # block forever and -W then never returns, so the job sits until the 90
+  # minute timeout — after every gate CI can actually close already passed
+  # (ADR 0009 D4). Poll the report files; reap the app at the deadline.
+  timeout_sec="${RILL_NFR_TIMEOUT_SEC:-200}"
+  if [ "${RILL_NFR_OPTIONAL:-}" = 1 ]; then
+    timeout_sec="${RILL_NFR_TIMEOUT_SEC:-45}"
+  fi
+  echo "T-NFR: launching $APP --nfr-key=$NFR_MODE (bound ${timeout_sec}s)"
   if [ -n "${RILL_MUTATE:-}" ]; then
-    open -n -W --stdout "$nfr_out" --stderr "$nfr_err" \
+    open -n --stdout "$nfr_out" --stderr "$nfr_err" \
       --env "RILL_SOCKET=$SOCK" --env "RILL_MUTATE=$RILL_MUTATE" \
       "$APP" --args "--nfr-key=$NFR_MODE"
   else
-    open -n -W --stdout "$nfr_out" --stderr "$nfr_err" \
+    open -n --stdout "$nfr_out" --stderr "$nfr_err" \
       --env "RILL_SOCKET=$SOCK" "$APP" --args "--nfr-key=$NFR_MODE"
   fi
+  elapsed=0
+  while [ "$elapsed" -lt "$timeout_sec" ]; do
+    if grep -q '^T-NFR mode=' "$nfr_out" 2>/dev/null; then
+      break
+    fi
+    if grep -q '^T-NFR: ' "$nfr_err" 2>/dev/null; then
+      sleep 1
+      break
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+    if [ $((elapsed % 10)) -eq 0 ]; then
+      echo "T-NFR: still waiting (${elapsed}s/${timeout_sec}s)"
+    fi
+  done
+  if [ "$elapsed" -ge "$timeout_sec" ]; then
+    echo "T-NFR: timed out after ${timeout_sec}s (no panel or nextDrawable blocked)" >&2
+  fi
+  killall -TERM Rill 2>/dev/null || true
+  sleep 1
+  killall -KILL Rill 2>/dev/null || true
   cat "$nfr_out"
   cat "$nfr_err" >&2
   if grep -q '^T-NFR: ' "$nfr_err"; then

@@ -50,6 +50,9 @@ jobs:
         env:
           RILL_NFR_MODE: app
           RILL_NFR_OPTIONAL: "1"
+          # Bound: hosted macos-14 has no panel; nextDrawable can block
+          # forever. Do not use open -W (ADR 0009 D4).
+          RILL_NFR_TIMEOUT_SEC: "45"
         # --negative-controls already runs the unmutated gates first.
         # Always: a gate that stays green under mutation is a broken instrument
         # (ADR 0002 D3). workflow_dispatch can still set the input false.
