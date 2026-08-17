@@ -21,9 +21,10 @@ demonstrated red) · **Proven** (demonstrated red, then green, in CI or a
 recorded evidence artifact).
 
 Ledger below is the 2026-08-16 laptop run
-(`evidence/spike0-20260816T163646Z.json`). No gate is **Proven** (ADR 0002 D8).
-T-NFR is **Red**. Spike 0 stays **Red**. The withdrawn `p95=0.032ms` run must
-not be cited.
+(`evidence/spike0-20260816T163646Z.json`) plus the 2026-08-17 battery hid on
+ADR 0009. No gate is **Proven** (ADR 0002 D8; T-NFR `timer_pump` invert is
+pending). Spike 0 stays **Red**. The withdrawn `p95=0.032ms` run must not be
+cited.
 
 ---
 
@@ -309,16 +310,24 @@ Replaces audit S1-2 and S1-3.
 
 **Pass:** p95 < one refresh interval at the display's actual rate (ADR 0003 D8).
 
+Present is ADR 0009: `toggleFullScreen:` + opaque `CAMetalLayer` + echo, one
+in flight, same-stack pump. ADRs 0004–0008 are exhausted paths, not the closer.
+The 8.33ms budget does not move. GitHub-hosted `macos-14` cannot close hid.
+
 **Control-RPC oracle (replaces the self-certifying check).** During the window:
 frames sent are only `DATA` and `CREDIT`; frames received are only `DATA`; the
 process opened no socket other than the attach socket, compared by a
 before/after fd snapshot.
 
 **Required mutation.** Restore the 60 Hz `NSTimer` in place of ADR 0003 D2's
-dispatch source. A one-frame polling interval on a one-frame budget must be
-visible in p95.
+dispatch source **and** skip same-stack `paintEchoAfterInput` plus the NFR
+loop's 0.5 ms pump, so the sample waits on the timer. A one-frame polling
+interval on a one-frame budget must be visible in p95.
 
-**Negative control.** `RILL_MUTATE=timer_pump` — automated in `app` mode.
+**Negative control.** `RILL_MUTATE=timer_pump` — `sh scripts/run-t-nfr-timer-pump.sh`
+from Terminal.app on the packaged app. Must miss p95 (or fail to accept 1000
+samples because of the 60 Hz poll). App-mode invert on a headless runner is
+not this control.
 
 **Why the old test could not fail.** It searched the whole grid for
 `b'a' + i%26`, which the shell had already echoed there on a previous cycle, so
@@ -339,12 +348,10 @@ snapshot, inside the Rust client, never reaching the host or the GPU.
 | T-RESYNC | Green-unproven | `no_resync` went red (blank reopen) | — |
 | T-KILL | Green-unproven | manual (`went_red: null`) | S3-3 (drop kills child) |
 | T-SPAWN | Green-unproven | permanent positive control passed; `openpty_in_main_m` still `null` | S1-1 |
-| T-NFR | Red | `timer_pump` inconclusive (unmutated hid already misses 8.33ms) | S3-8b, S3-8g, S3-8h |
+| T-NFR | Green-unproven | `timer_pump` invert **pending** on ADR 0009 | S3-8b, S3-8g, S3-8h |
 
-T-NFR battery hid: p50=23.349ms p95=**23.525ms** p99=23.598ms max=42.835ms,
-samples=1000 discarded=0, 120 Hz budget=8.33ms, `ax_trusted=1`. After warmup,
-`key_to_commit` ≈ 1.4ms; `commit_to_presented` ≈ 20–22ms; present cadence
-~40 Hz. Almost all of p95 is compositor/vsync.
-
-`timer_pump` in `app` mode: p95=24.578ms, also a miss. That is not a
-demonstrated invert of the instrument.
+T-NFR battery hid (ADR 0009, 2026-08-17): p50=6.743ms p95=**7.011ms**
+p99=14.220ms max=22.670ms, samples=1000 discarded=2 (0.20%), 120 Hz
+budget=8.33ms, cadence p50=p95=8.33ms, `ax_trusted=1`, `pmset` Battery Power
+28% discharging. Unmutated hid **passes**. `timer_pump` on this presenter has
+not been observed red; until it is, T-NFR is not Proven.

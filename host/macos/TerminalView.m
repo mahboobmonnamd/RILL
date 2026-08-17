@@ -189,6 +189,7 @@ typedef struct {
     BOOL _nfrRunning;
     BOOL _nfrFailed;
     uint32_t _nfrHidKeyDowns;
+    BOOL _timerPump;
 
     NSUInteger _lastDrawCount;
     uint16_t _lastDrawCols;
@@ -341,6 +342,7 @@ typedef struct {
 - (void)armSocketSource {
     const char *mut = getenv("RILL_MUTATE");
     if (mut && strcmp(mut, "timer_pump") == 0) {
+        _timerPump = YES;
         _pumpTimer = [NSTimer scheduledTimerWithTimeInterval:(1.0 / 60.0)
                                                       target:self
                                                     selector:@selector(onSocketReadable)
@@ -804,6 +806,9 @@ static inline vector_float4 rgba(uint32_t c) {
 }
 
 - (void)paintEchoAfterInput {
+    if (_timerPump) {
+        return;
+    }
     int fd = rill_client_socket_fd(_client);
     CFTimeInterval deadline = CACurrentMediaTime() + 0.002;
     for (;;) {
@@ -1145,9 +1150,10 @@ static inline vector_float4 rgba(uint32_t c) {
     CAMetalLayer *metal = (CAMetalLayer *)self.layer;
     fprintf(stderr,
             "present: toggleFullScreen + opaque echo + same-stack pump "
-            "fullscreen=%d opaque=%d drawable=%.0fx%.0f\n",
+            "fullscreen=%d opaque=%d drawable=%.0fx%.0f timer_pump=%d\n",
             (self.window.styleMask & NSWindowStyleMaskFullScreen) ? 1 : 0,
-            metal.opaque ? 1 : 0, metal.drawableSize.width, metal.drawableSize.height);
+            metal.opaque ? 1 : 0, metal.drawableSize.width, metal.drawableSize.height,
+            _timerPump ? 1 : 0);
     fflush(stderr);
     [self pinPresentRefresh];
     self.paused = YES;
@@ -1176,6 +1182,9 @@ static inline vector_float4 rgba(uint32_t c) {
                                           dequeue:YES];
         if (e) {
             [NSApp sendEvent:e];
+        }
+        if (_timerPump) {
+            continue;
         }
         ptrdiff_t fed = rill_client_pump(_client);
         if (fed > 0) {
