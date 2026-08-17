@@ -101,6 +101,9 @@ the `\x1b[2J` prefix.
 2. Child issues under [#6](https://github.com/mahboobmonnamd/RILL/issues/6) per
    slice (UTF-8, C0, CSI cursor, SGR, alt-screen, resync emit) — after tests
    exist as names, one issue per slice, `lane:chip1-vt-engine`, milestone M4.
+   Palette-index cells / compositor opacity:
+   **[#267](https://github.com/mahboobmonnamd/RILL/issues/267)** (colour ADR
+   first; this handoff does not authorize that work).
 3. Types crate + red tests, then impl.
 
 ## Done (M4) vs later

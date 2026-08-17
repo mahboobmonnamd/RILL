@@ -11,7 +11,9 @@
 //! reported 32 microseconds (docs/SPIKE-0-AUDIT.md S1-2).
 
 use rill_attach::{Decoder, Frame};
-use rill_chip0::{load_host_surface, Chip0, HostSurface, PodGrid, TerminalEmulation};
+use rill_chip0::{
+    apply_theme, load_resolved_surface, Chip0, HostSurface, PodGrid, TerminalEmulation,
+};
 use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
@@ -79,6 +81,46 @@ impl Client {
 
     pub fn font_fallbacks(&self) -> &[String] {
         &self.surface.font_fallbacks
+    }
+
+    pub fn padding_x(&self) -> f32 {
+        self.surface.padding_x
+    }
+
+    pub fn padding_y(&self) -> f32 {
+        self.surface.padding_y
+    }
+
+    pub fn background_opacity(&self) -> f32 {
+        self.surface.background_opacity
+    }
+
+    pub fn macos_option_as_alt(&self) -> bool {
+        self.surface.macos_option_as_alt
+    }
+
+    pub fn background_rgba(&self) -> u32 {
+        self.surface
+            .colors
+            .as_ref()
+            .map(|c| c.background)
+            .unwrap_or(0x1212_12ff)
+    }
+
+    pub fn foreground_rgba(&self) -> u32 {
+        self.surface
+            .colors
+            .as_ref()
+            .map(|c| c.foreground)
+            .unwrap_or(0xcccc_ccff)
+    }
+
+    pub fn cursor_rgba(&self) -> u32 {
+        self.surface
+            .colors
+            .as_ref()
+            .map(|c| c.cursor)
+            .unwrap_or(0xd9d9_d9ff)
     }
 
     pub fn alive(&self) -> bool {
@@ -191,7 +233,9 @@ impl Client {
 
     pub fn snapshot(&mut self) -> Result<&PodGrid, rill_chip0::Error> {
         if self.cached.is_none() {
-            self.cached = Some(self.chip.snapshot()?);
+            let mut grid = self.chip.snapshot()?;
+            apply_theme(&mut grid, &self.surface);
+            self.cached = Some(grid);
         }
         self.cached
             .as_ref()
@@ -253,6 +297,11 @@ pub fn default_socket() -> PathBuf {
 
 pub fn load_surface() -> Result<HostSurface, rill_chip0::Error> {
     let mut paths = vec![PathBuf::from("host-surface.toml")];
+    if let Ok(configured) = std::env::var("RILL_HOST_SURFACE") {
+        if !configured.is_empty() {
+            paths.insert(0, PathBuf::from(configured));
+        }
+    }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             paths.push(dir.join("../Resources/host-surface.toml"));
@@ -262,10 +311,10 @@ pub fn load_surface() -> Result<HostSurface, rill_chip0::Error> {
     paths.push(PathBuf::from("../../host-surface.toml"));
     for p in &paths {
         if p.exists() {
-            return load_host_surface(p);
+            return load_resolved_surface(p);
         }
     }
-    load_host_surface("host-surface.toml")
+    load_resolved_surface("host-surface.toml")
 }
 
 /// Percentile over an already-sorted slice, 0-indexed and without the

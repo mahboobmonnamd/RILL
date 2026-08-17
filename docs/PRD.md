@@ -28,7 +28,7 @@ One window. One runtime. One PTY. Chip 0 display. Framed attach. Quit/SIGKILL ke
 
 ## 4. Out of scope until Milestone 1+ (Spike 0 is Proven)
 
-- Sidebar, tabs, splits, Blocks, themes
+- Sidebar, tabs, splits, Blocks, theme store
 - Agents, conversations, scheduler, natural-language routing
 - Full Ghostty.app embed / Ghostty-owned spawn
 - Our own VT engine as the live chip (Chip 1 is isolated in M4 per [ADR 0012](adr/0012-chip1-isolated-vt.md); it cannot replace Chip 0 until M7)

@@ -190,6 +190,76 @@ pub unsafe extern "C" fn rill_client_font_size(client: *const Client) -> f32 {
 }
 
 /// # Safety
+/// `client` is a live handle.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_padding_x(client: *const Client) -> f32 {
+    if client.is_null() {
+        return 0.0;
+    }
+    unsafe { (*client).padding_x() }
+}
+
+/// # Safety
+/// `client` is a live handle.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_padding_y(client: *const Client) -> f32 {
+    if client.is_null() {
+        return 0.0;
+    }
+    unsafe { (*client).padding_y() }
+}
+
+/// # Safety
+/// `client` is a live handle.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_background_opacity(client: *const Client) -> f32 {
+    if client.is_null() {
+        return 1.0;
+    }
+    unsafe { (*client).background_opacity() }
+}
+
+/// # Safety
+/// `client` is a live handle.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_macos_option_as_alt(client: *const Client) -> i32 {
+    if client.is_null() {
+        return 0;
+    }
+    i32::from(unsafe { (*client).macos_option_as_alt() })
+}
+
+/// # Safety
+/// `client` is a live handle.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_background_rgba(client: *const Client) -> u32 {
+    if client.is_null() {
+        return 0x1212_12ff;
+    }
+    unsafe { (*client).background_rgba() }
+}
+
+/// # Safety
+/// `client` is a live handle.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_foreground_rgba(client: *const Client) -> u32 {
+    if client.is_null() {
+        return 0xcccc_ccff;
+    }
+    unsafe { (*client).foreground_rgba() }
+}
+
+/// # Safety
+/// `client` is a live handle.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_cursor_rgba(client: *const Client) -> u32 {
+    if client.is_null() {
+        return 0xd9d9_d9ff;
+    }
+    unsafe { (*client).cursor_rgba() }
+}
+
+/// # Safety
 /// `client` is a live handle. Pointer valid until the next fallback call.
 #[no_mangle]
 pub unsafe extern "C" fn rill_client_font_fallback(

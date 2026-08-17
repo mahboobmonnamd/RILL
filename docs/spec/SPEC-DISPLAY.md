@@ -5,12 +5,14 @@
 - **Authority:** [ADR 0003](../adr/0003-display-pipeline.md),
   [ADR 0009](../adr/0009-direct-to-display-echo.md),
   [ADR 0016](../adr/0016-exit-fullscreen-must-not-hang.md),
+  [ADR 0017](../adr/0017-ghostty-look-windowed-default.md),
   [ADR 0018](../adr/0018-three-pane-host-chrome.md) (M2 chrome; not a Spike 0 reopen),
   [ADR 0019](../adr/0019-dock-reopen-shows-window.md)
 - **Code:** `host/macos/`, `crates/rill-host`
 - **Gates:** T-NFR, T-SPAWN, T-KILL, T-RESIZE — **Proven**. T-FS-EXIT
-  ([#257](https://github.com/mahboobmonnamd/RILL/issues/257)). Three-pane
-  chrome is [SPEC-CHROME](SPEC-CHROME.md) / T-SPLIT
+  ([#257](https://github.com/mahboobmonnamd/RILL/issues/257)). T-LOOK /
+  T-WINDOWED / T-LOOK-GLASS ([#259](https://github.com/mahboobmonnamd/RILL/issues/259)).
+  Three-pane chrome is [SPEC-CHROME](SPEC-CHROME.md) / T-SPLIT
   ([#260](https://github.com/mahboobmonnamd/RILL/issues/260)). T-DOCK-REOPEN
   ([#262](https://github.com/mahboobmonnamd/RILL/issues/262)). §6 IME and §7
   window paint of EXIT are **later**, not a reopen of those gates.
@@ -39,13 +41,19 @@
 
 - Event-driven feed. A `DISPATCH_SOURCE_TYPE_READ` on the attach socket drives
   read → feed → damaged-instance rebuild (ADR 0003 D2).
-- The Spike 0 window is titled and enters a fullscreen Space via
-  `toggleFullScreen:` (ADR 0009). The layer is opaque. A borderless cover of
-  `screen.frame` is not this surface.
-- Leaving that Space (green traffic-light / a second `toggleFullScreen:`)
+- The window is titled, closable, resizable. `collectionBehavior` is
+  `FullScreenPrimary`. Default `make run` is **windowed** (ADR 0017 D1). It
+  MUST NOT call `toggleFullScreen:` on launch. `--nfr-key` still enters a
+  fullscreen Space before measuring (ADR 0009). A borderless cover of
+  `screen.frame` is not this surface. The layer is opaque. `NSWindow` is
+  opaque. `window.alphaValue` stays `1` even when `background-opacity` is
+  set (ADR 0017 D3).
+- Leaving a Space (green traffic-light / a second `toggleFullScreen:`)
   MUST complete. The main thread MUST NOT wait forever on `nextDrawable` or
   the in-flight present semaphore (ADR 0016). The in-flight wait is bounded;
   a completed handler releases the semaphore if `presentedTime` never arrives.
+  T-FS-EXIT enters then leaves; it does not require default launch to be
+  fullscreen.
 - Dock click of a running app MUST show the existing window (ADR 0019).
   `NSApp` has a delegate. `applicationShouldHandleReopen:hasVisibleWindows:`
   unhides, deminiaturizes if needed, and `makeKeyAndOrderFront:`s that
@@ -133,14 +141,42 @@ exists in a test build is not measuring the shipped app.
 
 ## 9. Out of scope for Spike 0
 
-Tabs, nested PTY splits, Blocks, themes, scrollback UI, mouse reporting,
+Tabs, nested PTY splits, Blocks, scrollback UI, mouse reporting,
 selection, search, ligatures, colour emoji, any second window, and
 session-graph UI in the kernel
 ([ADR 0011](../adr/0011-session-graph.md) D5). Three-pane chrome around **one**
 leaf is M2 ([SPEC-CHROME](SPEC-CHROME.md), [ADR 0018](../adr/0018-three-pane-host-chrome.md)).
-`font-fallbacks` in `host-surface.toml` is parsed and unused; wiring it is
-later, not a font-family regression (`font-family` / `font-size` are live).
+Theme *store* and cmux/Herdr chrome stay out. Look overlay is §10 (ADR 0017),
+not a Spike 0 reopen.
 
 ASAP keep-alive presents, CA pin, `CAMetalDisplayLink`, and a borderless
 cover of `screen.frame` are not the closer (ADR 0004–0008). The closer is
 ADR 0009. Do not flatten the oracle (ADR 0003 D5–D8).
+
+## 10. Look overlay (ADR 0017)
+
+`host-surface.toml` is the bundled fallback (`font-family`, `font-size`,
+`font-fallbacks`, optional `theme =`). The host then overlays the first
+look file that exists: `RILL_CONFIG`, then `~/.config/rill/config`.
+
+Do not live-read `~/.config/ghostty/config` or cmux files.
+
+Applied keys: `theme`, `font-family`, `font-size`, `font-family-fallback`,
+`background` / `foreground` / `cursor` / `palette`, `window-padding-x` /
+`window-padding-y`, `background-opacity`, `split-divider-color`,
+`macos-option-as-alt`. `theme =` resolves a Ghostty-grammar **file** under
+`themes/` next to that config, next to `host-surface.toml` (packaged
+`Resources/themes/`), or `~/.config/rill/themes/`. Rust MUST NOT contain a
+theme RGB catalog. Unknown theme names do not replace host-surface colors.
+Unquoted `#hex` is a color.
+
+Empty cells whose fg/bg equal the VT default are remapped to the
+file-resolved default colours. The Metal layer and `NSWindow` stay opaque.
+`background-opacity` and `background-blur-radius` are parsed and not
+applied. ANSI 0–15 from the theme file are stored; Chip 0 cannot apply them
+without inventing a default-RGB map ([#267](https://github.com/mahboobmonnamd/RILL/issues/267),
+not this host gate). `cmux.json`, Herdr, and zshrc are not this file.
+
+`font-fallbacks` are live: `TerminalView` tries each name with CoreText
+before failing init. Production faces MUST NOT use
+`NSFont.monospacedSystemFont` when a family is configured.
