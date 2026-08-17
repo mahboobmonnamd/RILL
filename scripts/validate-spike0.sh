@@ -150,6 +150,8 @@ run_gate "T-FS-EXIT" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
   cargo test -p rill-host --offline --test t_fullscreen_exit -- --nocapture
 run_gate "T-SPLIT" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
   cargo test -p rill-host --offline --test t_split -- --nocapture
+run_gate "T-DOCK-REOPEN" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_dock_reopen -- --nocapture
 
 # ------------------------------------------------------------------------ T-NFR
 echo "== T-NFR =="
@@ -296,6 +298,9 @@ if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
   run_control "T-SPLIT" no_chrome \
     env RILL_GUI_APP="$ROOT/dist/Rill.app" \
     cargo test -p rill-host --offline --test t_split -- --nocapture
+  run_control "T-DOCK-REOPEN" skip_dock_reopen \
+    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rill-host --offline --test t_dock_reopen -- --nocapture
   run_t_spawn_openpty() {
     mut_app="$TMP/Rill-openpty.app"
     RILL_MUTATE=openpty_in_main_m RILL_APP="$mut_app" sh scripts/package-macos.sh

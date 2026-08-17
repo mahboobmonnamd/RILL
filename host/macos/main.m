@@ -31,6 +31,52 @@ extern char **environ;
 }
 @end
 
+@interface RillAppDelegate : NSObject <NSApplicationDelegate>
+@property (nonatomic, strong) NSWindow *window;
+@end
+@implementation RillAppDelegate
+- (void)restoreWindowForDockReopen {
+    const char *mut = getenv("RILL_MUTATE");
+    if (mut && strcmp(mut, "skip_dock_reopen") == 0) {
+        return;
+    }
+    NSWindow *w = self.window;
+    if (!w) {
+        return;
+    }
+    [NSApp unhide:nil];
+    if (w.miniaturized) {
+        [w deminiaturize:nil];
+    }
+    [w makeKeyAndOrderFront:nil];
+    [NSApp activateIgnoringOtherApps:YES];
+}
+
+- (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag {
+    (void)sender;
+    (void)flag;
+    [self restoreWindowForDockReopen];
+    return YES;
+}
+
+- (void)applicationDidBecomeActive:(NSNotification *)notification {
+    (void)notification;
+    /* T-DOCK-REOPEN hides then sends reopen; do not undo the hide here. */
+    if (getenv("RILL_TEST_DOCK_REOPEN")) {
+        return;
+    }
+    NSWindow *w = self.window;
+    if (w && (!w.isVisible || !w.isOnActiveSpace)) {
+        [self restoreWindowForDockReopen];
+    }
+}
+
+- (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {
+    (void)sender;
+    return NO;
+}
+@end
+
 /* Apple: direct-to-display needs toggleFullScreen: on a titled window, not a
  * borderless cover of screen.frame. Pump until the Space is actually entered. */
 static BOOL wait_until_fullscreen(NSWindow *window, NSTimeInterval timeout) {
@@ -139,6 +185,8 @@ int main(int argc, const char *argv[]) {
 
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+        RillAppDelegate *appDelegate = [RillAppDelegate new];
+        [NSApp setDelegate:appDelegate];
 
         NSRect frame = NSMakeRect(80, 80, 1100, 680);
         RillWindow *window = [[RillWindow alloc]
@@ -148,9 +196,11 @@ int main(int argc, const char *argv[]) {
                         backing:NSBackingStoreBuffered
                           defer:NO];
         window.opaque = YES;
+        window.releasedWhenClosed = NO;
         window.backgroundColor = [NSColor colorWithCalibratedWhite:0.07 alpha:1.0];
         window.title = @"Rill";
         window.collectionBehavior = NSWindowCollectionBehaviorFullScreenPrimary;
+        appDelegate.window = window;
         TerminalView *view = [[TerminalView alloc] initWithClient:client];
         if (!view) {
             fprintf(stderr, "Rill: renderer failed to initialise\n");
@@ -175,15 +225,37 @@ int main(int argc, const char *argv[]) {
         [window makeKeyAndOrderFront:nil];
         [window makeFirstResponder:view];
         [NSApp activateIgnoringOtherApps:YES];
-        [window toggleFullScreen:nil];
-        if (!wait_until_fullscreen(window, 5.0)) {
-            fprintf(stderr, "Rill: toggleFullScreen did not enter a Space\n");
+        /* T-DOCK-REOPEN stays windowed so orderOut is the not-visible case
+         * (ADR 0019). T-NFR and default make run still enter a Space. */
+        if (!getenv("RILL_TEST_DOCK_REOPEN")) {
+            [window toggleFullScreen:nil];
+            if (!wait_until_fullscreen(window, 5.0)) {
+                fprintf(stderr, "Rill: toggleFullScreen did not enter a Space\n");
+            }
         }
         if (getenv("RILL_TEST_EXIT_FULLSCREEN")) {
             /* Same call as the green traffic-light (ADR 0016). */
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)),
                            dispatch_get_main_queue(), ^{
                                [window toggleFullScreen:nil];
+                           });
+        }
+        if (getenv("RILL_TEST_DOCK_REOPEN")) {
+            /* Same selector Dock sends (ADR 0019). Hide first so the oracle
+             * can observe not-visible, then reopen. */
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{
+                               [window orderOut:nil];
+                               [view writeTestHeartbeat];
+                           });
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.2 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{
+                               id del = [NSApp delegate];
+                               if ([del respondsToSelector:@selector(applicationShouldHandleReopen:
+                                                                     hasVisibleWindows:)]) {
+                                   [del applicationShouldHandleReopen:NSApp hasVisibleWindows:NO];
+                               }
+                               [view writeTestHeartbeat];
                            });
         }
 

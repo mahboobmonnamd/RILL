@@ -437,6 +437,31 @@ CI on `gates.yml` is the D8 closer.
 
 ---
 
+## T-DOCK-REOPEN — Dock click shows the window
+
+Authority: [ADR 0019](adr/0019-dock-reopen-shows-window.md),
+[SPEC-DISPLAY](spec/SPEC-DISPLAY.md) §3,
+[#262](https://github.com/mahboobmonnamd/RILL/issues/262).
+
+**Bug (doc comment).** After `make run`, switching to another app and
+clicking Rill in the Dock does not show the window. Quit and `make run`
+again is required.
+
+**Oracle.** Packaged `Rill.app`. After the window is ordered out, the Dock
+reopen selector (`applicationShouldHandleReopen:hasVisibleWindows:`) makes
+it visible and key. Heartbeat reports `visible=1` and `key=1` from
+`NSWindow.isVisible` / `isKeyWindow`, then `seq` increases. Downstream of
+the window, not of a flag the test wrote.
+
+**Procedure.** Packaged GUI. `RILL_TEST_DOCK_REOPEN=1` orders the window
+out, then sends the same reopen selector Dock uses. No GUI click in CI.
+Socket-only tests do not close this.
+
+**Required mutation.** `RILL_MUTATE=skip_dock_reopen`: reopen does not
+`makeKeyAndOrderFront:`. This test MUST go red.
+
+---
+
 ## Gate ledger
 
 | ID | Status | Automated negative control | Blocking defect it also covers |
