@@ -29,6 +29,48 @@ again.
 
 ---
 
+## Quality follow-ups (post Spike 0)
+
+These are not Spike 0 reopeners. They are defects the post-close audit found
+in production code that Spike 0 did not name.
+
+### T-PARTIAL-WRITE — non-blocking flush must not replay a DATA frame
+
+**Oracle.** Child-emitted tokens `RILL-UNIQ-<n>-END` in decoded `DATA`. Only
+complete `-END` tokens count: a read cutoff can bisect `RILL-UNIQ-16073` into
+a line that looks like `160`. Downstream of the PTY child, not of a buffer
+the daemon copied for the test.
+
+**Procedure.** In-process `Daemon` over `AF_UNIX`. Shrink the client's
+`SO_RCVBUF`, ATTACH+CREDIT, **pump without reading** until the socket fills,
+then drain. The child emits ~20k numbered lines. Assert each complete token
+appears once, and that enough tokens arrived to have filled the socket.
+
+**Required mutation.** `write_all` of a whole frame on `WouldBlock`, then
+re-queue that same frame (`RILL_MUTATE=replay_full_frame`, feature `mutate`).
+The observed red is a decode failure (`UnknownTag` from payload bytes treated
+as a frame header) or a duplicated `-END` token.
+
+**Negative control.** `replay_full_frame` — automated. The test sets
+`RILL_TEST_TINY_SNDBUF` so the accepted socket actually short-writes;
+integration tests do not compile the lib with `cfg(test)`.
+
+### T-ATTACHED-POLL — live attach must not sleep in `poll`
+
+**Oracle.** After ATTACH+CREDIT, `Daemon::step_timeout_ms()` is `0`. Before
+attach it is `50` (idle must not busy-loop). Packaged T-NFR hid is the vsync
+oracle this lock exists to protect.
+
+**Procedure.** In-process `Daemon`. Bind, assert idle timeout > 0, connect,
+ATTACH+CREDIT, step until credit is applied, assert timeout is 0.
+
+**Required mutation.** Always return 50 (`RILL_MUTATE=idle_poll_while_attached`,
+feature `mutate`). That is the Q5 regression: hid p95 12–13 ms vs closer 7.011 ms.
+
+**Negative control.** `idle_poll_while_attached` — automated.
+
+---
+
 ## T-BYTES — invalid UTF-8 reaches the emulator
 
 Spec: PRD NFR-BYTES. Replaces the tautologies in audit S2-2.

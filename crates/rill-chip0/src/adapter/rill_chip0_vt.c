@@ -13,6 +13,8 @@ struct RillVt {
     GhosttyRenderState render;
     GhosttyRenderStateRowIterator rows;
     GhosttyRenderStateRowCells cells;
+    RillPodCell *grid;
+    size_t grid_cap;
 };
 
 static uint32_t rgba(GhosttyColorRgb c) {
@@ -61,6 +63,7 @@ void rill_vt_free(RillVt *vt) {
     ghostty_render_state_row_iterator_free(vt->rows);
     ghostty_render_state_free(vt->render);
     ghostty_terminal_free(vt->term);
+    free(vt->grid);
     free(vt);
 }
 
@@ -113,7 +116,15 @@ int rill_vt_snapshot(RillVt *vt, RillPodHeader *hdr, RillPodCell **cells, size_t
     ghostty_render_state_get(vt->render, GHOSTTY_RENDER_STATE_DATA_CURSOR, &cursor);
 
     size_t n = (size_t)cols * (size_t)rows;
-    RillPodCell *grid = calloc(n, sizeof(RillPodCell));
+    if (n > vt->grid_cap) {
+        RillPodCell *grown = realloc(vt->grid, n * sizeof(RillPodCell));
+        if (!grown) {
+            return -1;
+        }
+        vt->grid = grown;
+        vt->grid_cap = n;
+    }
+    RillPodCell *grid = vt->grid;
     if (!grid) {
         return -1;
     }
@@ -130,7 +141,6 @@ int rill_vt_snapshot(RillVt *vt, RillPodHeader *hdr, RillPodCell **cells, size_t
 
     if (ghostty_render_state_get(vt->render, GHOSTTY_RENDER_STATE_DATA_ROW_ITERATOR, &vt->rows)
         != GHOSTTY_SUCCESS) {
-        free(grid);
         return -1;
     }
 
@@ -280,5 +290,6 @@ void rill_vt_buf_free(uint8_t *ptr, size_t len) {
 }
 
 void rill_vt_cells_free(RillPodCell *ptr) {
-    free(ptr);
+    /* Grid is owned by RillVt and reused. Rust copies before the next snapshot. */
+    (void)ptr;
 }

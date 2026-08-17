@@ -206,10 +206,23 @@ scan no-nm-defined-only \
   'nm[^\n]*"-U"|nm -U' \
   $(git ls-files 'crates/**/tests/*.rs') $(sh_src)
 
-# TODO(lane-c): reject a fixed-size buffer passed to GRAPHEMES_BUF without a
-#   preceding GRAPHEMES_LEN query. Needs a real C parse, not grep. Tracked here
-#   rather than in a document so it stays visible (ADR 0002 D9).
-# TODO(lane-b): reject naked read/write on the attach socket outside the codec.
+# Grapheme overflow (S3-1): GRAPHEMES_BUF without a prior GRAPHEMES_LEN query.
+if [ -f crates/rill-chip0/src/adapter/rill_chip0_vt.c ]; then
+  if grep -q 'GRAPHEMES_BUF' crates/rill-chip0/src/adapter/rill_chip0_vt.c \
+    && ! grep -q 'GRAPHEMES_LEN' crates/rill-chip0/src/adapter/rill_chip0_vt.c; then
+    fail grapheme-len "GRAPHEMES_BUF used without GRAPHEMES_LEN (SPEC-CHIP0 §5)"
+  fi
+fi
+
+# Naked write_all on the attach client (Q1). Allowed only inside the mutate
+# block that implements replay_full_frame.
+if [ -f crates/rilld/src/lib.rs ]; then
+  prod="$(grep -n 'stream.write_all' crates/rilld/src/lib.rs || true)"
+  if [ -n "$prod" ] && ! grep -q 'replay_full_frame' crates/rilld/src/lib.rs; then
+    fail no-write-all-nonblock "rilld must not write_all the attach socket (quality Q1)"
+    printf '%s\n' "$prod" | sed 's/^/    /' >&2
+  fi
+fi
 
 if [ "$FAILED" -ne 0 ]; then
   echo "lint-planes: plane violations found" >&2

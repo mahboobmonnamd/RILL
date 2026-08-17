@@ -128,6 +128,15 @@ impl Session {
         self.pty.wait_readable(timeout)
     }
 
+    /// Combined wait: PTY master plus caller sockets. Master fd stays here.
+    pub fn poll_with_extras(
+        &self,
+        extras: &mut [libc::pollfd],
+        timeout_ms: i32,
+    ) -> Result<bool, Error> {
+        self.pty.poll_with_extras(extras, timeout_ms)
+    }
+
     pub fn terminate(&mut self) -> Result<(), Error> {
         self.pty.terminate()
     }

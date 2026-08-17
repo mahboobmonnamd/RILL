@@ -189,6 +189,32 @@ pub unsafe extern "C" fn rill_client_font_size(client: *const Client) -> f32 {
     unsafe { (*client).font_size() }
 }
 
+/// # Safety
+/// `client` is a live handle. Pointer valid until the next fallback call.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_font_fallback(
+    client: *const Client,
+    index: u32,
+) -> *const c_char {
+    if client.is_null() {
+        return ptr::null();
+    }
+    let c = unsafe { &*client };
+    let Some(name) = c.font_fallbacks().get(index as usize) else {
+        return ptr::null();
+    };
+    thread_local! {
+        static BUF: std::cell::RefCell<Option<CString>> = const { std::cell::RefCell::new(None) };
+    }
+    BUF.with(|b| {
+        *b.borrow_mut() = CString::new(name.as_str()).ok();
+        b.borrow()
+            .as_ref()
+            .map(|s| s.as_ptr())
+            .unwrap_or(ptr::null())
+    })
+}
+
 #[repr(C)]
 pub struct CPodGrid {
     pub cols: u16,
@@ -221,7 +247,8 @@ pub unsafe extern "C" fn rill_client_snapshot(client: *mut Client, out: *mut CPo
             }
             CELLS.with(|holder| {
                 let mut v = holder.borrow_mut();
-                *v = grid.cells;
+                v.clear();
+                v.extend_from_slice(&grid.cells);
                 unsafe {
                     (*out).cols = grid.cols;
                     (*out).rows = grid.rows;
@@ -265,10 +292,7 @@ pub unsafe extern "C" fn rill_client_cell_codepoint(
         return 0;
     }
     let c = unsafe { &mut *client };
-    match c.snapshot() {
-        Ok(g) => g.cell(col, row).map(|x| x.codepoint).unwrap_or(0),
-        Err(_) => 0,
-    }
+    c.cell_codepoint(col, row)
 }
 
 /// Writes the cursor cell. Returns 0 on success.
@@ -285,11 +309,11 @@ pub unsafe extern "C" fn rill_client_cursor(
         return -1;
     }
     let c = unsafe { &mut *client };
-    match c.snapshot() {
-        Ok(g) => {
+    match c.cursor_cell() {
+        Ok((c0, r0)) => {
             unsafe {
-                *col = g.cursor_col;
-                *row = g.cursor_row;
+                *col = c0;
+                *row = r0;
             }
             0
         }
