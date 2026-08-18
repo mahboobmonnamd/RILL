@@ -6,8 +6,12 @@ are the files in `docs/`. Spike 0 is Proven
 ([ADR 0014](adr/0014-m1-first-slice-closes.md), persist remainder
 [ADR 0015](adr/0015-m1-persist-remainder.md)). Chip 1 isolated crate is M4
 ([ADR 0012](adr/0012-chip1-isolated-vt.md), [M4-HANDOFF](M4-HANDOFF.md),
-[#6](https://github.com/mahboobmonnamd/RILL/issues/6)). Merge of chrome must
-not hide a later NFR miss. Chrome is M2. Chip 1 is not the live chip until M7.
+[M4-PLAN](M4-PLAN.md), [#6](https://github.com/mahboobmonnamd/RILL/issues/6));
+its parser, colour, reply and width decisions are ADRs
+[0020](adr/0020-chip1-parser-in-tree.md)–[0023](adr/0023-chip1-v0-defers-character-width.md)
+after [SPIKE-VT](SPIKE-VT.md). Merge of chrome must
+not hide a later NFR miss. Chrome is M2. Chip 1 is not the live chip until M7,
+and width (ADR 0023 D4) is one of M7's preconditions.
 
 Lanes are named after the plane they own. The GitHub label is the first column.
 

@@ -1,16 +1,27 @@
 # M4 handoff — Chip 1 isolated VT
 
-**Status: ready for handover. 2026-08-17.** `lane:chip1-vt-engine` / Milestone 4. This track
-stops here. A new human or agent continues from this page and the GitHub epic.
+**Status: handover context. 2026-08-17. S-VT closed 2026-08-18.**
+`lane:chip1-vt-engine` / Milestone 4.
 
-Do **not** write `vt-engine` until S-VT is closed **and** T-CHIP1 tests exist
-and have been observed red (ADR 0002 D2). Do **not** link the crate into the
-window.
+**Read [M4-PLAN](M4-PLAN.md) first — it is the current order of work.**
+[S-VT #21](https://github.com/mahboobmonnamd/RILL/issues/21) is closed
+([SPIKE-VT](SPIKE-VT.md)): the parser is written **in this tree** and `vte` is a
+`[dev-dependencies]` differential oracle only. Four ADRs followed —
+[0020](adr/0020-chip1-parser-in-tree.md) parser and C1 policy,
+[0021](adr/0021-chip1-colour-identity.md) colour identity,
+[0022](adr/0022-chip1-reply-channel.md) DA/DSR replies,
+[0023](adr/0023-chip1-v0-defers-character-width.md) width deferred and M7
+blocked on it — plus six slice specs under
+[SPEC-CHIP1](spec/SPEC-CHIP1.md) §0.
+
+Do **not** write `vt-engine` until the T-CHIP1 tests for that slice exist and
+have been observed red (ADR 0002 D2). Do **not** link the crate into the window.
 
 | | |
 |---|---|
 | Epic | [#6](https://github.com/mahboobmonnamd/RILL/issues/6) |
-| First spike | [S-VT #21](https://github.com/mahboobmonnamd/RILL/issues/21) |
+| Plan | [M4-PLAN](M4-PLAN.md) |
+| First spike | [S-VT #21](https://github.com/mahboobmonnamd/RILL/issues/21) — **closed**, [SPIKE-VT](SPIKE-VT.md) |
 | Not this team | [S-TUI-BLOCK #22](https://github.com/mahboobmonnamd/RILL/issues/22), [S-CWD #23](https://github.com/mahboobmonnamd/RILL/issues/23), [M7 placeholder #24](https://github.com/mahboobmonnamd/RILL/issues/24) |
 | ADR | [0012](adr/0012-chip1-isolated-vt.md) (Accepted — isolation; not live) |
 | Spec | [SPEC-CHIP1](spec/SPEC-CHIP1.md) |
@@ -46,17 +57,18 @@ Do not cite another application tree.
 
 Spike = research. It does not make production valid.
 
-1. **[S-VT #21](https://github.com/mahboobmonnamd/RILL/issues/21)** (research) — parser pick (`vte` + our grid vs from
-   scratch). Close with a note on [#6](https://github.com/mahboobmonnamd/RILL/issues/6).
+1. ~~**S-VT #21** — parser pick.~~ **Done** 2026-08-18:
+   [SPIKE-VT](SPIKE-VT.md), ADR 0020.
 2. Named T-CHIP1 tests in `vt-engine` / `rill-vt-types` — fail for the intended
-   reason, mutation named, oracle is `snapshot()`.
+   reason, mutation named, oracle is `snapshot()`. Slice order:
+   [M4-PLAN](M4-PLAN.md).
 3. Smallest implementation that turns those tests green.
 4. `fast.yml` Linux, no Zig. Never add `rill-chip0` to that job.
 5. Merge crate-only PRs to `main`. Rebase often. **No** `rill-host` / `rilld`
    dependency.
 
 `Proposed` ADRs do not authorize code. 0012 is Accepted for **isolation**. The
-first CSI parser PR MUST cite S-VT (0012 D6).
+first CSI parser PR MUST cite S-VT and ADR 0020 (0012 D6).
 
 ## Why
 
@@ -77,44 +89,61 @@ is rejected forever (ADR 0001 §1).
 | No `ghostty_` in domain | Ghostty FFI in Chip 1 |
 | Not `Sync` | Share the VT across threads |
 | Isolated workspace member | Dependency of host or `rilld` until M7 |
+| `vte` in `[dev-dependencies]` only | `vte` in `[dependencies]` (ADR 0020 D2) |
+| Palette identity until snapshot | Theme RGB compiled into Rust (ADR 0021 D3) |
+| `take_replies` for DA/DSR | A write path or fd inside the chip (ADR 0022) |
 
 `rilld` today uses `Chip0::resync_from_history`. Leave it.
 
 ## Contract (short)
 
 Trait: `feed`, `resize`, `snapshot`. Also `reset` / `repaint_bytes` /
-`resync_from_history` as Chip 0.
+`resync_from_history` as Chip 0, plus Chip 1-only `set_palette` and
+`take_replies` / `has_replies`.
 
 `PodCell` 16 bytes: codepoint, fg/bg RGBA8888 `(r<<24)|(g<<16)|(b<<8)|0xff`,
-attrs bit0 bold / bit1 underline / bit2 inverse. Defaults `#cccccc` / `#121212`.
-Grapheme bound 32; truncate to base and count.
+attrs bit0 bold / bit1 underline / bit2 inverse. Grapheme bound 32; truncate to
+base and count.
 
-v0 sequences: SPEC-CHIP1 §3 (C0, CUP/ED/SGR, alt-screen 1049, DA/DSR). Not
+Colour: cells hold `Default | Indexed(u8) | Rgb` and materialise at `snapshot()`
+against a `Palette` the host loaded from the theme **file**.
+`Palette::vt_default()` is `#cccccc` / `#121212` — a VT default, not a theme
+(ADR 0021).
+
+C1: an invalid `0x80..=0x9f` byte is one U+FFFD; a decoded U+0080..=U+009F scalar
+paints; `0x9b` does not open a CSI (ADR 0020 D3).
+
+Width: **one column per scalar in v0.** CJK and emoji misalign. Named miss,
+M7 precondition (ADR 0023).
+
+v0 sequences: SPEC-CHIP1 §3 as amended, detail in the six slice specs. Not
 sixel/images/full xterm.
 
-Oracle: independent grid. Not Chip 0 equality. Not a copied input buffer. Not
-the `\x1b[2J` prefix.
+Oracle: independent grid. Not Chip 0 equality, not `vte` equality alone, not a
+copied input buffer, not the `\x1b[2J` prefix.
 
 ## First GitHub work
 
-1. Close **[S-VT #21](https://github.com/mahboobmonnamd/RILL/issues/21)** (parser pick).
-2. Child issues under [#6](https://github.com/mahboobmonnamd/RILL/issues/6) per
-   slice (UTF-8, C0, CSI cursor, SGR, alt-screen, resync emit) — after tests
-   exist as names, one issue per slice, `lane:chip1-vt-engine`, milestone M4.
-   Palette-index cells / compositor opacity:
-   **[#267](https://github.com/mahboobmonnamd/RILL/issues/267)** (colour ADR
-   first; this handoff does not authorize that work). Theme-file SGR oracle:
-   **[#271](https://github.com/mahboobmonnamd/RILL/issues/271)**. M7 must keep
-   packaged T-LOOK-ANSI: **[#272](https://github.com/mahboobmonnamd/RILL/issues/272)**.
-3. Types crate + red tests, then impl.
+1. ~~Close S-VT #21.~~ **Done** — record the pick on
+   [#6](https://github.com/mahboobmonnamd/RILL/issues/6).
+2. Nine slice issues under [#6](https://github.com/mahboobmonnamd/RILL/issues/6),
+   one per [M4-PLAN](M4-PLAN.md) slice, `lane:chip1-vt-engine`, milestone M4.
+   Colour is no longer blocked: ADR 0021 is the ADR
+   [#267](https://github.com/mahboobmonnamd/RILL/issues/267) required, so
+   [#271](https://github.com/mahboobmonnamd/RILL/issues/271) loses `blocked`.
+   M7 must keep packaged T-LOOK-ANSI:
+   [#272](https://github.com/mahboobmonnamd/RILL/issues/272).
+3. Slice 1 scaffolding + lints, then red tests, then impl.
 
 ## Done (M4) vs later
 
 **M4 done:** `rill-vt-types` + `vt-engine` on `main`; T-CHIP1 demonstrated red
 then green in `fast.yml`; host/`rilld` still do not depend on `vt-engine`;
-lint-planes clean.
+lint-planes clean. **Width is not required for M4.**
 
-**M7 (not you):** live swap ADR, resync = Chip 1, packaged T-NFR hid.
+**M7 (not you):** live swap ADR, resync = Chip 1, packaged T-NFR hid — plus
+character width Proven and the Chip 0 C1 differential run (ADR 0023 D4,
+[M4-PLAN](M4-PLAN.md) M7 preconditions).
 
 **M6 (not you):** Blocks host the live chip; live TUI-in-block; cwd tap
 ([ADR 0013](adr/0013-cwd-tap.md): kernel fg `proc_pidinfo`, not
