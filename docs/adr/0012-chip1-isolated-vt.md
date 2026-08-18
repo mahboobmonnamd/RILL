@@ -122,4 +122,4 @@ bytes before parse.
 - **Full libghostty exec as an intermediate.** Rejected by ADR 0001 §1.
 - **Cell-for-cell Ghostty match as the M4 gate.** Rejected: unbounded, needs
   Zig, not a written subset.
-- **Second tracker (beads).** Rejected: [CONTRIBUTING](../CONTRIBUTING.md).
+- **Second tracker (beads).** Rejected: [CONTRIBUTING](../../CONTRIBUTING.md).

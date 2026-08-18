@@ -6,6 +6,7 @@ members = [
     "crates/rill-chip0",
     "crates/rilld",
     "crates/rill-host",
+    "crates/rill-orchestrate",
 ]
 
 [workspace.package]
