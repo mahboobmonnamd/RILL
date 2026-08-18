@@ -1,6 +1,8 @@
 //! Chip 0 display: `libghostty-vt` behind an adapter + POD cells.
 //!
 //! Domain types do not name Ghostty FFI. Adapter C files only.
+//! `PodCell`, `PodGrid`, `Error`, and `TerminalEmulation` live in
+//! `rill-vt-types` and are re-exported here (SPEC-VT-TYPES §5).
 
 mod adapter;
 mod look;
@@ -10,52 +12,8 @@ pub use look::{
     apply_theme, chrome_surface_rgba, load_look_overlay, overlay_look, parse_look_keys,
     TerminalLook, ThemeColors,
 };
+pub use rill_vt_types::{Color, Error, Palette, PodCell, PodGrid, Rgb, TerminalEmulation};
 pub use surface::{discover_host_surface, load_host_surface, load_resolved_surface, HostSurface};
-
-use std::fmt;
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug)]
-pub struct PodCell {
-    pub codepoint: u32,
-    pub fg: u32,
-    pub bg: u32,
-    pub attrs: u16,
-    pub _pad: u16,
-}
-
-#[derive(Clone, Debug)]
-pub struct PodGrid {
-    pub cols: u16,
-    pub rows: u16,
-    pub cursor_col: u16,
-    pub cursor_row: u16,
-    pub cursor_visible: bool,
-    pub full_damage: bool,
-    pub damage_row0: u16,
-    pub damage_row1: u16,
-    /// VT default colours. Host look remaps cells that still hold these
-    /// (ADR 0017 D3). Not a theme.
-    pub default_fg: u32,
-    pub default_bg: u32,
-    /// Clusters this snapshot could not materialise and rendered as a space.
-    /// Reported, never silently dropped (SPEC-CHIP0 §5).
-    pub grapheme_truncated: u32,
-    pub cells: Vec<PodCell>,
-}
-
-impl PodGrid {
-    pub fn cell(&self, col: u16, row: u16) -> Option<&PodCell> {
-        let i = (row as usize) * (self.cols as usize) + (col as usize);
-        self.cells.get(i)
-    }
-}
-
-pub trait TerminalEmulation {
-    fn feed(&mut self, bytes: &[u8]) -> Result<(), Error>;
-    fn resize(&mut self, cols: u16, rows: u16, cell_w: u32, cell_h: u32) -> Result<(), Error>;
-    fn snapshot(&mut self) -> Result<PodGrid, Error>;
-}
 
 pub struct Chip0 {
     vt: adapter::Vt,
@@ -147,31 +105,6 @@ impl TerminalEmulation for Chip0 {
 
     fn snapshot(&mut self) -> Result<PodGrid, Error> {
         self.vt.snapshot()
-    }
-}
-
-#[derive(Debug)]
-pub enum Error {
-    Vt(&'static str),
-    Config(String),
-    Io(std::io::Error),
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Vt(s) => write!(f, "chip0 vt: {s}"),
-            Self::Config(s) => write!(f, "host-surface: {s}"),
-            Self::Io(e) => write!(f, "{e}"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl From<std::io::Error> for Error {
-    fn from(value: std::io::Error) -> Self {
-        Self::Io(value)
     }
 }
 
@@ -313,6 +246,10 @@ mod tests {
         let mut chip = Chip0::new(40, 5).expect("chip0");
         chip.feed(b"Hello").expect("feed");
         let grid = chip.snapshot().expect("snap");
+        assert_eq!(
+            grid.replies_dropped, 0,
+            "Chip 0 has no reply buffer (SPEC-VT-TYPES §3)"
+        );
         let row0: String = (0..5)
             .filter_map(|c| {
                 grid.cell(c, 0)

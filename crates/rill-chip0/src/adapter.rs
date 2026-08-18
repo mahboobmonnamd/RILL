@@ -166,6 +166,7 @@ impl Vt {
             default_fg: hdr.default_fg,
             default_bg: hdr.default_bg,
             grapheme_truncated: hdr.grapheme_truncated,
+            replies_dropped: 0,
             cells,
         })
     }
