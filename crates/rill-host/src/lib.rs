@@ -10,7 +10,7 @@
 //! measured to a POD snapshot and never left the client, which is why it
 //! reported 32 microseconds (docs/SPIKE-0-AUDIT.md S1-2).
 
-use rill_attach::{Decoder, Frame};
+use rill_attach::{cold_identity_socket_path, Decoder, Frame};
 use rill_chip0::{
     apply_theme, load_resolved_surface, Chip0, HostSurface, PodGrid, TerminalEmulation,
 };
@@ -31,6 +31,7 @@ pub struct Client {
     decoder: Decoder,
     chip: Chip0,
     surface: HostSurface,
+    host_identity: String,
     alive: bool,
     exit_status: Option<i32>,
     /// Bytes written but not yet accepted by the socket. Keeps `send` from
@@ -50,6 +51,7 @@ pub struct Client {
 
 impl Client {
     pub fn connect(socket: impl AsRef<Path>, surface: HostSurface) -> Result<Self, Error> {
+        let host_identity = cold_host_identity(socket.as_ref())?;
         let stream = UnixStream::connect(socket.as_ref())?;
         stream.set_nonblocking(true)?;
         let mut chip = Chip0::new(surface.cols, surface.rows)?;
@@ -61,6 +63,7 @@ impl Client {
             decoder: Decoder::new(),
             chip,
             surface,
+            host_identity,
             alive: true,
             exit_status: None,
             outbox: VecDeque::new(),
@@ -76,6 +79,12 @@ impl Client {
 
     pub fn font_family(&self) -> &str {
         &self.surface.font_family
+    }
+
+    /// Read from the daemon's separate cold identity socket during connection.
+    /// The returned label is kernel-owned and never inferred from the GUI.
+    pub fn host_identity(&self) -> &str {
+        &self.host_identity
     }
 
     pub fn font_size(&self) -> f32 {
@@ -296,6 +305,17 @@ pub fn default_socket() -> PathBuf {
     // SAFETY: getuid is always safe.
     let uid = unsafe { libc::getuid() };
     PathBuf::from(format!("/tmp/rill-{uid}.sock"))
+}
+
+fn cold_host_identity(attach_socket: &Path) -> Result<String, Error> {
+    let mut stream = UnixStream::connect(cold_identity_socket_path(attach_socket))?;
+    stream.set_read_timeout(Some(std::time::Duration::from_secs(1)))?;
+    let mut identity = [0_u8; 6];
+    stream.read_exact(&mut identity)?;
+    match identity.as_slice() {
+        b"local\n" => Ok("local".into()),
+        _ => Err(Error::InvalidHostIdentity),
+    }
 }
 
 pub fn load_surface() -> Result<HostSurface, rill_chip0::Error> {

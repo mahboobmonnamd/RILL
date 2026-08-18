@@ -588,6 +588,10 @@ static unsigned rill_view_bg_rgb(NSView *v) {
     if ([heading isKindOfClass:[NSTextField class]]) {
         chrome_font = ((NSTextField *)heading).font.pointSize;
     }
+    NSTextField *hostIndicator = (NSTextField *)rill_find_ident(content, @"host-indicator");
+    const char *host = [hostIndicator isKindOfClass:[NSTextField class]]
+                           ? hostIndicator.stringValue.UTF8String
+                           : "";
     CGFloat backing = (w && w.backingScaleFactor > 0) ? w.backingScaleFactor : 1.0;
     CGFloat atlasScale = backing;
     const char *gmut = getenv("RILL_MUTATE");
@@ -602,9 +606,9 @@ static unsigned rill_view_bg_rgb(NSView *v) {
         stringWithFormat:
             @"seq=%u fullscreen=%d visible=%d key=%d chrome=%u left=%.0f center=%.0f right=%.0f "
             @"first=%s opaque=%d alpha=%d nav_bg=%06x nav_top=%.0f pad_y=%.0f chrome_font=%.0f "
-            @"cell_px=%.0f glyph_m=%.0f\n",
+            @"host=%s cell_px=%.0f glyph_m=%.0f\n",
             _heartbeatSeq, fs, vis, key, chrome, left, center, right, first, opaque, alpha, nav_bg,
-            nav_top, _padY, chrome_font, cell_px, glyph_m];
+            nav_top, _padY, chrome_font, host, cell_px, glyph_m];
     [line writeToFile:@(path) atomically:YES encoding:NSUTF8StringEncoding error:NULL];
 }
 

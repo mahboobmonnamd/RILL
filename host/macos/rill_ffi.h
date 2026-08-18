@@ -55,6 +55,7 @@ int rill_client_alive(const RillClient *client);
 int rill_client_exit_status(const RillClient *client); /* INT32_MIN while alive */
 
 const char *rill_client_font_family(const RillClient *client);
+const char *rill_client_host_identity(const RillClient *client);
 float rill_client_font_size(const RillClient *client);
 const char *rill_client_font_fallback(const RillClient *client, uint32_t index);
 float rill_client_padding_x(const RillClient *client);

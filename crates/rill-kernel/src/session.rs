@@ -33,6 +33,27 @@ pub enum InputDelivery {
     Unknown,
 }
 
+/// Verified kernel identity for one leaf. M2 has one local kernel only
+/// (ADR 0020 D6); remote identity is not represented until its own ADR.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HostIdentity {
+    Local,
+}
+
+impl HostIdentity {
+    pub fn as_wire(self) -> &'static [u8] {
+        match self {
+            Self::Local => b"local\n",
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Local => "local",
+        }
+    }
+}
+
 pub struct Session {
     pty: Pty,
     ring: ByteRing,
@@ -97,6 +118,11 @@ impl Session {
 
     pub fn child_pid(&self) -> u32 {
         self.pty.child_id()
+    }
+
+    /// Cold kernel-owned identity. This is not a title or a GUI label.
+    pub fn host_identity(&self) -> HostIdentity {
+        HostIdentity::Local
     }
 
     pub fn attached(&self) -> bool {

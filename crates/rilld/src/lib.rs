@@ -2,7 +2,7 @@
 
 mod error;
 
-use rill_attach::{Decoder, Frame, PROTOCOL_VERSION};
+use rill_attach::{cold_identity_socket_path, Decoder, Frame, PROTOCOL_VERSION};
 use rill_chip0::Chip0;
 use rill_kernel::{Kernel, Session, SessionId, Winsize};
 use std::collections::VecDeque;
@@ -19,6 +19,8 @@ pub use error::Error;
 pub struct Daemon {
     listener: UnixListener,
     socket_path: PathBuf,
+    identity_listener: UnixListener,
+    identity_socket_path: PathBuf,
     _lock: File,
     kernel: Kernel,
     default_id: SessionId,
@@ -84,6 +86,16 @@ impl Daemon {
         // The attach socket carries keystrokes and shell output. Do not leave
         // it world-writable (SPEC-ATTACH §1).
         std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o600))?;
+        let identity_socket_path = cold_identity_socket_path(&socket_path);
+        if identity_socket_path.exists() {
+            std::fs::remove_file(&identity_socket_path)?;
+        }
+        let identity_listener = UnixListener::bind(&identity_socket_path)?;
+        identity_listener.set_nonblocking(true)?;
+        std::fs::set_permissions(
+            &identity_socket_path,
+            std::fs::Permissions::from_mode(0o600),
+        )?;
         let mut kernel = Kernel::new();
         let default_id = kernel.spawn_leaf(shell, args, size)?;
         let child_pid = kernel
@@ -110,6 +122,8 @@ impl Daemon {
         Ok(Self {
             listener,
             socket_path,
+            identity_listener,
+            identity_socket_path,
             _lock: lock,
             kernel,
             default_id,
@@ -152,6 +166,10 @@ impl Daemon {
 
     pub fn socket_path(&self) -> &Path {
         &self.socket_path
+    }
+
+    pub fn identity_socket_path(&self) -> &Path {
+        &self.identity_socket_path
     }
 
     /// Must stay at 1 however much the user types. Resync is a cold path
@@ -232,6 +250,11 @@ impl Daemon {
             events: libc::POLLIN,
             revents: 0,
         });
+        fds.push(libc::pollfd {
+            fd: self.identity_listener.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        });
         for c in &self.clients {
             let mut events = libc::POLLIN;
             if !c.outbox.is_empty() {
@@ -248,9 +271,12 @@ impl Daemon {
         if fds[0].revents & libc::POLLIN != 0 {
             self.accept_client()?;
         }
+        if fds[1].revents & libc::POLLIN != 0 {
+            self.serve_cold_identity()?;
+        }
         let mut i = 0;
         while i < self.clients.len() && i < n_clients {
-            let idx = 1 + i;
+            let idx = 2 + i;
             if idx < fds.len()
                 && fds[idx].revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR) != 0
             {
@@ -274,6 +300,29 @@ impl Daemon {
                     break;
                 }
             }
+        }
+        Ok(())
+    }
+
+    /// A connection to the companion socket is a cold read of the daemon's
+    /// default leaf. No attach claim, PTY master, frame, or cell data crosses
+    /// this boundary (ADR 0020 D6, SPEC-NAV §6).
+    fn serve_cold_identity(&mut self) -> Result<(), Error> {
+        match self.identity_listener.accept() {
+            Ok((mut stream, _)) => {
+                let identity = self.kernel.host_identity(self.default_id)?;
+                match stream.write_all(identity.as_wire()) {
+                    Ok(()) => {}
+                    Err(e)
+                        if matches!(
+                            e.kind(),
+                            std::io::ErrorKind::BrokenPipe | std::io::ErrorKind::ConnectionReset
+                        ) => {}
+                    Err(e) => return Err(e.into()),
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(e) => return Err(e.into()),
         }
         Ok(())
     }
@@ -605,6 +654,7 @@ fn write_outbox(stream: &mut UnixStream, outbox: &mut VecDeque<u8>) -> Result<()
 impl Drop for Daemon {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.socket_path);
+        let _ = std::fs::remove_file(&self.identity_socket_path);
     }
 }
 

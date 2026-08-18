@@ -4,7 +4,7 @@
 
 use crate::error::Error;
 use crate::pty::{Discipline, Winsize};
-use crate::session::Session;
+use crate::session::{HostIdentity, Session};
 use rill_attach::Frame;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -388,6 +388,13 @@ impl Kernel {
 
     pub fn session_mut(&mut self, id: SessionId) -> Option<&mut Session> {
         self.leaves.get_mut(&id)
+    }
+
+    /// Read one leaf's verified kernel identity on a cold path (ADR 0020 D6).
+    pub fn host_identity(&self, id: SessionId) -> Result<HostIdentity, Error> {
+        self.session(id)
+            .map(Session::host_identity)
+            .ok_or(Error::UnknownSession)
     }
 
     pub fn ids(&self) -> Vec<SessionId> {

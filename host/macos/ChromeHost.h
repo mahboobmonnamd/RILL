@@ -11,6 +11,7 @@
 - (instancetype)initWithTerminal:(TerminalView *)terminal
                       background:(uint32_t)bg
                       foreground:(uint32_t)fg
+                            host:(NSString *)host
                         topInset:(CGFloat)topInset;
 @end
 

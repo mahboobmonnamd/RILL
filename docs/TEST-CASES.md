@@ -36,9 +36,13 @@ in production code that Spike 0 did not name.
 
 ### T-NAV-IDENTITY — default leaf host indicator comes from the kernel
 
-**Status.** Red — F-001 [#38](https://github.com/mahboobmonnamd/RILL/issues/38)
-and F-002 [#39](https://github.com/mahboobmonnamd/RILL/issues/39), authorized by
-ADR 0020 D6 and SPEC-NAV §6.
+**Status.** Green-unproven — F-001
+[#38](https://github.com/mahboobmonnamd/RILL/issues/38) and F-002
+[#39](https://github.com/mahboobmonnamd/RILL/issues/39), authorized by ADR 0020
+D6 and SPEC-NAV §6. A packaged local run demonstrated the behavior-absent
+baseline red, then green, and the required mutation red on 2026-08-18. Hosted
+CI has not run this gate because the macOS runner was unavailable, so ADR 0002
+D8 still forbids marking it Proven.
 
 **Oracle.** Packaged `Rill.app` starts with a deliberately non-host `$HOME`.
 The live AppKit host-indicator label is observed through the test heartbeat and
@@ -50,12 +54,15 @@ normal attach remains the 8-byte `ATTACH` for that daemon default leaf.
 temporary path named `rill-not-a-host-*`; wait for the live window heartbeat's
 rendered host indicator.
 
-**Required mutation.** `RILL_MUTATE=host_indicator_from_home` selects
-`NSHomeDirectory().lastPathComponent` instead of the cold kernel identity. The
-host-indicator test MUST go red.
+**Precondition.** `dist/Rill.app/Contents/MacOS/Rill` exists and is executable.
+The test fails if packaging did not provide it; it never skips the AppKit,
+daemon, or cold-socket path.
 
-**Negative control.** Automated by packaging the mutation and executing
-`cargo test -p rill-host --test t_host_identity` with `RILL_MUTATE` set.
+**Required mutation.** `RILL_MUTATE=host_indicator_from_home` selects `$HOME`
+instead of the cold kernel identity. The host-indicator test MUST go red.
+
+**Negative control.** Automated by `validate-spike0.sh --negative-controls`,
+which runs the packaged test with `RILL_MUTATE=host_indicator_from_home`.
 
 ### T-PARTIAL-WRITE — non-blocking flush must not replay a DATA frame
 
