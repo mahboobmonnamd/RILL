@@ -64,6 +64,7 @@ Mutation: ignore CR/LF.
 | CNL `E`, CPL `F` | Down/up n rows, column 0. |
 | ED `J` | `0` cursor to end, `1` start to cursor, `2`/`3` whole display. Cleared cells take the **current** background per §6. |
 | EL `K` | `0` cursor to end of line, `1` start to cursor, `2` whole line. |
+| ECH `X` | Erase n characters from the cursor (default 1), filling with space and the **current** background per §6. Cursor does not move. Cells to the right do **not** shift (unlike DCH). `TERM=xterm-256color` advertises this: `infocmp` lists `ech=\E[%p1%dX`. |
 | IL `L`, DL `M` | Insert / delete n lines at the cursor row, within the scroll region. Lines shift; the region's other rows are untouched. |
 | ICH `@`, DCH `P` | Insert / delete n cells on the cursor row; the row shifts, the rest of the grid does not. |
 | SU `S`, SD `T` | Scroll the region up / down n lines. |
@@ -75,6 +76,11 @@ Mutation: ignore CR/LF.
 | DA `c`, DSR `n` | [SPEC-VT-REPLY](SPEC-VT-REPLY.md) §3. |
 
 Every other final byte is consumed and ignored (SPEC-VT-PARSER §5).
+
+**Named miss — REP.** `CSI b` (repeat the last graphic character) is **not**
+acted on in v0. The same `infocmp xterm-256color` that lists `ech=` does **not**
+list `rep`. The parser consumes `CSI b` and ignores it. Adding REP is a later
+slice, not silent v0 behaviour.
 
 Gates: **T-CHIP1-CUP** — `ESC[5;10H` puts the cursor at 0-based row 4, column 9,
 documented in the test. Mutation: ignore CSI. **T-CHIP1-ED** — feed text, then
@@ -144,8 +150,16 @@ fn resize(&mut self, cols: u16, rows: u16, cell_w: u32, cell_h: u32) -> Result<(
 
 ## 9. Clusters and width
 
-- Combining marks (`U+0300..=U+036F`), ZWJ (`U+200D`) and variation selectors
+- Combining marks in `U+0300..=U+036F`, ZWJ (`U+200D`) and variation selectors
   append to the preceding cell's cluster instead of consuming a cell.
+- A printable scalar **immediately following ZWJ** MUST also append to that
+  cluster. Otherwise a ZWJ sequence (e.g. `fixtures/bytes/zwj_emoji.bin`) would
+  split into one cell per emoji scalar.
+- The combining-mark range is **restricted** and that restriction is a named
+  miss: marks outside `U+0300..=U+036F` (including Combining Diacritical Marks
+  Extended `U+1AB0..=U+1AFF`, Supplement `U+1DC0..=U+1DFF`, for Symbols
+  `U+20D0..=U+20FF`, and Combining Half Marks `U+FE20..=U+FE2F`) consume a cell
+  in v0. Full clustering arrives with width (ADR 0023 D2).
 - `RILL_GRAPHEME_MAX` is 32, matching Chip 0. Beyond it: keep the base
   codepoint, increment `grapheme_truncated`, never silently drop, and never use
   a fixed stack buffer (audit S3-1).

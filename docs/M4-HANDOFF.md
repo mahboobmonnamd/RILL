@@ -142,8 +142,9 @@ then green in `fast.yml`; host/`rilld` still do not depend on `vt-engine`;
 lint-planes clean. **Width is not required for M4.**
 
 **M7 (not you):** live swap ADR, resync = Chip 1, packaged T-NFR hid — plus
-character width Proven and the Chip 0 C1 differential run (ADR 0023 D4,
-[M4-PLAN](M4-PLAN.md) M7 preconditions).
+every [M4-PLAN](M4-PLAN.md) M7 precondition (width, T-CHIP1-LOOK-ANSI, Chip 0
+C1 differential, `take_replies` drain onto `DATA`, and a channel for mode
+state to the host key/mouse encoder).
 
 **M6 (not you):** Blocks host the live chip; live TUI-in-block; cwd tap
 ([ADR 0013](adr/0013-cwd-tap.md): kernel fg `proc_pidinfo`, not

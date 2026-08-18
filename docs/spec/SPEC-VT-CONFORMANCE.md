@@ -25,6 +25,10 @@ Banned (ADR 0002 D4, ADR 0012 D7):
   itself. Assert a second instance's grid.
 - A predicate hardcoded to the passing value.
 - "Equals this `vte` version" or "equals this Ghostty pin" as the whole gate.
+  **Named exception:** T-CHIP1-DIFF (this spec §4) compares grids from the
+  in-tree parser and `vte` driving the same `Actions` sink. It remains
+  **secondary**: it MUST still declare a required mutation, MUST apply the
+  divergence register, and MUST NOT become the sole oracle for any other gate.
 - Grepping a byte stream for a string the format cannot contain.
 
 Every behavioural gate MUST declare a **required mutation** (ADR 0002 D3) and
@@ -85,6 +89,11 @@ prints.
 Both parsers drive the same screen through `Actions` (SPEC-VT-PARSER §1) and the
 resulting grids are compared over the corpus in §2 plus the v0 sequence cases.
 
+Mutations are injected into the **in-tree parser front only**, downstream of
+the harness's byte source. `vte` MUST see the original bytes. Mutating the
+shared source, or both fronts, would keep the differential green under
+mutation and is forbidden.
+
 - The differential is **secondary**. A gate MUST NOT be expressed only as
   "equals `vte`".
 - Where they disagree, **the spec wins**, and the divergence MUST be registered
@@ -122,12 +131,22 @@ MUST be confirmed before M7.
 | `no-unwrap` | No `unwrap` / `expect` on reachable library paths in either crate |
 | `no-ghostty-in-domain` | Already scans all crates; `ghostty_` MUST NOT appear in Chip 1 |
 | `no-vte-at-runtime` | `vte` MUST NOT appear outside `[dev-dependencies]` |
-| `no-theme-rgb-in-rust` | No theme's hex values in `vt-engine` / `rill-vt-types`, including test constants (ADR 0021 D3) |
+| `no-theme-rgb-in-rust` | No theme's hex values in `vt-engine` / `rill-vt-types`, including test constants (ADR 0021 D3). Derivation and exemption below. |
 | `no-host-dep-on-vt-engine` | `rill-host` / `rilld` MUST NOT depend on `vt-engine` until M7 (ADR 0012 D1) |
 
 The last two are new. `no-host-dep-on-vt-engine` is the executable form of the
 isolation promise: an accidental dependency is exactly the mistake ADR 0012 D1
 forbids, and a lint catches it before review does.
+
+`no-theme-rgb-in-rust` derives its forbidden set **at lint time** from
+`fixtures/look/themes/*`: every RGB in Ghostty-grammar keys (`palette = N=`,
+`foreground =`, `background =`, `cursor-color =`, `selection-background =`,
+`selection-foreground =`). A hit is a Rust integer or hex literal whose 24-bit
+RGB equals a forbidden value (`#rrggbb`, `0xrrggbb`, or `0xrrggbbff` with
+alpha `ff`). **Exempt:** the finite set `Palette::vt_default()` defines
+(SPEC-VT-COLOR §4: `#cccccc`, `#121212`, and the sixteen ANSI values). Those
+literals MAY appear in `vt_default()` itself. A test constant that copies a
+theme-file value is still a hit, even if it collides with a default slot.
 
 ## 6. CI
 
@@ -137,7 +156,9 @@ forbids, and a lint catches it before review does.
 - `fast.yml` MUST NOT gain `rill-chip0` (SPEC-CHIP0 §9).
 - Mutations are compiled only under `feature = "mutate"`, which no shipping build
   enables, and selected by `RILL_MUTATE=<name>`, matching Chip 0's arrangement.
-  Named mutations: `drop_high_bytes`, `c1_as_control`, `sgr_rgb_at_parse`,
+  Named mutations: `drop_high_bytes`, `c1_as_control`, `drop_print`,
+  `ignore_crlf`, `ignore_csi`, `noop_ed`, `ignore_sgr`, `unbounded_history`,
+  `empty_resync`, `sgr_rgb_at_parse`,
   `skip_file_palette`, `eager_wrap`, `ignore_decstbm`, `always_full_damage`,
   `no_reply`, `unbounded_replies`, `unbounded_osc`, `single_buffer`,
   `fixed_grapheme_buf`, `wide_advances_two`.

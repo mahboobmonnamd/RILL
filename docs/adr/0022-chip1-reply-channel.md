@@ -63,8 +63,9 @@ and **not** answered. We MUST NOT claim a capability we do not implement: no
 DECRPM for modes we ignore, no `XTVERSION`, no DA reply advertising sixel or
 colour capabilities we do not have.
 
-DSR reports the cursor **after** the sequences fed so far, including any pending
-wrap resolution, so the answer matches what `snapshot()` would report.
+DSR reports the position `snapshot()` reports (`cursor_row` / `cursor_col`,
+1-based in the reply). It MUST NOT pre-resolve a pending wrap
+([SPEC-VT-SCREEN](../spec/SPEC-VT-SCREEN.md) §2).
 
 Normative detail: [SPEC-VT-REPLY](../spec/SPEC-VT-REPLY.md).
 

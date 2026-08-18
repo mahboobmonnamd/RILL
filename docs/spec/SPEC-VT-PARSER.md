@@ -55,8 +55,12 @@ v0 is a UTF-8 stream. There are **no 8-bit control introducers**
 - A sequence split across two `feed` calls MUST complete on the second. Partial
   state is at most 4 bytes and MUST NOT allocate.
 
-This is the only policy S-VT found that passes all nine T-BYTES fixtures and
-keeps `drop_high_bytes` detectable on eight (SPIKE-VT Results 1–2).
+This is not unique on the T-BYTES scoreboard. Two measured policies pass all
+nine fixtures and keep `drop_high_bytes` detectable on eight (SPIKE-VT
+Results 1–2): map every C1-range result to U+FFFD, or paint a decoded C1
+scalar as itself (invalid bytes still U+FFFD). We take the second: it
+preserves the decoded scalar's identity, and it matches the Chip 0 inference
+(ADR 0020 D3). T-CHIP1-C1 is what distinguishes them.
 
 Gates: **T-CHIP1-BYTES** (§7), **T-CHIP1-C1** — feed `[0xc2, 0x9b, 0x41]`; row 0
 is `U+009B` then `A`, and the cursor advanced two columns, proving `0x9b` did not
@@ -118,15 +122,19 @@ Gate: **T-CHIP1-BOUNDS** — 8 MiB unterminated OSC, 8 MiB unterminated DCS, and
 CSI with 1,000,000 parameters each leave the engine responsive with no
 allocation growth attributable to `feed`, and a subsequent `feed(b"A")` still
 prints. Oracle is a counting allocator around `feed` plus the resulting grid.
-Mutation: accumulate OSC into a `Vec` without a cap. S-VT measured both
-candidates as bounded here (SPIKE-VT Result 3), so this gate protects a property
-we have, rather than asserting a hope.
+The counting allocator is process-global, so this gate MUST run with
+`--test-threads=1`, or the allocator MUST attribute allocations per thread so
+sibling tests cannot pollute the measurement. Mutation: accumulate OSC into a
+`Vec` without a cap. S-VT measured both candidates as bounded here (SPIKE-VT
+Result 3), so this gate protects a property we have, rather than asserting a
+hope.
 
 ## 7. Fixture corpus
 
 T-CHIP1-BYTES reuses the T-BYTES fixtures: `lone_continuation`,
 `truncated_3byte`, `overlong_slash`, `lone_surrogate`, `bom_then_high`,
-`csi_high_param`, `c1_in_utf8`, plus every `fixtures/bytes/*.bin`.
+`csi_high_param`, `c1_in_utf8`, every `fixtures/bytes/*.bin`, and
+`fixtures/invalid_utf8.bin`.
 
 **Oracle.** `A` is present when the fixture contains `0x41`. Every fixture that
 contains a byte `>= 0x80` and does not begin with `0x1b` produces a non-ASCII

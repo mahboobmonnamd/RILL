@@ -93,9 +93,13 @@ v0 is a UTF-8 stream. There are no 8-bit control introducers.
   exactly one U+FFFD. A truncated sequence produces one U+FFFD and the
   interrupting byte is reprocessed, not swallowed.
 
-This is the only policy in S-VT that passes all nine fixtures and keeps the
-mutation detectable on eight. **Inference on the record:** Chip 0's `t_bytes`
-gate asserts a non-ASCII cell for `c1_in_utf8` and is green in CI, so
+This is not unique on the T-BYTES scoreboard. Two measured policies pass all
+nine fixtures and keep the mutation detectable on eight: map every C1-range
+result to U+FFFD, or paint a decoded C1 scalar as itself (invalid bytes still
+U+FFFD). We take the second: it preserves the decoded scalar's identity, and
+it matches the Chip 0 inference below. T-CHIP1-C1 is what distinguishes them.
+**Inference on the record:** Chip 0's `t_bytes` gate asserts a non-ASCII cell
+for `c1_in_utf8` and is green in CI, so
 libghostty-vt must also paint rather than execute these; this policy therefore
 keeps Chip 1 consistent with the live chip. That inference is **not measured
 here** — no Zig in the S-VT environment. A differential against Chip 0 MUST

@@ -1014,7 +1014,7 @@ path prepends, never "equals `vte`" alone
 
 **Procedure.** In-process Chip 1, 80×24 (or 40×5). No PTY.
 
-**Required mutation.** Drop `feed` / do not write cells.
+**Required mutation.** `RILL_MUTATE=drop_print` — drop `feed` / do not write cells.
 
 ### T-CHIP1-BYTES — invalid UTF-8 reaches the parser
 
@@ -1063,26 +1063,26 @@ or the base is still a visible cell. No panic.
 
 **Oracle.** `A\r\nB` → `B` at row 1 col 0 (or documented equivalent).
 
-**Required mutation.** Ignore CR/LF.
+**Required mutation.** `RILL_MUTATE=ignore_crlf` — ignore CR/LF.
 
 ### T-CHIP1-CUP — CSI CUP positions the cursor
 
 **Oracle.** `ESC[5;10H` → cursor at 1-based (5,10), i.e. row 4 col 9
 0-based, documented in the test.
 
-**Required mutation.** Ignore CSI.
+**Required mutation.** `RILL_MUTATE=ignore_csi` — ignore CSI.
 
 ### T-CHIP1-SGR — bold sets attrs bit 0
 
 **Oracle.** `ESC[1mX` → that cell `attrs & 1 != 0`.
 
-**Required mutation.** Ignore SGR.
+**Required mutation.** `RILL_MUTATE=ignore_sgr` — ignore SGR.
 
 ### T-CHIP1-ED — erase display clears to space
 
 **Oracle.** Feed text, `ESC[2J`, every cell codepoint is space `32`.
 
-**Required mutation.** ED is a no-op.
+**Required mutation.** `RILL_MUTATE=noop_ed` — ED is a no-op.
 
 ### T-CHIP1-ALT — 1049 preserves primary
 
@@ -1094,7 +1094,7 @@ or the base is still a visible cell. No panic.
 
 **Oracle.** After resize 40×5, `cells.len() == 200`.
 
-**Required mutation.** Unbounded history in the snapshot.
+**Required mutation.** `RILL_MUTATE=unbounded_history` — unbounded history in the snapshot.
 
 ### T-CHIP1-POD — PodCell is 16 bytes
 
@@ -1107,7 +1107,7 @@ or the base is still a visible cell. No panic.
 **Oracle.** Feed a marker, emit, second instance feeds only the emit bytes,
 row 0 matches. MUST NOT assert on `\x1b[2J`.
 
-**Required mutation.** Emit empty or emit only the prefix.
+**Required mutation.** `RILL_MUTATE=empty_resync` — emit empty or emit only the prefix.
 
 ### T-CHIP1-WRAP — the last column defers its wrap
 
@@ -1152,6 +1152,8 @@ Authority: [SPEC-VT-PARSER](spec/SPEC-VT-PARSER.md) §6,
 1,000,000 parameters: a counting allocator around `feed` reports no growth
 attributable to `feed`, and a following `feed(b"A")` still prints. S-VT measured
 both candidates as bounded here, so this gate protects a property we have.
+The counting allocator is process-global: this gate MUST run with
+`--test-threads=1`, or the allocator MUST attribute allocations per thread.
 
 **Required mutation.** `RILL_MUTATE=unbounded_osc` — accumulate OSC into an
 uncapped `Vec`. Allocation grows with input.
@@ -1241,8 +1243,11 @@ in-tree parser drive the same `Actions` sink over the fixture corpus and the v0
 sequence cases; the resulting grids and cursors agree, with divergence 1 (C1
 handling) applied as an explicit remap.
 
-**Secondary oracle only.** No gate may be expressed solely as "equals `vte`",
-and where they disagree the spec wins and the divergence is registered.
+**Secondary oracle only.** This is the named exception to SPEC-VT-CONFORMANCE
+§1's ban on "equals `vte`" as a gate. It remains secondary: no *other* gate may
+be expressed solely as "equals `vte`", and where they disagree the spec wins
+and the divergence is registered. Mutations MUST hit the in-tree parser front
+only (SPEC-VT-CONFORMANCE §4).
 
 **Required mutation.** Any parser mutation above must also turn this red; if a
 mutation leaves the differential green, the corpus is too small.

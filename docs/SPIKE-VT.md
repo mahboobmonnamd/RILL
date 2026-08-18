@@ -208,9 +208,13 @@ oracle only.**
 
 **C1 policy:** raw `0x80..=0x9f` bytes are invalid UTF-8 and become **one
 U+FFFD**; a *decoded* U+0080–U+009F scalar prints as itself. This is
-`own (C1 print)`, the only column that passes all nine fixtures and detects
-the mutation on eight. Inference, not measurement: Chip 0's `t_bytes` gate
-asserts a non-ASCII cell for `c1_in_utf8` and is green in CI, so libghostty-vt
+`own (C1 print)`. Two measured policies score identically on the nine T-BYTES
+fixtures and detect `drop_high_bytes` on eight: map every C1-range result to
+U+FFFD (`vte + C1→U+FFFD`), or paint a decoded C1 scalar as itself. Ours is
+the second, because it preserves the decoded scalar's identity and matches
+the Chip 0 inference. T-CHIP1-C1 is what distinguishes them. Inference, not
+measurement: Chip 0's `t_bytes` gate asserts a non-ASCII cell for
+`c1_in_utf8` and is green in CI, so libghostty-vt
 must also paint rather than execute these — the recommended policy keeps
 Chip 1 consistent with the live chip. **Confirm with Zig installed before the
 colour/parser PR lands.**

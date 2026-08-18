@@ -57,6 +57,7 @@ Gate: **T-CHIP1-POD** asserts `size_of::<PodCell>() == 16` and
 | `cursor_visible` | `bool` | DECTCEM. |
 | `full_damage` | `bool` | Whole grid dirty. |
 | `damage_row0`, `damage_row1` | `u16` | Inclusive dirty row range. |
+| `default_fg`, `default_bg` | `u32` | VT default colours, RGBA8888 as `PodCell.fg` / `bg`. |
 | `grapheme_truncated` | `u32` | Clusters truncated to base (ADR 0023 D2). |
 | `replies_dropped` | `u32` | Replies lost to a full buffer (ADR 0022 D3). |
 | `cells` | `Vec<PodCell>` | Length exactly `cols * rows`, row-major. |
@@ -66,6 +67,12 @@ Gate: **T-CHIP1-POD** asserts `size_of::<PodCell>() == 16` and
 - When nothing is dirty the caller MUST be able to skip the frame:
   `full_damage == false` and `damage_row0 > damage_row1`.
 - `cell(col, row)` returns `Option<&PodCell>` and MUST NOT panic on any input.
+- `default_fg` / `default_bg` are the VT defaults the host remaps against
+  (ADR 0017 D3). Chip 1 MUST fill them from the current `Palette`
+  (`foreground` / `background` at materialisation). Chip 0 fills them from the
+  adapter snapshot header. They are not a theme.
+- `replies_dropped` is Chip 1's overflow counter (ADR 0022 D3). Chip 0 MUST
+  report `0`: it has no reply buffer; libghostty-vt answers queries internally.
 
 Gate: **T-CHIP1-SIZE** asserts `cells.len() == 200` after `resize(40, 5, …)`.
 Mutation: unbounded history in the snapshot.
@@ -75,6 +82,8 @@ Mutation: unbounded history in the snapshot.
 Defined here so the host and the engine name one type (ADR 0021 D3).
 
 ```rust
+pub struct Rgb { pub r: u8, pub g: u8, pub b: u8 }
+
 pub enum Color { Default, Indexed(u8), Rgb(u8, u8, u8) }
 
 pub struct Palette {
@@ -85,12 +94,16 @@ pub struct Palette {
 }
 ```
 
+- `Rgb` is a 24-bit triplet with **no alpha**. Alpha is always `0xff` at
+  materialisation (ADR 0021 D5). `Color::Rgb(r, g, b)` is the same three
+  channels, not a second type.
 - `Palette` is **data**. This crate MUST NOT contain a named theme's values, and
   MUST NOT parse a look file, read `~/.config/rill/config`, or search theme
   directories — that is the host (ADR 0017 D2).
 - `Palette::vt_default()` is the VT default, not a theme: fg `#cccccc`,
-  bg `#121212` and a conventional ANSI 0–15 set. It MUST NOT be described or
-  named as a theme.
+  bg `#121212`, cursor `#cccccc`, and the sixteen ANSI values in
+  [SPEC-VT-COLOR](SPEC-VT-COLOR.md) §4. It MUST NOT be described or named as a
+  theme.
 - Resolution rules are [SPEC-VT-COLOR](SPEC-VT-COLOR.md) §3.
 
 ## 5. `TerminalEmulation`
@@ -104,9 +117,17 @@ pub trait TerminalEmulation {
 ```
 
 Unchanged from what Chip 0 implements today (ADR 0012 D2). Moving it into this
-crate is a **relocation**, not a redefinition: `rill-chip0` re-exports or
-implements the relocated trait and its behaviour does not change. Chip 0's gates
-MUST stay green across that move, and the move MUST be its own PR.
+crate is a **relocation**, not a redefinition: `PodCell`, `PodGrid`, `Error`,
+and the trait move together. `rill-chip0` re-exports the relocated items and
+implements the trait; its behaviour does not change. Chip 0's gates MUST stay
+green across that move, and the move MUST be its own PR.
+
+Chip 0's `Error::Config` (host-surface / look parse) and `Error::Io`
+(`From<std::io::Error>`) **survive as variants on the relocated `Error`**.
+Chip 0 continues to construct them from look and host-surface paths. Chip 1
+MUST NOT construct `Config` (it does not parse look files or host-surface).
+Chip 1 v0 `feed` / `resize` / `snapshot` perform no I/O and MUST NOT construct
+`Io`.
 
 `snapshot_damaged` is [#18](https://github.com/mahboobmonnamd/RILL/issues/18)
 (Lane C) and is not declared here.
@@ -118,15 +139,22 @@ Inherent on each chip, not on the trait: `reset`, `repaint_bytes`,
 ## 6. Errors
 
 ```rust
-pub enum Error { /* non-exhaustive */ }
+pub enum Error {
+    Vt(&'static str),
+    Config(String),
+    Io(std::io::Error),
+    /* non-exhaustive */
+}
 ```
 
 - Library paths MUST return `Result`. No `unwrap` / `expect` / `panic!` /
   indexing that can panic on a reachable `feed` / `resize` / `snapshot` /
   `set_palette` / `take_replies` path. Enforced by `lint-planes.sh`
   (SPEC-VT-CONFORMANCE §5).
-- `Error` MUST implement `Display` and `std::error::Error` and MUST NOT contain
-  a raw OS error code from a syscall this crate does not make.
+- `Error` MUST implement `Display` and `std::error::Error`.
+- `Error::Io(std::io::Error)` is permitted. The type MUST NOT invent a numeric
+  errno it did not receive from `std::io::Error`. Wrapping `std::io::Error` is
+  not a "raw OS error code" in that sense.
 
 ## 7. Threading
 

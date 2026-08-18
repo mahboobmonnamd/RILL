@@ -122,8 +122,12 @@ and a **precondition of M7**, not a defect to file later:
 ### PodGrid
 
 `cols`, `rows`, `cursor_col`, `cursor_row`, `cursor_visible`, `full_damage`,
-`damage_row0`, `damage_row1` (inclusive dirty range), `grapheme_truncated`,
-`cells` of length `cols * rows` row-major.
+`damage_row0`, `damage_row1` (inclusive dirty range), `default_fg`,
+`default_bg`, `grapheme_truncated`, `replies_dropped`, `cells` of length
+`cols * rows` row-major.
+
+Chip 1 fills `default_fg` / `default_bg` from `Palette`; Chip 0 fills them
+from the adapter. `replies_dropped` is 0 on Chip 0 (SPEC-VT-TYPES §3).
 
 When nothing is dirty, the caller MUST be able to skip the frame:
 `full_damage == false` and `damage_row0 > damage_row1`.
@@ -144,7 +148,10 @@ MUST:
 - Printable ASCII + Unicode; wrap at `cols`; DEC auto-wrap on by default
 - ESC 7/8 (DECSC/DECRC), ESC D/E/M (IND/NEL/RI)
 - CSI: CUU CUD CUF CUB CUP HVP CHA VPA CNL CPL
-- CSI: ED EL IL DL ICH DCH SU SD
+- CSI: ED EL ECH (`CSI X`) IL DL ICH DCH SU SD.
+  REP (`CSI b`) is a named v0 miss: `infocmp xterm-256color` lists `ech=` and
+  does not list `rep`. Consumed and ignored until a later slice
+  ([SPEC-VT-SCREEN](SPEC-VT-SCREEN.md) §4).
 - CSI SGR: 0, 1, 3, 4, 7, 22–24, 27, 30–37, 40–47, 90–97, 100–107,
   38;5 / 48;5, 38;2 / 48;2
 - CSI DECSTBM

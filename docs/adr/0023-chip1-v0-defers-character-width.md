@@ -44,8 +44,12 @@ misaligned**. This is a known, named miss, not a bug to be filed later.
 
 ### D2 — Clustering is bounded, simplified, and counted
 
-Combining marks (`U+0300..=U+036F`), ZWJ (`U+200D`) and variation selectors
+Combining marks in `U+0300..=U+036F`, ZWJ (`U+200D`) and variation selectors
 append to the preceding cell's cluster rather than consuming a new cell.
+A printable scalar immediately following ZWJ MUST also append to that cluster.
+The combining-mark range is restricted: marks outside `U+0300..=U+036F`
+consume a cell in v0. That restriction is a named miss; full clustering
+arrives with width.
 `RILL_GRAPHEME_MAX` is 32, matching Chip 0. Beyond the bound: keep the base
 codepoint, increment `grapheme_truncated`, never silently drop, never a fixed
 stack buffer (the audit S3-1 defect).

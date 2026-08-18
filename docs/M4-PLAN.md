@@ -76,6 +76,16 @@ Relocating `TerminalEmulation` out of `rill-chip0` is a **separate PR** in this
 slice, and Chip 0's gates MUST stay green across it (SPEC-VT-TYPES §5). It is a
 relocation, not a redefinition.
 
+That Chip 0 claim is **not** evidenced by `fast.yml`: that job MUST NOT gain
+`rill-chip0` (SPEC-CHIP0 §9). It is evidenced by the `gates.yml` job on that
+PR. `gates.yml` already runs on hosted `macos-14` for `pull_request` paths
+including `crates/**`, so the relocation PR's Chip 0 library suite (and
+packaged app-mode run) is the CI this slice cites. Until a self-hosted macOS
+runner exists, `gates.yml` **full** evidence — battery hid and the uploaded
+artifact a PR cites — remains `workflow_dispatch` (ADR 0002 D8). This slice
+does not claim hid. A laptop transcript of Chip 0 tests is not evidence of the
+relocation, whatever it printed (D8).
+
 Scaffolding first so every later slice lands already gated. A slice that adds
 behaviour before CI can see it is how a green-unproven test gets in.
 
@@ -87,8 +97,8 @@ T-CHIP1-WRAP, T-CHIP1-SIZE, T-CHIP1-DAMAGE.
 **Work:** UTF-8 decoding with the C1 policy, C0, ESC, the `Actions` boundary,
 grid, cursor, deferred wrap, erasure with current background, damage tracking,
 resize.
-**Mutations:** `drop_high_bytes`, `c1_as_control`, `eager_wrap`,
-`always_full_damage`.
+**Mutations:** `drop_high_bytes`, `c1_as_control`, `drop_print`, `ignore_crlf`,
+`eager_wrap`, `unbounded_history`, `always_full_damage`.
 **Done when:** the fixture corpus passes and each mutation is red on the
 fixtures SPEC-VT-CONFORMANCE §3 says can detect it.
 
@@ -99,9 +109,10 @@ MUST cite ADR 0020 and S-VT (ADR 0012 D6).
 
 **Spec:** SPEC-VT-SCREEN §4.
 **Gates:** T-CHIP1-CUP, T-CHIP1-ED.
-**Work:** CUU/CUD/CUF/CUB, CUP/HVP, CHA/VPA, CNL/CPL, ED, EL, IL/DL, ICH/DCH,
-parameter defaults, saturating accumulation, `ignore` on overflow.
-**Mutations:** ignore CSI; ED as a no-op.
+**Work:** CUU/CUD/CUF/CUB, CUP/HVP, CHA/VPA, CNL/CPL, ED, EL, ECH (`CSI X`),
+IL/DL, ICH/DCH, parameter defaults, saturating accumulation, `ignore` on overflow.
+REP (`CSI b`) is a named miss (SPEC-VT-SCREEN §4), not this slice.
+**Mutations:** `ignore_csi`; `noop_ed`.
 
 ### Slice 4 — scroll region and alt screen
 
@@ -123,7 +134,7 @@ ADR 0012 D5 goal, minus width.
 [#271](https://github.com/mahboobmonnamd/RILL/issues/271).
 **Work:** SGR to `Color`, `set_palette`, materialisation, the xterm-256 cube and
 ramp arithmetically, `full_damage` on palette change.
-**Mutations:** `sgr_rgb_at_parse`, `skip_file_palette`.
+**Mutations:** `sgr_rgb_at_parse`, `skip_file_palette`, `ignore_sgr`.
 
 Colour comes before replies because it changes the snapshot path, and after the
 screen because it needs cells to colour. It MUST NOT come after a slice that
@@ -162,7 +173,7 @@ T-CHIP1-DIFF red — if one does not, the corpus is too small.
 **Work:** `reset`, `repaint_bytes`, `resync_from_history` emitting VT bytes a
 second instance can replay onto a matching grid (ADR 0012 D4). Replies produced
 during replay are discarded and counted.
-**Mutation:** emit empty, or emit only the `\x1b[2J\x1b[H` prefix.
+**Mutation:** `empty_resync` — emit empty, or emit only the `\x1b[2J\x1b[H` prefix.
 
 The oracle is the second instance's grid, never the prefix this function
 prepends itself — the tautology Chip 0's audit S2 removed.
@@ -212,6 +223,12 @@ of:
 5. An Accepted live-swap ADR saying how the host drains `take_replies` onto
    ordinary `DATA` frames, and packaged T-NFR hid re-proven on battery without
    recutting the instrument.
+6. A channel for terminal **mode state** (DECCKM, DECKPAM, bracketed paste,
+   mouse modes) to reach the host key/mouse encoder. Chip 1 will know those
+   modes; the host encodes keys and mouse. Without the channel, application
+   cursor keys, keypad, paste bracketing and mouse tracking cannot be produced
+   correctly after the swap. The live-swap ADR MUST name this channel. v0 does
+   not implement it.
 
 ## Risks
 
@@ -238,5 +255,5 @@ one per slice above, each naming its spec, gates, mutations and non-goals per
   ADR it required is ADR 0021.
 - New: the **width slice** (M7 precondition) with its own spike for the width
   data source, which ADR 0023 D5 deliberately left open.
-- Add width and the Chip 0 C1 differential to
+- Add width, the Chip 0 C1 differential, and the mode-state channel to
   [#24](https://github.com/mahboobmonnamd/RILL/issues/24)'s blocked-on list.

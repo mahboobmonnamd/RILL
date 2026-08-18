@@ -81,9 +81,28 @@ pub fn set_palette(&mut self, palette: Palette) -> Result<(), Error>;
   filesystem at all.
 - `vt-engine` and `rill-vt-types` MUST NOT contain Catppuccin — or any theme's —
   RGB values, including in test constants (ADR 0021 D3).
-- Before any `set_palette`, `Palette::vt_default()` applies: fg `#cccccc`,
-  bg `#121212` and a conventional ANSI 0–15 set. That is a VT default and MUST
-  NOT be called a theme.
+- Before any `set_palette`, `Palette::vt_default()` applies. That is a VT
+  default and MUST NOT be called a theme. Values match Chip 0 before
+  `apply_look`: fg `#cccccc`, bg `#121212`, cursor `#cccccc` (adapter
+  fallbacks in `rill_chip0_vt.c`), and ANSI 0–15 equal to Chip 0's un-looked
+  adapter palette at the pin in `third_party/ghostty.pin` (what the adapter
+  loads before `apply_look`). Index 2 is `#b5bd68`, the Chip 0 default green
+  T-LOOK-ANSI already names.
+
+  | Index | RGB | Index | RGB |
+  |---|---|---|---|
+  | 0 | `#1d1f21` | 8 | `#666666` |
+  | 1 | `#cc6666` | 9 | `#d54e53` |
+  | 2 | `#b5bd68` | 10 | `#b9ca4a` |
+  | 3 | `#f0c674` | 11 | `#e7c547` |
+  | 4 | `#81a2be` | 12 | `#7aa6da` |
+  | 5 | `#b294bb` | 13 | `#c397d8` |
+  | 6 | `#8abeb7` | 14 | `#70c0b1` |
+  | 7 | `#c5c8c6` | 15 | `#eaeaea` |
+
+  These sixteen values are listed in `Palette::vt_default()` as hex. They MUST
+  NOT be produced at runtime by calling Ghostty. They are the
+  `no-theme-rgb-in-rust` exemption (SPEC-VT-CONFORMANCE §5).
 - `set_palette` validates and returns `Result`. A malformed palette MUST NOT
   degrade to a built-in guess; it is an error and the previous valid palette
   stands (ADR 0021 D6).

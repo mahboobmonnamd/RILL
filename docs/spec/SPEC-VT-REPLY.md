@@ -49,10 +49,12 @@ Everything else is consumed and **not** answered.
   ignore, no `XTVERSION`, and no DA reply advertising sixel, images or colour
   features absent from v0. Silence is safer than a lie — a program that believes
   a false capability sends output we cannot render.
-- DSR MUST report the cursor **after** everything fed so far, including pending
-  wrap resolution (SPEC-VT-SCREEN §2), so the answer agrees with what
-  `snapshot()` would report. Off-by-one here makes full-width lines misplace the
-  cursor in `vim`.
+- DSR MUST report the cursor position `snapshot()` reports
+  (`cursor_row` / `cursor_col`, converted 1-based). It MUST NOT pre-resolve a
+  pending wrap (SPEC-VT-SCREEN §2). After printing in the last column the
+  snapshot still shows that column; DSR MUST show the same. Pre-resolving would
+  disagree with the snapshot and misplace the cursor in `vim` on a full-width
+  line.
 - Replies are emitted in the order the queries arrived.
 
 ## 4. Bounds and failure
