@@ -1,0 +1,13 @@
+[package]
+name = "vt-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Chip 1 isolated VT engine: bytes in, POD snapshots out. Not live until M7."
+
+[features]
+# Negative-control mutations (ADR 0002 D3). No shipping build enables this.
+mutate = []
+
+[dependencies]
+rill-vt-types.workspace = true

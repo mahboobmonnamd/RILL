@@ -1,0 +1,10 @@
+[package]
+name = "rill-vt-types"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Shared POD grid, colour identity, and TerminalEmulation (Chip 0 + Chip 1)"
+
+[features]
+# Negative-control mutations (ADR 0002 D3). No shipping build enables this.
+mutate = []
