@@ -527,7 +527,8 @@ packaged T-LOOK-ANSI. Chrome inset is host [#270](https://github.com/mahboobmonn
 ## T-GLYPH-SCALE — atlas glyphs match backing-scale cell pixels
 
 Authority: [ADR 0003](adr/0003-display-pipeline.md) D1, [SPEC-DISPLAY](spec/SPEC-DISPLAY.md) §4–5,
-[#273](https://github.com/mahboobmonnamd/RILL/issues/273).
+[#273](https://github.com/mahboobmonnamd/RILL/issues/273),
+[#275](https://github.com/mahboobmonnamd/RILL/issues/275).
 
 **Bug (doc comment).** Latte colours were correct and the cursor filled the
 cell, but typed letters were tiny specks: CoreText rasterised at font
