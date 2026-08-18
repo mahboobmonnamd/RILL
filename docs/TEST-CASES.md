@@ -1115,6 +1115,314 @@ Every gate listed in these specs is **Red**: defined, not yet demonstrated. None
 may be cited as evidence until it has been observed failing on a build where the
 behaviour is absent, with the failure output in the PR (ADR 0002 D2).
 
+### M2 F-003–F-020 catalog-to-gate map (Red)
+
+The following are test-case definitions only. They do not authorize executable
+tests or production behavior. Every user-visible closer is a packaged
+`Rill.app` test; a socket or library result may prove a lower-plane
+sub-property but cannot close it (ADR 0002 D8).
+
+| Feature | Catalog issue | Test case | Accepted scope |
+|---|---:|---|---|
+| F-003 Named sessions | [#40](https://github.com/mahboobmonnamd/RILL/issues/40) | T-NAV-NAME | ADR 0020 D6; SPEC-NAV §6 |
+| F-004 Workspaces | [#41](https://github.com/mahboobmonnamd/RILL/issues/41) | T-NAV-WORKSPACE-PROJECTION | ADR 0020 D1/D6; SPEC-NAV §§1, 6 |
+| F-005 Groups | [#42](https://github.com/mahboobmonnamd/RILL/issues/42) | Blocked | Group topology is accepted; collapse presentation is not |
+| F-006 Tabs | [#43](https://github.com/mahboobmonnamd/RILL/issues/43) | T-NAV-STACK (F-006/F-008) | ADR 0020 D2; SPEC-NAV §2 |
+| F-007 Nested splits | [#44](https://github.com/mahboobmonnamd/RILL/issues/44) | T-NAV-REPARENT (F-007/F-017/F-018) | ADR 0020 D4; SPEC-NAV §4 |
+| F-008 Surface stacks | [#45](https://github.com/mahboobmonnamd/RILL/issues/45) | T-NAV-STACK; T-SURF-BROWSER blocked | ADR 0020 D2; SPEC-NAV §2 |
+| F-009 Close | [#46](https://github.com/mahboobmonnamd/RILL/issues/46) | T-NAV-CLOSE | ADR 0020 D3; SPEC-NAV §3 |
+| F-010 Dashboard | [#47](https://github.com/mahboobmonnamd/RILL/issues/47) | T-INV-SELECT (F-010/F-012/F-013/F-014) | ADR 0021 D1/D2; SPEC-NAV §7 |
+| F-011 Agent dashboard | [#48](https://github.com/mahboobmonnamd/RILL/issues/48) | T-INV-AGENT-EMPTY | ADR 0021 D4; SPEC-NAV §7 |
+| F-012 Session/process switcher | [#49](https://github.com/mahboobmonnamd/RILL/issues/49) | T-INV-SELECT | ADR 0021 D1/D2/D4; SPEC-NAV §7 |
+| F-013 Command palette | [#50](https://github.com/mahboobmonnamd/RILL/issues/50) | T-INV-SELECT | ADR 0021 D2; SPEC-NAV §7; SPEC-TRUST §§1, 7 |
+| F-014 Quick switcher | [#51](https://github.com/mahboobmonnamd/RILL/issues/51) | T-INV-SELECT | ADR 0021 D2; SPEC-NAV §7 |
+| F-015 Focus history | [#52](https://github.com/mahboobmonnamd/RILL/issues/52) | T-INV-HISTORY | ADR 0021 D3; SPEC-NAV §8 |
+| F-016 Reopen closed | [#53](https://github.com/mahboobmonnamd/RILL/issues/53) | T-INV-REOPEN | ADR 0021 D3; SPEC-NAV §8 |
+| F-017 Drag rearrange | [#54](https://github.com/mahboobmonnamd/RILL/issues/54) | T-NAV-REPARENT | ADR 0020 D4; SPEC-NAV §4 |
+| F-018 Zoom/equalize | [#55](https://github.com/mahboobmonnamd/RILL/issues/55) | T-NAV-REPARENT | ADR 0020 D4; SPEC-NAV §4 |
+| F-019 Layout templates | [#56](https://github.com/mahboobmonnamd/RILL/issues/56) | T-NAV-TEMPLATE | ADR 0020 D4; SPEC-NAV §4 |
+| F-020 Sidebar visibility | [#57](https://github.com/mahboobmonnamd/RILL/issues/57) | T-NAV-VIEWSTATE | ADR 0020 D5; SPEC-NAV §5 |
+
+#### T-NAV-NAME — a Workspace label is kernel-owned and never an attach id
+
+**Feature.** F-003.
+
+**Oracle.** A packaged host renders the cold snapshot's Workspace label, while
+the independently observed attach request remains the default 8-byte `ATTACH`
+or a `SessionId`; the label itself never addresses a leaf.
+
+**Procedure.** Create two named kernel Workspaces and their leaves, read the
+cold snapshot, render it, then attach the default leaf through the normal host
+path.
+
+**Required mutation.** `workspace_label_from_chrome_cache`: render a host-local
+label rather than the cold kernel snapshot.
+
+**Negative control.** Manual until the accepted kernel label API and packaged
+host wiring exist; the reviewer applies the mutation and records the red
+packaged result.
+
+**Precondition.** A packaged app, a daemon with two Workspace nodes, and the
+accepted kernel-owned Workspace-label API must exist. Their absence fails this
+gate; it does not permit a fabricated chrome label.
+
+#### T-NAV-WORKSPACE-PROJECTION — chrome projects the kernel Workspace tree
+
+**Feature.** F-004.
+
+**Oracle.** The rendered Workspace/Tab rows match an independently fetched cold
+kernel snapshot, including the default leaf's cold identity and cwd where
+accepted; a chrome-invented row is absent.
+
+**Procedure.** Launch a packaged app over a seeded container tree, fetch the
+kernel snapshot on the cold path, and compare its node ids and parentage with
+the visible projection.
+
+**Required mutation.** `chrome_invents_workspace_row`: add a host-only row.
+
+**Negative control.** Manual until the cold snapshot-to-host projection exists.
+
+**Precondition.** Packaged app, kernel container snapshot, and accepted cold
+cwd/identity readers are all present. No test may substitute an AppKit cache
+for the kernel snapshot.
+
+#### T-NAV-GROUP-COLLAPSE — blocked pending an accepted presentation contract
+
+**Feature.** F-005.
+
+**Oracle.** Blocked: ADR 0020 and SPEC-NAV §1 authorize kernel `Group` nodes,
+but do not specify collapsible-group view state, persistence, or an observable
+collapse result.
+
+**Procedure.** Blocked until an Accepted ADR/spec defines that behavior.
+
+**Required mutation.** Blocked; no production mutation may be invented.
+
+**Negative control.** Blocked; no control exists without an accepted invariant.
+
+**Precondition.** An Accepted contract for group-collapse semantics is required.
+Missing authority is a blocked gate, not a skipped implementation.
+
+#### T-NAV-STACK — hidden terminal surfaces keep the same live leaf
+
+**Features.** F-006 and F-008 share this one atomic liveness invariant.
+
+**Oracle.** After an inactive tab or stacked terminal surface is hidden, its
+real child continues emitting numbered tokens and retains its pid; re-showing
+cold-resyncs the same leaf without spawning it.
+
+**Procedure.** Packaged app with two real leaves. Hide one terminal surface,
+observe the hidden child's subsequent tokens and pid with a second process,
+then re-show it and observe one cold resync.
+
+**Required mutation.** `hide_detaches_leaf`.
+
+**Negative control.** Manual packaged control until this host path exists.
+
+**Precondition.** Packaged app, two live PTY children, bounded-ring/resync
+instrumentation, and an external pid oracle must exist. The horizontal tab-strip
+placement is not specified and is not claimed by this test.
+
+#### T-NAV-REPARENT — rearrangement preserves leaf identity and the warm path
+
+**Features.** F-007, F-017, and F-018 share ADR 0020 D4's one atomic
+reparent/resize invariant.
+
+**Oracle.** A cold snapshot shows the intended changed parentage or geometry,
+while independently observed `SessionId` values and child pids survive. The
+warm-frame trace contains no new attach/spawn; only in-band `RESIZE` is allowed.
+
+**Procedure.** In a packaged app with multiple real leaves, split, drag, zoom,
+and equalize. Compare pre/post cold snapshots, pids, ids, and warm-frame trace.
+
+**Required mutation.** `reparent_respawns`.
+
+**Negative control.** The library sub-property is automatically checked by
+`RILL_MUTATE=reparent_recreates_node`; the packaged mutation control remains
+manual until chrome wiring exists.
+
+**Precondition.** Packaged tree host, two live children, snapshot access, and
+frame tracing must exist. The current library proof is not a packaged closer.
+
+#### T-SURF-BROWSER — blocked pending the accepted browser-surface contract
+
+**Feature.** F-008's browser-surface portion.
+
+**Oracle.** Blocked: terminal-surface hiding is covered by T-NAV-STACK. A
+browser's out-of-process crash, lifecycle, and leaf-write boundary require the
+accepted SPEC-SURFACES behavior to be wired before a downstream oracle can be
+named.
+
+**Procedure.** Blocked pending that host implementation and its accepted
+surface-specific contract.
+
+**Required mutation.** Blocked; do not invent a browser process model.
+
+**Negative control.** Blocked.
+
+**Precondition.** A packaged browser-surface implementation authorized by
+SPEC-SURFACES must exist. Until then F-008 does not authorize browser behavior.
+
+#### T-NAV-CLOSE — close resolves inward and window close preserves leaves
+
+**Feature.** F-009.
+
+**Oracle.** A packaged `⌘W` sequence closes surface, pane, tab, then Workspace;
+`kill(pid, 0)` proves only leaves owned by the closed subtree die. Closing the
+window leaves every child alive and packaged T-KILL remains green.
+
+**Procedure.** Launch multiple real leaves arranged in nested containers. Close
+each focused layer in turn, recording pids and the cold snapshot after each
+operation; then close the window.
+
+**Required mutation.** `close_window_terminates_leaves`.
+
+**Negative control.** Manual packaged control. The existing
+`close_node_terminates_all_leaves` library mutation remains supporting evidence
+only.
+
+**Precondition.** Packaged app, nested kernel containers, multiple real child
+pids, and packaged T-KILL must all run. Missing any one is a failed
+precondition, never a skip.
+
+#### T-INV-COLD — readers are cold, bounded, and inert while hidden
+
+**Features.** Cross-cutting prerequisite for F-010 through F-016.
+
+**Oracle.** An independently recorded daemon counter shows reader sampling at
+most 2 Hz while visible and zero while hidden; `--nfr-key` records zero
+control-plane RPCs with readers visible.
+
+**Procedure.** Packaged app opens then hides every reader surface while a child
+is attached; measure reader queries and attach-stream control frames.
+
+**Required mutation.** `dashboard_polls_hot`.
+
+**Negative control.** Manual until cold-reader instrumentation exists.
+
+**Precondition.** Packaged reader host, daemon-side sampling counter, and the
+existing warm-path frame audit must exist. A missing counter fails the gate.
+
+#### T-INV-SELECT — inventory selection focuses only
+
+**Features.** F-010, F-012, F-013 navigation selection, and F-014 share this
+atomic selection invariant.
+
+**Oracle.** Selecting a snapshot-backed row focuses its actual live `NodeId`;
+an input-observing child receives no bytes and no leaf is spawned, terminated,
+or resized. A palette action remains separate and requires its own confirmation.
+
+**Procedure.** Seed a tree with distinct Workspace, session, process, and
+palette-navigation rows. Select each in the packaged app, then observe focus,
+pid lifecycle, winsize, and child input independently.
+
+**Required mutation.** `select_sends_input`.
+
+**Negative control.** Manual until the reader and focus host paths exist.
+
+**Precondition.** Packaged app, seeded kernel tree, input-observing child,
+focus heartbeat, and T-INV-COLD instrumentation must exist. “Every important
+action” has no accepted complete action set and is not claimed here.
+
+#### T-INV-AGENT-EMPTY — absent Task renders no agent rows
+
+**Feature.** F-011.
+
+**Oracle.** With an explicit zero-Task runtime fixture, the visible agent
+inventory is empty and no fabricated row appears; the reader also remains cold
+under T-INV-COLD's independent counter.
+
+**Procedure.** Launch the packaged inventory with the zero-Task fixture and
+inspect the rendered rows plus cold-reader audit.
+
+**Required mutation.** `fabricate_agent_row`.
+
+**Negative control.** Manual until the agent inventory host projection exists.
+
+**Precondition.** Packaged app and an explicit zero-Task fixture are required.
+The absence of the Task runtime must make any unavailable fixture a failure,
+not permission to show sample data or skip the test.
+
+#### T-INV-HISTORY — focus history is bounded and never resurrects nodes
+
+**Feature.** F-015.
+
+**Oracle.** After visiting 65 nodes and deleting one, back/forward resolves the
+actual focused live `NodeId`, skips the deleted node, and retains at most 64
+entries.
+
+**Procedure.** Seed at least 65 nodes in a packaged app, focus each, close one,
+then traverse history while reading the resulting focus from the kernel.
+
+**Required mutation.** `history_resurrects_deleted_node`.
+
+**Negative control.** Manual until host focus-history wiring exists.
+
+**Precondition.** Packaged host, at least 65 fixture nodes, and an independent
+focus heartbeat are required. The existing reopen gate cannot substitute for
+this bounded-history oracle.
+
+#### T-INV-REOPEN — reopen restores a template by honestly spawning new leaves
+
+**Feature.** F-016.
+
+**Oracle.** Reopening a closed template creates a child with a new pid and
+reports that it spawned; no old scrollback or old pid is claimed. A second
+process observes the old pid dead and the new child emitting its startup token.
+
+**Procedure.** Save and close a template in the packaged app, record old pid
+and output, reopen it, then independently check pid and output.
+
+**Required mutation.** `reopen_reuses_old_pid`.
+
+**Negative control.** Manual until template serialization and host wiring exist.
+
+**Precondition.** Packaged app, a template fixture, and real old/new child
+processes are required. No template implementation means this gate is Red, not
+skipped.
+
+#### T-NAV-TEMPLATE — templates serialize only the accepted durable shape
+
+**Feature.** F-019.
+
+**Oracle.** A saved template contains the container tree, per-leaf cwd, and
+startup command, but no scrollback. Restoring it produces new leaves and
+explicitly identifies restoration as spawn rather than live-child recovery.
+
+**Procedure.** Save a multi-leaf layout after producing unique scrollback,
+inspect the persisted template through its public cold reader, then restore in
+the packaged app and compare old/new pids and child output.
+
+**Required mutation.** `template_restores_old_pid`.
+
+**Negative control.** Manual until the accepted template persistence surface
+exists.
+
+**Precondition.** Packaged template implementation, cold template reader, and
+real child pid probes must exist. No test may inspect private chrome state or
+claim scrollback restoration.
+
+#### T-NAV-VIEWSTATE — sidebar visibility never reaches the kernel
+
+**Feature.** F-020.
+
+**Oracle.** Toggling the sidebar leaves kernel-call and warm-frame counters at
+zero, while the attached leaf's pid, winsize, and attach state remain unchanged
+as it continues emitting tokens.
+
+**Procedure.** In a packaged app with a live emitting child, toggle the sidebar
+visible/hidden repeatedly and independently record kernel calls, attach frames,
+pid, winsize, and output.
+
+**Required mutation.** `hide_sidebar_detaches`.
+
+**Negative control.** Manual until the sidebar host path and kernel-call counter
+exist.
+
+**Precondition.** Packaged app, live child, kernel/frame instrumentation, and a
+pid oracle must exist. An unavailable counter is a failed precondition, never a
+green skip.
+
 | Spec | Authority | Milestone |
 |---|---|---|
 | [SPEC-NAV](spec/SPEC-NAV.md) | ADR 0020, ADR 0021 | M2 (container-tree kernel plane Proven at library level; chrome wiring open) |
