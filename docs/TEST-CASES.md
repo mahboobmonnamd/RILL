@@ -76,10 +76,12 @@ the daemon copied for the test.
 then drain. The child emits ~20k numbered lines. Assert each complete token
 appears once, and that enough tokens arrived to have filled the socket.
 
-**Required mutation.** `write_all` of a whole frame on `WouldBlock`, then
-re-queue that same frame (`RILL_MUTATE=replay_full_frame`, feature `mutate`).
-The observed red is a decode failure (`UnknownTag` from payload bytes treated
-as a frame header) or a duplicated `-END` token.
+**Required mutation.** `write_all` of a whole frame, then re-queue that same
+frame (`RILL_MUTATE=replay_full_frame`, feature `mutate`). The replay is not
+gated on `WouldBlock`: a kernel that ignores a tiny `SO_SNDBUF` never short-
+writes, and that left the instrument green on hosted `macos-14`. The observed
+red is a decode failure (`UnknownTag` from payload bytes treated as a frame
+header) or a duplicated `-END` token.
 
 **Negative control.** `replay_full_frame` — automated. The test sets
 `RILL_TEST_TINY_SNDBUF` so the accepted socket actually short-writes;
@@ -440,7 +442,9 @@ wait is unbounded again. This test MUST go red.
 
 **Launch.** Default `make run` is windowed (ADR 0017). This gate sets
 `RILL_TEST_EXIT_FULLSCREEN=1`, which **enters** a Space then leaves. It does
-not require default launch to be fullscreen.
+not require default launch to be fullscreen. Hosted `macos-14` has no Spaces;
+`validate-spike0.sh` records the Red and does not fail the job when
+`RILL_NFR_OPTIONAL=1` (same contract as T-NFR, ADR 0009 D4).
 
 ---
 
@@ -571,7 +575,10 @@ look `font-size`). Heartbeat `glyph_m` (atlas height of `M`) / `cell_px`
 **Procedure.** Packaged GUI. Same heartbeat path as T-WINDOWED.
 
 **Required mutation.** `RILL_MUTATE=skip_glyph_backing_scale`. Atlas stays
-1× while `cell_px` stays backing pixels; ratio falls below 0.7.
+1× while `cell_px` stays backing pixels; ratio falls below 0.7. Hosted
+`macos-14` is 1× (`cell_px=16` at 16pt) and cannot detect the bug;
+`validate-spike0.sh` records the Red and does not fail the job when
+`RILL_NFR_OPTIONAL=1`.
 
 ---
 

@@ -59,6 +59,17 @@ run_gate() {
   return 0
 }
 
+# Record a gate that hosted macos-14 cannot close (no panel, no Spaces, no
+# Retina). Evidence still stores Red; the GitHub job does not fail for it.
+# Same contract as T-NFR under RILL_NFR_OPTIONAL (ADR 0009 D4).
+run_gate_hosted_optional() {
+  before=$ANY_FAIL
+  run_gate "$@"
+  if [ "${RILL_NFR_OPTIONAL:-}" = 1 ]; then
+    ANY_FAIL=$before
+  fi
+}
+
 # run_control <gate-id> <mutation> <command...>
 # The mutation MUST turn the gate red. Green here means the gate is blind.
 run_control() {
@@ -147,13 +158,13 @@ run_gate "T-SPAWN" cargo test -p rill-host --offline --test t_spawn -- --nocaptu
 
 run_gate "T-KILL" env RILL_RILLD_BIN="$RILLD" RILL_GUI_APP="$ROOT/dist/Rill.app" \
   cargo test -p rilld --offline --test persist_e2e -- --nocapture
-run_gate "T-FS-EXIT" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+run_gate_hosted_optional "T-FS-EXIT" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
   cargo test -p rill-host --offline --test t_fullscreen_exit -- --nocapture
 run_gate "T-WINDOWED" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
   cargo test -p rill-host --offline --test t_windowed -- --nocapture
 run_gate "T-LOOK-GLASS" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
   cargo test -p rill-host --offline --test t_look_glass -- --nocapture
-run_gate "T-GLYPH-SCALE" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+run_gate_hosted_optional "T-GLYPH-SCALE" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
   cargo test -p rill-host --offline --test t_glyph_scale -- --nocapture
 run_gate "T-SPLIT" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
   cargo test -p rill-host --offline --test t_split -- --nocapture
@@ -240,13 +251,9 @@ run_t_nfr() {
   fi
   grep -q '^T-NFR mode=' "$nfr_out"
 }
-nfr_fail_before=$ANY_FAIL
-run_gate "T-NFR" run_t_nfr
 # GitHub-hosted macos-14 has no panel. Record T-NFR but do not fail the suite
-# for it (ADR 0009 D4). Other gates still fail the job.
-if [ "${RILL_NFR_OPTIONAL:-}" = 1 ]; then
-  ANY_FAIL=$nfr_fail_before
-fi
+# for it (ADR 0009 D4). Other library gates still fail the job.
+run_gate_hosted_optional "T-NFR" run_t_nfr
 
 # --------------------------------------------------------------- negative controls
 if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
@@ -309,7 +316,11 @@ if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
   run_control "T-ATTACHED-POLL" idle_poll_while_attached \
     cargo test -p rilld --offline --features mutate t_attached_session_poll_does_not_sleep -- --test-threads=1
   if [ "${RILL_NFR_OPTIONAL:-}" = 1 ]; then
+    # Hosted 1× / no Spaces: these mutations go red for the missing
+    # precondition, not for the defect, so they are not D3 evidence.
     printf '{"gate":"T-NFR","mutation":"timer_pump","went_red":null}\n' >> "$CONTROLS"
+    printf '{"gate":"T-FS-EXIT","mutation":"wait_forever_on_inflight","went_red":null}\n' >> "$CONTROLS"
+    printf '{"gate":"T-GLYPH-SCALE","mutation":"skip_glyph_backing_scale","went_red":null}\n' >> "$CONTROLS"
   else
     run_control "T-NFR" timer_pump run_t_nfr
   fi
@@ -320,18 +331,22 @@ if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
       cargo test -p rilld --offline --test persist_e2e -- --nocapture
   }
   run_control "T-KILL" drop_POSIX_SPAWN_SETSID run_t_kill_setsid
-  run_control "T-FS-EXIT" wait_forever_on_inflight \
-    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
-    cargo test -p rill-host --offline --test t_fullscreen_exit -- --nocapture
+  if [ "${RILL_NFR_OPTIONAL:-}" != 1 ]; then
+    run_control "T-FS-EXIT" wait_forever_on_inflight \
+      env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+      cargo test -p rill-host --offline --test t_fullscreen_exit -- --nocapture
+  fi
   run_control "T-WINDOWED" always_toggle_fullscreen \
     env RILL_GUI_APP="$ROOT/dist/Rill.app" \
     cargo test -p rill-host --offline --test t_windowed -- --nocapture
   run_control "T-LOOK-GLASS" window_alpha_from_opacity \
     env RILL_GUI_APP="$ROOT/dist/Rill.app" \
     cargo test -p rill-host --offline --test t_look_glass -- --nocapture
-  run_control "T-GLYPH-SCALE" skip_glyph_backing_scale \
-    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
-    cargo test -p rill-host --offline --test t_glyph_scale -- --nocapture
+  if [ "${RILL_NFR_OPTIONAL:-}" != 1 ]; then
+    run_control "T-GLYPH-SCALE" skip_glyph_backing_scale \
+      env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+      cargo test -p rill-host --offline --test t_glyph_scale -- --nocapture
+  fi
   run_control "T-SPLIT" no_chrome \
     env RILL_GUI_APP="$ROOT/dist/Rill.app" \
     cargo test -p rill-host --offline --test t_split -- --nocapture
@@ -420,6 +435,9 @@ if d["host"]["power"] != "battery":
 if d["nfr_mode"] != "hid":
     print("T-NFR ran in 'app' mode: diagnostic only, not gate-closing (ADR 0003 D7).")
 PY
+if [ "${RILL_NFR_OPTIONAL:-}" = 1 ]; then
+  echo "Hosted macos-14: T-NFR, T-FS-EXIT, and T-GLYPH-SCALE are recorded but do not fail this job (no panel / Spaces / Retina)."
+fi
 
 echo
 echo "evidence: $EVIDENCE"

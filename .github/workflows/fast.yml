@@ -44,8 +44,29 @@ jobs:
         run: cargo test -p rill-kernel -- --test-threads=1 --nocapture
 
       # Chip 1 library only. MUST NOT add rill-chip0 (SPEC-CHIP0 §9).
-      - name: Chip 1 types and empty engine
+      - name: Chip 1 types and engine
         run: cargo test -p rill-vt-types -p vt-engine -- --nocapture
+
+      - name: T-CHIP1 slice 2 negative controls
+        run: |
+          set -eu
+          red() {
+            name="$1"
+            mut="$2"
+            shift 2
+            if RILL_MUTATE="$mut" cargo test -p vt-engine --features mutate --test t_chip1_slice2 "$@" -- --nocapture; then
+              echo "BROKEN INSTRUMENT: $name stayed green under $mut" >&2
+              exit 1
+            fi
+            echo "ok: $name went red under $mut"
+          }
+          red T-CHIP1-ASCII drop_print t_chip1_ascii_printable_lands_in_the_pod_grid
+          red T-CHIP1-BYTES drop_high_bytes t_chip1_bytes_invalid_utf8_reaches_the_parser
+          red T-CHIP1-C1 c1_as_control t_chip1_c1_decoded_scalar_paints_and_does_not_open_csi
+          red T-CHIP1-CRLF ignore_crlf t_chip1_crlf_moves_the_cursor
+          red T-CHIP1-WRAP eager_wrap t_chip1_wrap_last_column_defers
+          red T-CHIP1-SIZE unbounded_history t_chip1_size_snapshot_is_cols_times_rows
+          red T-CHIP1-DAMAGE always_full_damage t_chip1_damage_untouched_frame_can_be_skipped
 
       # M1 T-GRAPH (ADR 0014 D1). Mutations must go red (ADR 0002 D3).
       # rilld named-id / flood stay in validate-spike0.sh (Chip 0 toolchain).

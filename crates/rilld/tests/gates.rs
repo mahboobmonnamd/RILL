@@ -376,7 +376,8 @@ fn t_attached_session_poll_does_not_sleep() {
 /// Oracle: child-emitted `RILL-UNIQ-<n>-END` tokens in decoded DATA. A 4s
 /// cutoff can bisect `RILL-UNIQ-16073` into a line that looks like `160`;
 /// only complete `-END` tokens count. Required mutation:
-/// `RILL_MUTATE=replay_full_frame` (feature `mutate`).
+/// `RILL_MUTATE=replay_full_frame` (feature `mutate`) re-queues the whole
+/// frame after `write_all`, including when `write_all` succeeded.
 #[test]
 fn t_outbound_partial_write_does_not_replay_a_frame() {
     use std::os::fd::AsRawFd;
