@@ -1070,3 +1070,36 @@ row 0 matches. MUST NOT assert on `\x1b[2J`.
 
 **Required mutation.** Emit empty or emit only the prefix.
 
+
+
+---
+
+## Milestone gates (M2–M6)
+
+Spike 0 and M1 gates are above. Gates for the catalog milestones are defined in
+their own specs, each with the same four things this document requires — oracle,
+procedure, required mutation, negative control — and each carrying a status.
+
+Every gate listed in these specs is **Red**: defined, not yet demonstrated. None
+may be cited as evidence until it has been observed failing on a build where the
+behaviour is absent, with the failure output in the PR (ADR 0002 D2).
+
+| Spec | Authority | Milestone |
+|---|---|---|
+| [SPEC-NAV](spec/SPEC-NAV.md) | ADR 0020, ADR 0021 | M2 |
+| [SPEC-FIDELITY](spec/SPEC-FIDELITY.md) | ADR 0022 | M2 |
+| [SPEC-REMOTE](spec/SPEC-REMOTE.md) | ADR 0023 | M2 |
+| [SPEC-SURFACES](spec/SPEC-SURFACES.md) | ADR 0024, ADR 0028 | M2 |
+| [SPEC-CONFIG](spec/SPEC-CONFIG.md) | ADR 0025 | M2 |
+| [SPEC-TRUST](spec/SPEC-TRUST.md) | ADR 0026 | M2 |
+| [SPEC-PLATFORM](spec/SPEC-PLATFORM.md) | ADR 0027 | M2 |
+| [SPEC-ATTENTION](spec/SPEC-ATTENTION.md) | ADR 0029 | M3 |
+| [SPEC-TASK](spec/SPEC-TASK.md) | ADR 0030 | M3 |
+| [SPEC-AGENT](spec/SPEC-AGENT.md) | ADR 0031 | M3 |
+| [SPEC-BLOCKS](spec/SPEC-BLOCKS.md) | ADR 0032 | M6 |
+| [SPEC-INPUT](spec/SPEC-INPUT.md) | ADR 0033 | M6 |
+| [SPEC-MOUSE](spec/SPEC-MOUSE.md) | ADR 0034 | M6 |
+
+T-NFR, T-KILL, T-SPAWN, T-DROP, T-BYTES and the T-GRAPH / T-LOOK families are
+not re-cut by any of these. A milestone gate that would require modifying a
+Proven Spike 0 gate is rejected (ADR 0002).

@@ -69,9 +69,13 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
 ## 6. Out of scope
 
-Tabs, splits, sidebar, session titles in the window, conversations, agents,
-Chip 1 live, daemon-crash survival, reconnect tokens, JSON on the typing path,
-`SCM_RIGHTS` of the PTY master.
+Conversations, agents, Chip 1 live, daemon-crash survival, reconnect tokens,
+JSON on the typing path, `SCM_RIGHTS` of the PTY master.
+
+Tabs, splits, sidebar and session titles are no longer refused here. They are
+deferred to [ADR 0020](../adr/0020-session-graph-navigation-model.md) and
+[SPEC-NAV](SPEC-NAV.md), which put the container tree in the kernel above these
+leaves. `layout_snapshot` (§5) grows to carry it and stays cold.
 
 ## 7. What we will not do
 
