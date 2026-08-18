@@ -200,6 +200,23 @@ int main(int argc, const char *argv[]) {
         window.opaque = YES;
         window.releasedWhenClosed = NO;
         uint32_t bg = rill_client_background_rgba(client);
+        const char *host_identity = rill_client_host_identity(client);
+        if (!host_identity) {
+            fprintf(stderr, "Rill: missing cold kernel host identity\n");
+            rill_client_free(client);
+            return 1;
+        }
+        NSString *host = [NSString stringWithUTF8String:host_identity];
+        if (!host) {
+            fprintf(stderr, "Rill: invalid cold kernel host identity\n");
+            rill_client_free(client);
+            return 1;
+        }
+        const char *identity_mutation = getenv("RILL_MUTATE");
+        if (identity_mutation && strcmp(identity_mutation, "host_indicator_from_home") == 0) {
+            const char *home = getenv("HOME");
+            host = home ? [NSString stringWithUTF8String:home] : @"Rill";
+        }
         window.backgroundColor = [NSColor colorWithRed:((bg >> 24) & 0xff) / 255.0
                                                  green:((bg >> 16) & 0xff) / 255.0
                                                   blue:((bg >> 8) & 0xff) / 255.0
@@ -228,6 +245,7 @@ int main(int argc, const char *argv[]) {
                 [[RillChromeController alloc] initWithTerminal:view
                                                     background:rill_client_background_rgba(client)
                                                     foreground:rill_client_foreground_rgba(client)
+                                                          host:host
                                                       topInset:rill_client_padding_y(client)];
             window.contentViewController = chrome;
         }

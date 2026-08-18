@@ -17,4 +17,4 @@ pub use kernel::{
 };
 pub use pty::{Discipline, Winsize};
 pub use ring::ByteRing;
-pub use session::{InputDelivery, IoEvent, Session};
+pub use session::{HostIdentity, InputDelivery, IoEvent, Session};

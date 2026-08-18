@@ -180,6 +180,27 @@ pub unsafe extern "C" fn rill_client_font_family(client: *const Client) -> *cons
 }
 
 /// # Safety
+/// `client` is a live handle. The returned pointer is valid until the next
+/// host-identity call on this thread.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_host_identity(client: *const Client) -> *const c_char {
+    if client.is_null() {
+        return ptr::null();
+    }
+    let c = unsafe { &*client };
+    thread_local! {
+        static BUF: std::cell::RefCell<Option<CString>> = const { std::cell::RefCell::new(None) };
+    }
+    BUF.with(|b| {
+        *b.borrow_mut() = CString::new(c.host_identity()).ok();
+        b.borrow()
+            .as_ref()
+            .map(|s| s.as_ptr())
+            .unwrap_or(ptr::null())
+    })
+}
+
+/// # Safety
 /// `client` is a live handle.
 #[no_mangle]
 pub unsafe extern "C" fn rill_client_font_size(client: *const Client) -> f32 {

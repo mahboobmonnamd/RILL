@@ -4,12 +4,22 @@
 //! Not JSON. Not cells. Darwin has no `SOCK_SEQPACKET`.
 
 use std::fmt;
+use std::path::{Path, PathBuf};
 
 pub const MAX_FRAME: usize = 4 * 1024 * 1024;
 /// Attach protocol this tree speaks (ADR 0015 D1). 8- and 16-byte payloads imply 1.
 pub const PROTOCOL_VERSION: u8 = 1;
 /// `flags` bit 0: observe (ADR 0015 D7). Not a second writer.
 pub const ATTACH_FLAG_OBSERVE: u8 = 1;
+
+/// The read-only companion socket for cold kernel identity queries. It is
+/// deliberately not an attach frame: the attach stream remains DATA/CREDIT on
+/// its warm path (SPEC-ATTACH §8).
+pub fn cold_identity_socket_path(attach_socket: impl AsRef<Path>) -> PathBuf {
+    let mut path = attach_socket.as_ref().as_os_str().to_os_string();
+    path.push(".identity");
+    PathBuf::from(path)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -473,6 +483,15 @@ mod tests {
             d.push(&bytes).expect("decode"),
             vec![Frame::attach(9, None)]
         );
+    }
+
+    #[test]
+    fn cold_identity_socket_preserves_the_full_attach_socket_name() {
+        let a = cold_identity_socket_path("/tmp/rill-a.sock");
+        let b = cold_identity_socket_path("/tmp/rill-a.other");
+        assert_eq!(a, PathBuf::from("/tmp/rill-a.sock.identity"));
+        assert_eq!(b, PathBuf::from("/tmp/rill-a.other.identity"));
+        assert_ne!(a, b, "distinct attach sockets need distinct cold sockets");
     }
 
     #[test]

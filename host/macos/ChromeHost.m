@@ -78,6 +78,7 @@ static const CGFloat kRillCenterMin = 320.0;
 @property (nonatomic, assign) uint32_t paneRgba;
 @property (nonatomic, assign) CGFloat topInset;
 @property (nonatomic, assign) BOOL freezeY;
+@property (nonatomic, copy) NSString *hostIdentity;
 @end
 
 @implementation RillChromeController
@@ -85,11 +86,13 @@ static const CGFloat kRillCenterMin = 320.0;
 - (instancetype)initWithTerminal:(TerminalView *)terminal
                       background:(uint32_t)bg
                       foreground:(uint32_t)fg
+                            host:(NSString *)host
                         topInset:(CGFloat)topInset {
     self = [super initWithNibName:nil bundle:nil];
     if (self) {
         _terminal = terminal;
         _topInset = topInset;
+        _hostIdentity = [host copy];
         const char *mut = getenv("RILL_MUTATE");
         _freezeY = mut && strcmp(mut, "hardcoded_chrome_y") == 0;
         if (mut && strcmp(mut, "hardcoded_chrome_gray") == 0) {
@@ -121,7 +124,7 @@ static const CGFloat kRillCenterMin = 320.0;
 
     self.terminal.accessibilityIdentifier = @"chrome-center";
 
-    RillChromePane *right = [self inspectorPaneNamed:homeName];
+    RillChromePane *right = [self inspectorPaneNamed:self.hostIdentity];
     right.terminal = self.terminal;
     right.accessibilityIdentifier = @"chrome-right";
 
@@ -220,7 +223,8 @@ static const CGFloat kRillCenterMin = 320.0;
     pane.topInset = self.topInset;
     pane.freezeFrames = self.freezeY;
 
-    NSTextField *heading = [self sectionLabel:[NSString stringWithFormat:@"On %@", name]];
+    NSTextField *heading = [self sectionLabel:name];
+    heading.accessibilityIdentifier = @"host-indicator";
     pane.heading = heading;
     [pane addSubview:heading];
 

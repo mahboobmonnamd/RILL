@@ -7,6 +7,7 @@ pub enum Error {
     Chip(rill_chip0::Error),
     Dead,
     Refused,
+    InvalidHostIdentity,
 }
 
 impl fmt::Display for Error {
@@ -17,6 +18,7 @@ impl fmt::Display for Error {
             Self::Chip(e) => write!(f, "{e}"),
             Self::Dead => write!(f, "pane is dead"),
             Self::Refused => write!(f, "attach refused"),
+            Self::InvalidHostIdentity => write!(f, "invalid cold kernel host identity"),
         }
     }
 }
@@ -27,7 +29,7 @@ impl std::error::Error for Error {
             Self::Io(e) => Some(e),
             Self::Attach(e) => Some(e),
             Self::Chip(e) => Some(e),
-            Self::Dead | Self::Refused => None,
+            Self::Dead | Self::Refused | Self::InvalidHostIdentity => None,
         }
     }
 }
