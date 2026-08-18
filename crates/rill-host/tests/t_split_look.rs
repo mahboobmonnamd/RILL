@@ -41,9 +41,8 @@ fn fixture_theme(name: &str) -> PathBuf {
 
 /// Oracle: `background =` from the theme file, not a Rust constant.
 fn background_hex_from_theme_file(name: &str) -> String {
-    let text = fs::read_to_string(fixture_theme(name)).unwrap_or_else(|e| {
-        panic!("T-SPLIT-LOOK needs {}: {e}", fixture_theme(name).display())
-    });
+    let text = fs::read_to_string(fixture_theme(name))
+        .unwrap_or_else(|e| panic!("T-SPLIT-LOOK needs {}: {e}", fixture_theme(name).display()));
     for line in text.lines() {
         let line = line.trim();
         if let Some(rest) = line.strip_prefix("background") {
@@ -199,9 +198,7 @@ fn assert_nav_is_chrome_surface(theme: &str) {
         "precondition: chrome surface must differ from {theme} file background"
     );
     let (hb, raw) = launch_theme(theme);
-    let hb = hb.unwrap_or_else(|| {
-        panic!("no three-pane heartbeat for {theme}; heartbeat={raw:?}")
-    });
+    let hb = hb.unwrap_or_else(|| panic!("no three-pane heartbeat for {theme}; heartbeat={raw:?}"));
     let got = hb.nav_bg.as_deref().unwrap_or("");
     assert_eq!(
         got, expected,
@@ -228,7 +225,10 @@ fn t_chrome_nav_background_matches_latte_theme_file() {
 fn t_chrome_nav_background_matches_mocha_theme_file() {
     let latte = chrome_surface_hex_from_theme_file("Catppuccin Latte");
     let mocha = chrome_surface_hex_from_theme_file("Catppuccin Mocha");
-    assert_ne!(latte, mocha, "precondition: the two derived surfaces differ");
+    assert_ne!(
+        latte, mocha,
+        "precondition: the two derived surfaces differ"
+    );
     assert_nav_is_chrome_surface("Catppuccin Mocha");
 }
 
@@ -236,9 +236,7 @@ fn t_chrome_nav_background_matches_mocha_theme_file() {
 #[test]
 fn t_chrome_heading_top_inset_matches_look_padding_y() {
     let (hb, raw) = launch_theme("Catppuccin Latte");
-    let hb = hb.unwrap_or_else(|| {
-        panic!("no three-pane heartbeat for inset; heartbeat={raw:?}")
-    });
+    let hb = hb.unwrap_or_else(|| panic!("no three-pane heartbeat for inset; heartbeat={raw:?}"));
     let nav_top = hb.nav_top.unwrap_or(-1.0);
     let pad_y = hb.pad_y.unwrap_or(-1.0);
     assert!(
@@ -255,9 +253,7 @@ fn t_chrome_heading_top_inset_matches_look_padding_y() {
 #[test]
 fn t_chrome_section_font_is_sidebar_size() {
     let (hb, raw) = launch_theme("Catppuccin Latte");
-    let hb = hb.unwrap_or_else(|| {
-        panic!("no three-pane heartbeat for font; heartbeat={raw:?}")
-    });
+    let hb = hb.unwrap_or_else(|| panic!("no three-pane heartbeat for font; heartbeat={raw:?}"));
     let font = hb.chrome_font.unwrap_or(0.0);
     assert!(
         font >= 13.0,

@@ -134,9 +134,7 @@ fn t_window_is_three_pane_split_around_chip0() {
     let mut gui = gui_cmd.spawn().expect("spawn packaged Rill");
     let pid = gui.id();
 
-    let laid_out = wait_heartbeat(&heartbeat, pid, Duration::from_secs(8), |h| {
-        h.seq >= 1
-    });
+    let laid_out = wait_heartbeat(&heartbeat, pid, Duration::from_secs(8), |h| h.seq >= 1);
     if laid_out.is_none() || !alive(pid) {
         let _ = gui.kill();
         let _ = gui.wait();
@@ -162,9 +160,7 @@ fn t_window_is_three_pane_split_around_chip0() {
     let _ = fs::remove_file(&sock);
 
     let hb = split.unwrap_or_else(|| {
-        panic!(
-            "window is not a three-pane split around Chip 0; heartbeat={raw:?}"
-        )
+        panic!("window is not a three-pane split around Chip 0; heartbeat={raw:?}")
     });
     assert_eq!(hb.chrome, Some(3), "chrome columns; heartbeat={raw:?}");
     assert!(

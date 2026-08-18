@@ -157,9 +157,7 @@ fn t_dock_reopen_makes_the_window_key_and_visible() {
         let hb = fs::read_to_string(&heartbeat).ok();
         let _ = fs::remove_file(&heartbeat);
         let _ = fs::remove_file(&sock);
-        panic!(
-            "dock reopen did not show the window; heartbeat={hb:?} alive={still}"
-        );
+        panic!("dock reopen did not show the window; heartbeat={hb:?} alive={still}");
     }
 
     let seq0 = restored.unwrap().seq;
