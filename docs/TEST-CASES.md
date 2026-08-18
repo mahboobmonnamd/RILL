@@ -1086,7 +1086,7 @@ behaviour is absent, with the failure output in the PR (ADR 0002 D2).
 
 | Spec | Authority | Milestone |
 |---|---|---|
-| [SPEC-NAV](spec/SPEC-NAV.md) | ADR 0020, ADR 0021 | M2 |
+| [SPEC-NAV](spec/SPEC-NAV.md) | ADR 0020, ADR 0021 | M2 (container-tree kernel plane Proven at library level; chrome wiring open) |
 | [SPEC-FIDELITY](spec/SPEC-FIDELITY.md) | ADR 0022 | M2 |
 | [SPEC-REMOTE](spec/SPEC-REMOTE.md) | ADR 0023 | M2 |
 | [SPEC-SURFACES](spec/SPEC-SURFACES.md) | ADR 0024, ADR 0028 | M2 |

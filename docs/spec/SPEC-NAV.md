@@ -1,7 +1,16 @@
 # SPEC-NAV — container tree and navigation surfaces (`lane:host`, `lane:kernel`)
 
-- **Status:** Accepted — 2026-08-18. No gate demonstrated yet: every gate below
-  is **Red** until shown red-then-green on a packaged build (ADR 0002 D2).
+- **Status:** Accepted — 2026-08-18. `crates/rill-kernel` now implements §1's
+  container tree (`NodeId`, `NodeKind`, `create_node`, `attach_leaf`,
+  `reparent_node`, `close_node`, `container_snapshot`). Three kernel-plane
+  sub-gates are **Proven at the library level** —
+  `cargo test -p rill-kernel --test nav_gates`, red-then-green demonstrated
+  under `--features mutate` (evidence below). The full gates in §11's table
+  remain **Red**: each also names a chrome-renders-from-it or
+  window-close-terminates-nothing half that needs `host/macos/` wiring and a
+  packaged `Rill.app` e2e (ADR 0020 D7, ADR 0002 D8). A kernel-plane library
+  test does not close a gate whose oracle names packaged behaviour — it only
+  proves the layer under it is sound.
 - **Authority:** [ADR 0020](../adr/0020-session-graph-navigation-model.md),
   [ADR 0021](../adr/0021-inventories-are-cold-readers.md)
 - **Requires:** [SPEC-GRAPH](SPEC-GRAPH.md), [SPEC-KERNEL](SPEC-KERNEL.md),
@@ -118,10 +127,10 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
 | ID | Status | Closes |
 |---|---|---|
-| T-NAV-TOPOLOGY | Red | §1 |
+| T-NAV-TOPOLOGY | Red (kernel-plane half Proven, library) | §1 |
 | T-NAV-STACK | Red | §2 |
-| T-NAV-CLOSE | Red | §3 |
-| T-NAV-REPARENT | Red | §4 |
+| T-NAV-CLOSE | Red (kernel-plane half Proven, library) | §3 |
+| T-NAV-REPARENT | Red (kernel-plane half Proven, library) | §4 |
 | T-NAV-VIEWSTATE | Red | §5 |
 | T-INV-COLD | Red | §7 |
 | T-INV-SELECT | Red | §7 |
@@ -131,6 +140,26 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
 Socket-only tests do not close §2–§5 where user-visible; packaged `Rill.app`
 e2e is the closer (ADR 0002 D8).
+
+**Kernel-plane evidence (2026-08-18).** `crates/rill-kernel/tests/nav_gates.rs`
+demonstrates three sub-properties red-then-green, `--test-threads=1`, real
+`posix_spawn` children checked live with `kill(pid, 0)`:
+
+| Test | Green | Required mutation | Demonstrated red |
+|---|---|---|---|
+| `t_nav_topology_snapshot_reflects_created_nodes_and_leaves` | `cargo test -p rill-kernel --test nav_gates` | `RILL_MUTATE=omit_node_children` | `cargo test -p rill-kernel --features mutate --test nav_gates` |
+| `t_nav_close_terminates_only_the_closed_subtrees_leaves` | same | `RILL_MUTATE=close_node_terminates_all_leaves` | same |
+| `t_nav_reparent_preserves_session_identity` | same | `RILL_MUTATE=reparent_recreates_node` | same |
+
+Each mutation was confirmed to turn **only** its own test red, with the other
+two staying green (ADR 0002 D3's isolation requirement) and the full
+pre-existing `rill-kernel` suite (23 Spike-0/M1 gates + 2 unit tests)
+unaffected. This closes the data-structure prerequisite for T-NAV-TOPOLOGY,
+T-NAV-CLOSE and T-NAV-REPARENT. It does **not** close those gates: none of
+this has a window yet. `host/macos/ChromeHost` does not call `create_node`,
+`reparent_node`, or `close_node`, and no packaged e2e has run. That wiring is
+open work — see [#260](https://github.com/mahboobmonnamd/RILL/issues/260)'s
+lane for the host side.
 
 ## 12. Out of scope
 
