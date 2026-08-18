@@ -88,43 +88,52 @@ scan no-seqpacket \
 
 # --- no-ghostty-in-domain ---------------------------------------------------
 # Ghostty FFI types live only in the adapter (ADR 0001 D1, SPEC-CHIP0 §1).
+# Require an identifier boundary so Chip 0 tests named t_ghostty_look_* are
+# not mistaken for ghostty_*() FFI calls.
 GHOSTTY_FILES="$(git ls-files 'crates/**/*.rs' 'crates/**/*.c' 'crates/**/*.h' 'host/**/*.m' \
   | grep -v '^crates/rill-chip0/src/adapter/' || true)"
 if [ -n "$GHOSTTY_FILES" ]; then
   # shellcheck disable=SC2086
   scan no-ghostty-in-domain \
     "Ghostty identifiers outside crates/rill-chip0/src/adapter/" \
-    'ghostty_[a-z_]+\(|Ghostty[A-Z][A-Za-z]*' \
+    '(^|[^A-Za-z_])ghostty_[a-z_]+\(|(^|[^A-Za-z_])Ghostty[A-Z][A-Za-z]*' \
     $GHOSTTY_FILES
 fi
 
 # --- no-cell-strings --------------------------------------------------------
 # A String reachable from a POD snapshot is how the previous prototype died.
 # Only the snapshot types themselves, not the whole crate.
-if [ -f crates/rill-chip0/src/lib.rs ]; then
-  hits="$(python3 - <<'PY'
-import re
-src = open("crates/rill-chip0/src/lib.rs", encoding="utf-8").read()
-src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
-for name in ("PodCell", "PodGrid"):
-    m = re.search(r"pub struct %s\s*\{(.*?)\n\}" % name, src, flags=re.S)
-    if not m:
+hits="$(python3 - <<'PY'
+import os, re
+files = [
+    "crates/rill-chip0/src/lib.rs",
+    "crates/rill-vt-types/src/lib.rs",
+    "crates/vt-engine/src/lib.rs",
+]
+for path in files:
+    if not os.path.isfile(path):
         continue
-    for i, line in enumerate(m.group(1).splitlines(), 1):
-        code = re.sub(r"//.*$", "", line)
-        if re.search(r"\b(String|&str|Cow<)", code):
-            print(f"{name} field: {code.strip()}")
+    src = open(path, encoding="utf-8").read()
+    src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+    for name in ("PodCell", "PodGrid"):
+        m = re.search(r"pub struct %s\s*\{(.*?)\n\}" % name, src, flags=re.S)
+        if not m:
+            continue
+        for line in m.group(1).splitlines():
+            code = re.sub(r"//.*$", "", line)
+            if re.search(r"\b(String|&str|Cow<)", code):
+                print(f"{path}: {name} field: {code.strip()}")
 PY
 )"
-  if [ -n "$hits" ]; then
-    fail no-cell-strings "String in a POD snapshot type (AGENTS.md §5)"
-    printf '%s\n' "$hits" | sed 's/^/    /' >&2
-  fi
+if [ -n "$hits" ]; then
+  fail no-cell-strings "String in a POD snapshot type (AGENTS.md §5)"
+  printf '%s\n' "$hits" | sed 's/^/    /' >&2
 fi
 
-# --- no-unwrap-in-daemon ----------------------------------------------------
+# --- no-unwrap-in-daemon / no-unwrap (Chip 1) -------------------------------
 # PRD NFR-FAIL. src/ only; tests live in tests/ and may unwrap freely.
-for crate in rill-kernel rill-attach rilld; do
+# SPEC-VT-CONFORMANCE §5 extends this to rill-vt-types and vt-engine.
+for crate in rill-kernel rill-attach rilld rill-vt-types vt-engine; do
   files="$(git ls-files "crates/$crate/src/*.rs" "crates/$crate/src/**/*.rs" 2>/dev/null || true)"
   [ -n "$files" ] || continue
   # shellcheck disable=SC2086
@@ -147,7 +156,11 @@ for raw in open(sys.argv[1], encoding="utf-8"):
 PY
 )"
   if [ -n "$hits" ]; then
-    fail no-unwrap-in-daemon "$crate: unwrap/expect/panic on a production path (PRD NFR-FAIL)"
+    case "$crate" in
+      rill-vt-types|vt-engine) lint=no-unwrap ;;
+      *) lint=no-unwrap-in-daemon ;;
+    esac
+    fail "$lint" "$crate: unwrap/expect/panic on a production path (PRD NFR-FAIL)"
     printf '%s\n' "$hits" | sed 's/^/    /' >&2
   fi
 done
@@ -222,6 +235,144 @@ if [ -f crates/rilld/src/lib.rs ]; then
     fail no-write-all-nonblock "rilld must not write_all the attach socket (quality Q1)"
     printf '%s\n' "$prod" | sed 's/^/    /' >&2
   fi
+fi
+
+# --- no-vte-at-runtime ------------------------------------------------------
+# ADR 0020 D2, SPEC-VT-CONFORMANCE §5. vte is a test oracle only.
+hits="$(python3 - <<'PY'
+import re, subprocess
+files = subprocess.check_output(
+    ["git", "ls-files", "**/Cargo.toml"], text=True
+).splitlines()
+section_re = re.compile(r'^\[([^]]+)\]\s*$')
+dep_re = re.compile(r'^vte(?:\.workspace|\s*=)')
+for path in files:
+    section = None
+    for i, raw in enumerate(open(path, encoding="utf-8"), 1):
+        line = re.sub(r"#.*$", "", raw).rstrip()
+        m = section_re.match(line)
+        if m:
+            section = m.group(1).strip()
+            continue
+        if not line.strip():
+            continue
+        if not dep_re.match(line.strip()):
+            continue
+        if section in ("dev-dependencies", "workspace.dev-dependencies"):
+            continue
+        print(f"{path}:{i}: vte under [{section}]")
+PY
+)"
+if [ -n "$hits" ]; then
+  fail no-vte-at-runtime "vte must live only in [dev-dependencies] (ADR 0020 D2)"
+  printf '%s\n' "$hits" | sed 's/^/    /' >&2
+fi
+
+# --- no-host-dep-on-vt-engine -----------------------------------------------
+# ADR 0012 D1, SPEC-VT-CONFORMANCE §5. Isolation until M7.
+hits="$(python3 - <<'PY'
+import re
+for path in (
+    "crates/rill-host/Cargo.toml",
+    "crates/rilld/Cargo.toml",
+):
+    try:
+        src = open(path, encoding="utf-8").read()
+    except OSError:
+        continue
+    src = re.sub(r"#.*$", "", src, flags=re.M)
+    if re.search(r'(?m)^vt-engine(?:\.workspace|\s*=)', src):
+        print(f"{path}: depends on vt-engine")
+PY
+)"
+if [ -n "$hits" ]; then
+  fail no-host-dep-on-vt-engine "rill-host / rilld must not depend on vt-engine until M7"
+  printf '%s\n' "$hits" | sed 's/^/    /' >&2
+fi
+
+# --- no-theme-rgb-in-rust ---------------------------------------------------
+# ADR 0021 D3, SPEC-VT-CONFORMANCE §5. Theme RGB is data in fixtures/look.
+hits="$(python3 - <<'PY'
+import os, re
+
+KEY = re.compile(
+    r'(?:palette\s*=\s*\d+\s*=|foreground\s*=|background\s*=|'
+    r'cursor-color\s*=|selection-background\s*=|selection-foreground\s*=)'
+    r'\s*#([0-9A-Fa-f]{6})'
+)
+LIT = re.compile(r'(?:#|0x)([0-9A-Fa-f]{6})([0-9A-Fa-f]{2})?\b')
+
+# SPEC-VT-COLOR §4. Exempt only inside Palette::vt_default().
+EXEMPT = {
+    0xCCCCCC, 0x121212,
+    0x1D1F21, 0xCC6666, 0xB5BD68, 0xF0C674,
+    0x81A2BE, 0xB294BB, 0x8ABEB7, 0xC5C8C6,
+    0x666666, 0xD54E53, 0xB9CA4A, 0xE7C547,
+    0x7AA6DA, 0xC397D8, 0x70C0B1, 0xEAEAEA,
+}
+
+forbidden = set()
+theme_dir = "fixtures/look/themes"
+if os.path.isdir(theme_dir):
+    for name in os.listdir(theme_dir):
+        path = os.path.join(theme_dir, name)
+        if not os.path.isfile(path):
+            continue
+        for line in open(path, encoding="utf-8", errors="replace"):
+            for m in KEY.finditer(line):
+                forbidden.add(int(m.group(1), 16))
+
+def in_vt_default(src, pos):
+    m = re.search(r'fn vt_default\s*\(', src)
+    if not m or pos < m.start():
+        return False
+    depth = 0
+    started = False
+    i = m.end()
+    while i < len(src):
+        ch = src[i]
+        if ch == '{':
+            depth += 1
+            started = True
+        elif ch == '}':
+            depth -= 1
+            if started and depth == 0:
+                return m.start() <= pos <= i
+        i += 1
+    return False
+
+crate_globs = []
+for root, _, files in os.walk("crates/rill-vt-types"):
+    for fn in files:
+        if fn.endswith(".rs"):
+            crate_globs.append(os.path.join(root, fn))
+for root, _, files in os.walk("crates/vt-engine"):
+    for fn in files:
+        if fn.endswith(".rs"):
+            crate_globs.append(os.path.join(root, fn))
+
+for path in crate_globs:
+    src = open(path, encoding="utf-8", errors="replace").read()
+    offset = 0
+    for lineno, line in enumerate(src.splitlines(True), 1):
+        code = re.sub(r"//.*$", "", line)
+        for m in LIT.finditer(code):
+            rgb = int(m.group(1), 16)
+            alpha = m.group(2)
+            if alpha is not None and alpha.lower() != "ff":
+                continue
+            if rgb not in forbidden:
+                continue
+            pos = offset + m.start()
+            if rgb in EXEMPT and path.endswith("rill-vt-types/src/lib.rs") and in_vt_default(src, pos):
+                continue
+            print(f"{path}:{lineno}: theme RGB #{m.group(1).lower()}")
+        offset += len(line)
+PY
+)"
+if [ -n "$hits" ]; then
+  fail no-theme-rgb-in-rust "theme RGB belongs in the look file, not Rust (ADR 0021 D3)"
+  printf '%s\n' "$hits" | sed 's/^/    /' >&2
 fi
 
 if [ "$FAILED" -ne 0 ]; then

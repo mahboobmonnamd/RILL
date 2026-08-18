@@ -35,13 +35,17 @@ jobs:
       # Only the crates that do not link libghostty-vt. If this list ever needs
       # rill-chip0, SPEC-CHIP0 §9 has been violated.
       - name: Clippy (fast tier)
-        run: cargo clippy -p rill-attach -p rill-kernel --all-targets -- -D warnings
+        run: cargo clippy -p rill-attach -p rill-kernel -p rill-vt-types -p vt-engine --all-targets -- -D warnings
 
       - name: Attach codec tests
         run: cargo test -p rill-attach -- --nocapture
 
       - name: Kernel tests that do not need a display chip
         run: cargo test -p rill-kernel -- --test-threads=1 --nocapture
+
+      # Chip 1 library only. MUST NOT add rill-chip0 (SPEC-CHIP0 §9).
+      - name: Chip 1 types and empty engine
+        run: cargo test -p rill-vt-types -p vt-engine -- --nocapture
 
       # M1 T-GRAPH (ADR 0014 D1). Mutations must go red (ADR 0002 D3).
       # rilld named-id / flood stay in validate-spike0.sh (Chip 0 toolchain).

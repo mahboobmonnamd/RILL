@@ -7,6 +7,8 @@ members = [
     "crates/rilld",
     "crates/rill-host",
     "crates/rill-orchestrate",
+    "crates/rill-vt-types",
+    "crates/vt-engine",
 ]
 
 [workspace.package]
@@ -19,6 +21,7 @@ rust-version = "1.85"
 rill-attach = { path = "crates/rill-attach" }
 rill-kernel = { path = "crates/rill-kernel" }
 rill-chip0 = { path = "crates/rill-chip0" }
+rill-vt-types = { path = "crates/rill-vt-types" }
 libc = "0.2"
 toml = "0.8"
 serde = { version = "1", features = ["derive"] }

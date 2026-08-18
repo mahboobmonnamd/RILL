@@ -756,7 +756,10 @@ mod tests {
         let mocha_s = chrome_surface_rgba(mocha);
         assert_ne!(latte_s, latte, "chrome must not match Chip 0 Latte base");
         assert_ne!(mocha_s, mocha, "chrome must not match Chip 0 Mocha base");
-        assert_ne!(latte_s, mocha_s, "two files must not share one cream constant");
+        assert_ne!(
+            latte_s, mocha_s,
+            "two files must not share one cream constant"
+        );
     }
 
     #[test]
