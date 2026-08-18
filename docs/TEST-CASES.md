@@ -34,6 +34,29 @@ again.
 These are not Spike 0 reopeners. They are defects the post-close audit found
 in production code that Spike 0 did not name.
 
+### T-NAV-IDENTITY — default leaf host indicator comes from the kernel
+
+**Status.** Red — F-001 [#38](https://github.com/mahboobmonnamd/RILL/issues/38)
+and F-002 [#39](https://github.com/mahboobmonnamd/RILL/issues/39), authorized by
+ADR 0020 D6 and SPEC-NAV §6.
+
+**Oracle.** Packaged `Rill.app` starts with a deliberately non-host `$HOME`.
+The live AppKit host-indicator label is observed through the test heartbeat and
+must read `local`. The label is populated by a cold daemon reply for the default
+leaf, rather than by a string the test supplied or a chrome cache. The host's
+normal attach remains the 8-byte `ATTACH` for that daemon default leaf.
+
+**Procedure.** Launch the packaged app with a unique socket and `HOME` set to a
+temporary path named `rill-not-a-host-*`; wait for the live window heartbeat's
+rendered host indicator.
+
+**Required mutation.** `RILL_MUTATE=host_indicator_from_home` selects
+`NSHomeDirectory().lastPathComponent` instead of the cold kernel identity. The
+host-indicator test MUST go red.
+
+**Negative control.** Automated by packaging the mutation and executing
+`cargo test -p rill-host --test t_host_identity` with `RILL_MUTATE` set.
+
 ### T-PARTIAL-WRITE — non-blocking flush must not replay a DATA frame
 
 **Oracle.** Child-emitted tokens `RILL-UNIQ-<n>-END` in decoded `DATA`. Only

@@ -157,6 +157,8 @@ run_gate "T-GLYPH-SCALE" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
   cargo test -p rill-host --offline --test t_glyph_scale -- --nocapture
 run_gate "T-SPLIT" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
   cargo test -p rill-host --offline --test t_split -- --nocapture
+run_gate "T-NAV-IDENTITY" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_host_identity -- --nocapture
 run_gate "T-SPLIT-LOOK" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
   cargo test -p rill-host --offline --test t_split_look \
   t_chrome_nav_background -- --nocapture
