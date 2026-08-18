@@ -593,17 +593,22 @@ impl Daemon {
                 let frames = pending.get(&id).cloned().unwrap_or_default();
                 #[cfg(feature = "mutate")]
                 if std::env::var("RILL_MUTATE").as_deref() == Ok("replay_full_frame") {
-                    let client = &mut self.clients[i];
+                    // Defect: write_all a whole frame, then re-queue it.
+                    // Do not wait for WouldBlock: hosted kernels often ignore a
+                    // tiny SO_SNDBUF, so gating the replay on WouldBlock left
+                    // the instrument green (ADR 0002 D3).
                     for frame in frames {
                         let bytes = frame.encode()?;
-                        match client.stream.write_all(&bytes) {
+                        let write_rc = {
+                            let client = &mut self.clients[i];
+                            client.stream.write_all(&bytes)
+                        };
+                        if let Some(session) = self.kernel.session_mut(id) {
+                            session.enqueue_outbound(frame);
+                        }
+                        match write_rc {
                             Ok(()) => {}
-                            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                                if let Some(session) = self.kernel.session_mut(id) {
-                                    session.enqueue_outbound(frame);
-                                }
-                                break;
-                            }
+                            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
                             Err(_) => {
                                 drop_idx = Some(i);
                                 break;

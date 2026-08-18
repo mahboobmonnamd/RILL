@@ -25,9 +25,10 @@ permissions:
 
 jobs:
   gates:
-    # A GitHub-hosted macOS runner has no physical display and no battery, so it
-    # cannot close T-NFR. It can still run every other gate and T-NFR in `app`
-    # mode for regression detection (ADR 0003 D7).
+    # A GitHub-hosted macOS runner has no physical display, no battery, no
+    # Spaces, and a 1× backing scale, so it cannot close T-NFR, T-FS-EXIT, or
+    # T-GLYPH-SCALE. Library gates and the other packaged tests still fail the
+    # job. T-NFR in `app` mode is diagnostic only (ADR 0003 D7, ADR 0009 D4).
     runs-on: macos-14
     timeout-minutes: 90
 
@@ -81,6 +82,7 @@ jobs:
       - name: Restate what this run cannot close
         if: always()
         run: |
-          echo "This runner has no physical display and no battery."
+          echo "This runner has no physical display, no battery, no Spaces, and is 1×."
           echo "T-NFR here is 'app' mode only and does NOT close the gate."
-          echo "Closure requires --nfr-key=hid on a real Mac on battery (ADR 0003 D7, D8)."
+          echo "T-FS-EXIT and T-GLYPH-SCALE are recorded but do not fail this job."
+          echo "Closure requires a real Mac: hid on battery, Retina, Spaces (ADR 0003 D7, D8; ADR 0009 D4)."
