@@ -1,0 +1,15 @@
+[package]
+name = "rill-orchestrate"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Orchestration plane: config resolution, trust/redaction, task, attention (cold; no PTY, no display, no warm-path frames)"
+
+[features]
+# Negative-control mutations (ADR 0002 D3). Only test runs with
+# --features mutate enable these; shipping builds carry no mutation code.
+mutate = []
+
+[dependencies]
+toml.workspace = true
+serde = { workspace = true }

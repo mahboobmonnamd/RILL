@@ -102,6 +102,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rill-orchestrate"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "rilld"
 version = "0.1.0"
 dependencies = [

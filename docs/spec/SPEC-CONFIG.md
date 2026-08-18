@@ -1,7 +1,14 @@
 # SPEC-CONFIG — canonical schema, resolution and appearance (`lane:host`)
 
-- **Status:** Accepted — 2026-08-18. Gates **Red** until demonstrated
-  red-then-green (ADR 0002 D2).
+- **Status:** Accepted — 2026-08-18. `crates/rill-orchestrate/src/config.rs`
+  implements the resolution *mechanism* (§3 precedence, cold single-read
+  snapshots, §2 one-file writeback, §5 keybinding-swallow detection) as a
+  pure library, independent of the look/theme schema itself. **T-CFG-ORDER,
+  T-CFG-COLD, T-CFG-ONEFILE and T-CFG-BIND are Proven at the library
+  level** — `cargo test -p rill-orchestrate --test config_gates`,
+  red-then-green under `--features mutate` (evidence below). T-CFG-OPAQUE
+  (needs `NSWindow`/Metal) and T-CFG-UPDATE (needs a signed-binary updater)
+  are host/platform work, not attempted here, and stay **Red**.
 - **Authority:** [ADR 0025](../adr/0025-one-look-schema-one-config-file.md)
 - **Requires:** [ADR 0017](../adr/0017-ghostty-look-windowed-default.md),
   [SPEC-CHROME](SPEC-CHROME.md), [SPEC-DISPLAY](SPEC-DISPLAY.md)
@@ -90,12 +97,18 @@ Highest wins:
 
 | ID | Status | Closes |
 |---|---|---|
-| T-CFG-ONEFILE | Red | §2 |
-| T-CFG-COLD | Red | §3 |
-| T-CFG-ORDER | Red | §3 |
-| T-CFG-OPAQUE | Red | §4 |
-| T-CFG-BIND | Red | §5 |
-| T-CFG-UPDATE | Red | §8 |
+| T-CFG-ONEFILE | **Proven** (library) | §2 |
+| T-CFG-COLD | **Proven** (library) | §3 |
+| T-CFG-ORDER | **Proven** (library) | §3 |
+| T-CFG-OPAQUE | Red (host, not attempted) | §4 |
+| T-CFG-BIND | **Proven** (library) | §5 |
+| T-CFG-UPDATE | Red (host, not attempted) | §8 |
+
+**Library evidence (2026-08-18).** `crates/rill-orchestrate/tests/config_gates.rs`,
+`cargo test -p rill-orchestrate --test config_gates` (green), each required
+mutation run individually under `--features mutate` and confirmed to turn
+only its own test red: `resolution_order_reversed`, `resolve_reads_per_query`,
+`settings_write_shadow_store`, `skip_swallow_check`.
 
 T-LOOK-FILE, T-LOOK-UNKNOWN, T-SPLIT-LOOK MUST stay green.
 

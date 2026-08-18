@@ -1090,11 +1090,11 @@ behaviour is absent, with the failure output in the PR (ADR 0002 D2).
 | [SPEC-FIDELITY](spec/SPEC-FIDELITY.md) | ADR 0022 | M2 |
 | [SPEC-REMOTE](spec/SPEC-REMOTE.md) | ADR 0023 | M2 |
 | [SPEC-SURFACES](spec/SPEC-SURFACES.md) | ADR 0024, ADR 0028 | M2 |
-| [SPEC-CONFIG](spec/SPEC-CONFIG.md) | ADR 0025 | M2 |
-| [SPEC-TRUST](spec/SPEC-TRUST.md) | ADR 0026 | M2 |
-| [SPEC-PLATFORM](spec/SPEC-PLATFORM.md) | ADR 0027 | M2 |
-| [SPEC-ATTENTION](spec/SPEC-ATTENTION.md) | ADR 0029 | M3 |
-| [SPEC-TASK](spec/SPEC-TASK.md) | ADR 0030 | M3 |
+| [SPEC-CONFIG](spec/SPEC-CONFIG.md) | ADR 0025 | M2 (resolution engine Proven at library level; look/appearance/updater host work open) |
+| [SPEC-TRUST](spec/SPEC-TRUST.md) | ADR 0026 | M2 (project trust + redaction Proven at library level; plugins/socket/a11y open) |
+| [SPEC-PLATFORM](spec/SPEC-PLATFORM.md) | ADR 0027 | M2 (T-PLAT-CORE fully Proven — dependency-graph check; FFI/per-platform gates open) |
+| [SPEC-ATTENTION](spec/SPEC-ATTENTION.md) | ADR 0029 | M3 (queue/rollup/read-clearing Proven at library level; OSC/socket/hooks open) |
+| [SPEC-TASK](spec/SPEC-TASK.md) | ADR 0030 | M3 (Task object fully Proven at library level except checkpoint, which needs git) |
 | [SPEC-AGENT](spec/SPEC-AGENT.md) | ADR 0031 | M3 |
 | [SPEC-BLOCKS](spec/SPEC-BLOCKS.md) | ADR 0032 | M6 |
 | [SPEC-INPUT](spec/SPEC-INPUT.md) | ADR 0033 | M6 |

@@ -1,7 +1,11 @@
 # SPEC-PLATFORM — core boundary and per-platform obligations
 
-- **Status:** Accepted — 2026-08-18. Gates **Red** until demonstrated
-  red-then-green (ADR 0002 D2).
+- **Status:** Accepted — 2026-08-18. **T-PLAT-CORE is Proven** —
+  `scripts/check-core-boundary.sh` (build-graph check, no Zig/macOS toolchain
+  needed) demonstrated red-then-green against synthetic fixtures via
+  `python3 scripts/test_check_core_boundary.py`, then run against this
+  workspace's real, current `cargo metadata` graph: clean. Evidence below.
+  T-PLAT-FFI and T-PLAT-GATES remain **Red**.
 - **Authority:** [ADR 0027](../adr/0027-one-core-native-ui-per-os.md)
 - **Requires:** [SPEC-KERNEL](SPEC-KERNEL.md), [SPEC-DISPLAY](SPEC-DISPLAY.md),
   [SPEC-ATTACH](SPEC-ATTACH.md)
@@ -60,9 +64,21 @@ Until a second platform is actually being built, this tree MUST NOT:
 
 | ID | Status | Closes |
 |---|---|---|
-| T-PLAT-CORE | Red | §1 |
-| T-PLAT-FFI | Red | §1 |
-| T-PLAT-GATES | Red | §3 |
+| T-PLAT-CORE | **Proven** | §1 |
+| T-PLAT-FFI | Red (not attempted) | §1 |
+| T-PLAT-GATES | Red (needs a second platform) | §3 |
+
+**T-PLAT-CORE evidence (2026-08-18).** `scripts/check_core_boundary.py`
+walks the resolved dependency graph (`cargo metadata --format-version 1`,
+not Cargo.toml's declared surface) for a transitive dependency on a
+platform-UI crate (cocoa, objc, AppKit, Metal, winit, GTK, …) from any of
+`rill-kernel`, `rill-attach`, `rill-chip0`, `rilld`.
+`scripts/test_check_core_boundary.py` demonstrates the checker catching a
+synthetic Cocoa-dependency fixture (red confirmed by temporarily emptying the
+ban-list and re-running — see PR), passing on a synthetic clean fixture, and
+then run for real against this workspace: zero violations today. This is a
+genuine full close — ADR 0027 §1 requires a build-level graph check, not
+packaged evidence, for this specific gate.
 
 T-NFR, T-KILL, T-SPAWN remain the macOS closers and are not re-cut.
 

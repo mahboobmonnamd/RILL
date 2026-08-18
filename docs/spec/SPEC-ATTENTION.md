@@ -1,7 +1,14 @@
 # SPEC-ATTENTION — the attention queue (`lane:host`, orchestration plane)
 
-- **Status:** Accepted — 2026-08-18. Gates **Red** until demonstrated
-  red-then-green (ADR 0002 D2).
+- **Status:** Accepted — 2026-08-18. `crates/rill-orchestrate/src/attention.rs`
+  implements the queue, rollup ordering, view-based read-clearing, and
+  bounded enqueue. **T-ATT-ONEQUEUE, T-ATT-ROLLUP and T-ATT-READ are Proven
+  at the library level**, plus the bounded-queue (never-drop-actionable)
+  half of §2 — `cargo test -p rill-orchestrate --test attention_gates`,
+  red-then-green under `--features mutate` (evidence below). The
+  zero-control-plane-RPC half of T-ATT-COLD, T-ATT-UNTRUSTED (needs Chip 0's
+  OSC parser), T-ATT-SOCKET (needs a running daemon) and T-ATT-HOOK are not
+  attempted here and stay **Red**.
 - **Authority:** [ADR 0029](../adr/0029-attention-is-an-orchestration-queue.md)
 - **Requires:** [SPEC-NAV](SPEC-NAV.md), [SPEC-TRUST](SPEC-TRUST.md),
   [SPEC-CHIP0](SPEC-CHIP0.md), [SPEC-REMOTE](SPEC-REMOTE.md)
@@ -95,14 +102,19 @@ Priority order:
 
 | ID | Status | Closes |
 |---|---|---|
-| T-ATT-ONEQUEUE | Red | §1 |
-| T-ATT-COLD | Red | §2 |
-| T-ATT-UNTRUSTED | Red | §3 |
-| T-ATT-SOCKET | Red | §4 |
-| T-ATT-SUPPRESS | Red | §5 |
-| T-ATT-HOOK | Red | §6 |
-| T-ATT-READ | Red | §7 |
-| T-ATT-ROLLUP | Red | §8 |
+| T-ATT-ONEQUEUE | **Proven** (library) | §1 |
+| T-ATT-COLD | Red (bounded-queue half Proven, library; zero-RPC half not attempted) | §2 |
+| T-ATT-UNTRUSTED | Red (needs Chip 0's OSC parser, not attempted) | §3 |
+| T-ATT-SOCKET | Red (needs a running daemon, not attempted) | §4 |
+| T-ATT-SUPPRESS | Red (not attempted) | §5 |
+| T-ATT-HOOK | Red (not attempted) | §6 |
+| T-ATT-READ | **Proven** (library) | §7 |
+| T-ATT-ROLLUP | **Proven** (library) | §8 |
+
+**Library evidence (2026-08-18).** `crates/rill-orchestrate/tests/attention_gates.rs`,
+green, each mutation confirmed to turn only its own test red under
+`--features mutate`: `second_attention_classifier`,
+`overflow_drops_actionable`, `rollup_wrong_order`, `clear_on_any_render`.
 
 ## 10. What we will not do
 

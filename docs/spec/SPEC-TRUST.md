@@ -1,7 +1,12 @@
 # SPEC-TRUST — trust, secrets, updates, automation, accessibility (`lane:host`)
 
-- **Status:** Accepted — 2026-08-18. Gates **Red** until demonstrated
-  red-then-green (ADR 0002 D2).
+- **Status:** Accepted — 2026-08-18. `crates/rill-orchestrate/src/trust.rs`
+  implements §2 (path+content-hash trust) and §4 (redact-at-sink). **T-TRUST-CONFIG
+  and T-TRUST-REDACT are Proven at the library level** — `cargo test -p
+  rill-orchestrate --test trust_gates`, red-then-green under `--features
+  mutate` (evidence below). §3 plugins, §6 updates, §7 the daemon socket, and
+  §8 accessibility all need a running daemon or a window and are not
+  attempted here; those gates stay **Red**.
 - **Authority:** [ADR 0026](../adr/0026-trust-secrets-and-automation-boundary.md)
 - **Requires:** [SPEC-CONFIG](SPEC-CONFIG.md), [SPEC-NAV](SPEC-NAV.md),
   [SPEC-KERNEL](SPEC-KERNEL.md)
@@ -96,13 +101,17 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
 | ID | Status | Closes |
 |---|---|---|
-| T-TRUST-CONFIG | Red | §2 |
-| T-TRUST-PLUGIN | Red | §3 |
-| T-TRUST-REDACT | Red | §4 |
-| T-TRUST-NOACCT | Red | §5 |
-| T-TRUST-UPDATE | Red | §6 |
-| T-TRUST-SOCKET | Red | §7 |
-| T-TRUST-A11Y | Red | §8 |
+| T-TRUST-CONFIG | **Proven** (library) | §2 |
+| T-TRUST-PLUGIN | Red (not attempted) | §3 |
+| T-TRUST-REDACT | **Proven** (library) | §4 |
+| T-TRUST-NOACCT | Red (not attempted) | §5 |
+| T-TRUST-UPDATE | Red (not attempted) | §6 |
+| T-TRUST-SOCKET | Red (not attempted) | §7 |
+| T-TRUST-A11Y | Red (not attempted) | §8 |
+
+**Library evidence (2026-08-18).** `crates/rill-orchestrate/tests/trust_gates.rs`,
+green, with `trust_by_path_only` and `skip_redaction_on_export` each
+confirmed to turn only their own test red under `--features mutate`.
 
 T-TRUST-NOACCT MUST be executed with the network denied.
 

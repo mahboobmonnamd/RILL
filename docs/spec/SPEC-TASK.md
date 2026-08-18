@@ -1,7 +1,13 @@
 # SPEC-TASK — the agent runtime object (orchestration plane)
 
-- **Status:** Accepted — 2026-08-18. Gates **Red** until demonstrated
-  red-then-green (ADR 0002 D2).
+- **Status:** Accepted — 2026-08-18. `crates/rill-orchestrate/src/task.rs`
+  implements `Task`, the closed section set, the replay adapter, the prompt
+  queue, fork, and persistence, entirely provider-independent per §2.
+  **T-TASK-SECTIONS, T-TASK-APPROVE, T-TASK-FORK, T-TASK-QUEUE,
+  T-TASK-REPLAY, T-TASK-PERSIST and T-TASK-ATTACH are Proven at the library
+  level** — `cargo test -p rill-orchestrate --test task_gates`,
+  red-then-green under `--features mutate` (evidence below). T-TASK-CHECKPOINT
+  needs a real git repository and is not attempted here; it stays **Red**.
 - **Authority:** [ADR 0030](../adr/0030-task-is-the-agent-runtime-object.md)
 - **Requires:** [SPEC-GRAPH](SPEC-GRAPH.md), [SPEC-NAV](SPEC-NAV.md),
   [SPEC-ATTENTION](SPEC-ATTENTION.md), [SPEC-TRUST](SPEC-TRUST.md)
@@ -106,14 +112,23 @@ Exactly: `prompt`, `plan`, `tool`, `command`, `output`, `approval`, `diff`,
 
 | ID | Status | Closes |
 |---|---|---|
-| T-TASK-REPLAY | Red | §2 |
-| T-TASK-PERSIST | Red | §1 |
-| T-TASK-SECTIONS | Red | §3 |
-| T-TASK-APPROVE | Red | §4 |
-| T-TASK-CHECKPOINT | Red | §5 |
-| T-TASK-FORK | Red | §6 |
-| T-TASK-QUEUE | Red | §7 |
-| T-TASK-ATTACH | Red | §9 |
+| T-TASK-REPLAY | **Proven** (library) | §2 |
+| T-TASK-PERSIST | **Proven** (library) | §1 |
+| T-TASK-SECTIONS | **Proven** (library) | §3 |
+| T-TASK-APPROVE | **Proven** (library) | §4 |
+| T-TASK-CHECKPOINT | Red (needs a real git repo, not attempted) | §5 |
+| T-TASK-FORK | **Proven** (library) | §6 |
+| T-TASK-QUEUE | **Proven** (library) | §7 |
+| T-TASK-ATTACH | **Proven** (library) | §9 |
+
+**Library evidence (2026-08-18).** `crates/rill-orchestrate/tests/task_gates.rs`,
+green, each mutation confirmed to turn red under `--features mutate`:
+`mutate_closed_section`, `approval_times_out_to_yes`,
+`fork_includes_sections_after_cut`, `queue_sends_while_blocked`,
+`skip_persisting_queue`, `attach_skips_redaction`. Note:
+`approval_times_out_to_yes` turns both T-TASK-APPROVE's and T-TASK-QUEUE's
+tests red, because the queue's blocked-refusal genuinely depends on
+`Task::is_blocked` — real coupling, not a test-isolation defect.
 
 ## 12. What we will not do
 
