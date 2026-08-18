@@ -66,12 +66,13 @@ Installs or checks Rust (`rustc` ≥ 1.85), Zig (≥ 0.16, for Chip 0 / `libghos
 6. [ADR 0003](docs/adr/0003-display-pipeline.md) — renderer and key→present
 7. [Spike 0](docs/SPIKE-0.md) — named gates ([validation](docs/SPIKE-0-VALIDATION.md), [test cases](docs/TEST-CASES.md))
 8. [SPIKE-0-AUDIT](docs/SPIKE-0-AUDIT.md) — historical: why 2026-08-16 was Red
-9. [Specs](docs/spec/) — [kernel](docs/spec/SPEC-KERNEL.md), [attach](docs/spec/SPEC-ATTACH.md), [chip 0](docs/spec/SPEC-CHIP0.md), [display](docs/spec/SPEC-DISPLAY.md), [graph](docs/spec/SPEC-GRAPH.md), [chrome](docs/spec/SPEC-CHROME.md), [chip 1](docs/spec/SPEC-CHIP1.md)
+9. [Specs](docs/spec/) — [kernel](docs/spec/SPEC-KERNEL.md), [attach](docs/spec/SPEC-ATTACH.md), [chip 0](docs/spec/SPEC-CHIP0.md), [display](docs/spec/SPEC-DISPLAY.md), [graph](docs/spec/SPEC-GRAPH.md), [chrome](docs/spec/SPEC-CHROME.md), [chip 1](docs/spec/SPEC-CHIP1.md) (umbrella over [types](docs/spec/SPEC-VT-TYPES.md), [parser](docs/spec/SPEC-VT-PARSER.md), [screen](docs/spec/SPEC-VT-SCREEN.md), [colour](docs/spec/SPEC-VT-COLOR.md), [reply](docs/spec/SPEC-VT-REPLY.md), [conformance](docs/spec/SPEC-VT-CONFORMANCE.md))
 10. [ADR 0011](docs/adr/0011-session-graph.md) / [ADR 0014](docs/adr/0014-m1-first-slice-closes.md) / [ADR 0015](docs/adr/0015-m1-persist-remainder.md) — Milestone 1
 11. [ADR 0018](docs/adr/0018-three-pane-host-chrome.md) — M2 three-pane chrome (one leaf)
 12. [ADR 0012](docs/adr/0012-chip1-isolated-vt.md) / [M4-HANDOFF](docs/M4-HANDOFF.md) — isolated Chip 1 (not live)
-13. [Lanes](docs/LANES.md) — how 3–5 people work in parallel
-14. [CONTRIBUTING](CONTRIBUTING.md) — issues, PRs, TDD
+13. [M4-PLAN](docs/M4-PLAN.md) — Chip 1 slice plan. [ADR 0020](docs/adr/0020-chip1-parser-in-tree.md) parser (in-tree; `vte` dev-only), [ADR 0021](docs/adr/0021-chip1-colour-identity.md) colour identity, [ADR 0022](docs/adr/0022-chip1-reply-channel.md) DA/DSR replies, [ADR 0023](docs/adr/0023-chip1-v0-defers-character-width.md) width deferred (blocks M7). Spike: [SPIKE-VT](docs/SPIKE-VT.md)
+14. [Lanes](docs/LANES.md) — how 3–5 people work in parallel
+15. [CONTRIBUTING](CONTRIBUTING.md) — issues, PRs, TDD
 
 ## License
 

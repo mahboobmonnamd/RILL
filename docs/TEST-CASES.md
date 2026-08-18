@@ -1011,20 +1011,33 @@ prompt. This test MUST go red.
 
 ## Milestone 4 — Chip 1 isolated VT (Red)
 
-Authority: [ADR 0012](adr/0012-chip1-isolated-vt.md), [SPEC-CHIP1](spec/SPEC-CHIP1.md),
-[M4-HANDOFF](M4-HANDOFF.md), [#6](https://github.com/mahboobmonnamd/RILL/issues/6).
-Palette-index cells and compositor opacity are
-[#267](https://github.com/mahboobmonnamd/RILL/issues/267) (colour ADR first).
-Theme-file SGR (Latte/Mocha, same oracle as T-LOOK-ANSI) is
-[#271](https://github.com/mahboobmonnamd/RILL/issues/271) — **blocked** until
-that ADR. Live swap must not regress packaged T-LOOK-ANSI:
-[#272](https://github.com/mahboobmonnamd/RILL/issues/272).
+Authority: [ADR 0012](adr/0012-chip1-isolated-vt.md),
+[ADR 0020](adr/0020-chip1-parser-in-tree.md),
+[ADR 0021](adr/0021-chip1-colour-identity.md),
+[ADR 0022](adr/0022-chip1-reply-channel.md),
+[ADR 0023](adr/0023-chip1-v0-defers-character-width.md),
+[SPEC-CHIP1](spec/SPEC-CHIP1.md) and its six slice specs,
+[M4-HANDOFF](M4-HANDOFF.md), [M4-PLAN](M4-PLAN.md),
+[#6](https://github.com/mahboobmonnamd/RILL/issues/6).
+
+[S-VT #21](https://github.com/mahboobmonnamd/RILL/issues/21) is closed
+([SPIKE-VT](SPIKE-VT.md)): parser in-tree, `vte` dev-only differential.
+The colour ADR [#267](https://github.com/mahboobmonnamd/RILL/issues/267)
+required now exists (ADR 0021), so
+[#271](https://github.com/mahboobmonnamd/RILL/issues/271) T-CHIP1-LOOK-ANSI is
+**unblocked**. Live swap must not regress packaged T-LOOK-ANSI:
+[#272](https://github.com/mahboobmonnamd/RILL/issues/272), and per ADR 0023 D4
+character width is also an M7 precondition.
+
 These gates are **Red**. Named here first. No `vt-engine` behaviour until they
 exist and have been observed failing (ADR 0002 D2). Not live. Not T-NFR.
+S-VT numbers are research and MUST NOT be cited as gate evidence (ADR 0002 D8).
 
-Oracle for every gate: `snapshot()` (codepoint, cursor, attrs, `cells.len()`),
-or a second instance’s grid after resync emit. Never a copy of the input, never
-the `\x1b[2J` prefix the emit path prepends.
+Oracle for every gate: `snapshot()` (codepoint, cursor, attrs, materialised
+colour, `cells.len()`, damage), a second instance’s grid after resync emit, or
+drained replies. Never a copy of the input, never the `\x1b[2J` prefix the emit
+path prepends, never "equals `vte`" alone
+([SPEC-VT-CONFORMANCE](spec/SPEC-VT-CONFORMANCE.md) §1).
 
 ### T-CHIP1-ASCII — printable lands in the POD grid
 
@@ -1032,7 +1045,7 @@ the `\x1b[2J` prefix the emit path prepends.
 
 **Procedure.** In-process Chip 1, 80×24 (or 40×5). No PTY.
 
-**Required mutation.** Drop `feed` / do not write cells.
+**Required mutation.** `RILL_MUTATE=drop_print` — drop `feed` / do not write cells.
 
 ### T-CHIP1-BYTES — invalid UTF-8 reaches the parser
 
@@ -1043,6 +1056,32 @@ before parse.
 
 **Required mutation.** Drop bytes `>= 0x80` before parse.
 **Negative control.** `RILL_MUTATE=drop_high_bytes` (`feature = "mutate"`).
+
+**The mutation MUST be detected by** `lone_continuation`, `truncated_3byte`,
+`overlong_slash`, `lone_surrogate`, `bom_then_high`, `c1_in_utf8`,
+`zwj_emoji.bin`, `invalid_utf8.bin`.
+
+`csi_high_param` is **blind** to it and MUST NOT be cited as carrying it: S-VT
+measured that a high byte inside a CSI parameter changes no cell whether parsed
+or dropped, for every candidate (ADR 0020 D7,
+[SPEC-VT-CONFORMANCE](spec/SPEC-VT-CONFORMANCE.md) §3). It stays in the corpus
+as a no-crash, no-spurious-cell case.
+
+### T-CHIP1-C1 — a decoded C1 scalar paints and does not open a CSI
+
+Authority: [ADR 0020](adr/0020-chip1-parser-in-tree.md) D3,
+[SPEC-VT-PARSER](spec/SPEC-VT-PARSER.md) §2.
+
+**Bug (doc comment).** `vte` 0.15 dispatches `0x80..=0x9f` to `execute()` as an
+8-bit control, so `[0x80, 0x41]` produced a grid identical to one where the byte
+was dropped, and T-CHIP1-BYTES could not see its own mutation.
+
+**Oracle.** Feed `[0xc2, 0x9b, 0x41]`: row 0 is U+009B then `A`, and the cursor
+advanced two columns — proving `0x9b` did not open a CSI that consumed the `A`.
+Feed `[0x80, 0x41]`: exactly one U+FFFD, then `A`.
+
+**Required mutation.** `RILL_MUTATE=c1_as_control` — treat `0x80..=0x9f` as
+controls. Row 0 loses its non-ASCII cell.
 
 ### T-CHIP1-GRAPHEME — long cluster does not overrun
 
@@ -1055,26 +1094,26 @@ or the base is still a visible cell. No panic.
 
 **Oracle.** `A\r\nB` → `B` at row 1 col 0 (or documented equivalent).
 
-**Required mutation.** Ignore CR/LF.
+**Required mutation.** `RILL_MUTATE=ignore_crlf` — ignore CR/LF.
 
 ### T-CHIP1-CUP — CSI CUP positions the cursor
 
 **Oracle.** `ESC[5;10H` → cursor at 1-based (5,10), i.e. row 4 col 9
 0-based, documented in the test.
 
-**Required mutation.** Ignore CSI.
+**Required mutation.** `RILL_MUTATE=ignore_csi` — ignore CSI.
 
 ### T-CHIP1-SGR — bold sets attrs bit 0
 
 **Oracle.** `ESC[1mX` → that cell `attrs & 1 != 0`.
 
-**Required mutation.** Ignore SGR.
+**Required mutation.** `RILL_MUTATE=ignore_sgr` — ignore SGR.
 
 ### T-CHIP1-ED — erase display clears to space
 
 **Oracle.** Feed text, `ESC[2J`, every cell codepoint is space `32`.
 
-**Required mutation.** ED is a no-op.
+**Required mutation.** `RILL_MUTATE=noop_ed` — ED is a no-op.
 
 ### T-CHIP1-ALT — 1049 preserves primary
 
@@ -1086,7 +1125,7 @@ or the base is still a visible cell. No panic.
 
 **Oracle.** After resize 40×5, `cells.len() == 200`.
 
-**Required mutation.** Unbounded history in the snapshot.
+**Required mutation.** `RILL_MUTATE=unbounded_history` — unbounded history in the snapshot.
 
 ### T-CHIP1-POD — PodCell is 16 bytes
 
@@ -1099,7 +1138,150 @@ or the base is still a visible cell. No panic.
 **Oracle.** Feed a marker, emit, second instance feeds only the emit bytes,
 row 0 matches. MUST NOT assert on `\x1b[2J`.
 
-**Required mutation.** Emit empty or emit only the prefix.
+**Required mutation.** `RILL_MUTATE=empty_resync` — emit empty or emit only the prefix.
+
+### T-CHIP1-WRAP — the last column defers its wrap
+
+Authority: [SPEC-VT-SCREEN](spec/SPEC-VT-SCREEN.md) §2.
+
+**Oracle.** On a 10-column grid, feed 10 printables then one more. The 11th lands
+at row 1 column 0; row 0 holds all ten. Downstream of the cursor, not of a
+counter the test kept.
+
+**Required mutation.** `RILL_MUTATE=eager_wrap` — wrap on reaching the last
+column. Row 0 holds nine and the grid scrolls a row early.
+
+### T-CHIP1-SCROLL — DECSTBM confines the scroll
+
+Authority: [SPEC-VT-SCREEN](spec/SPEC-VT-SCREEN.md) §5.
+
+**Oracle.** On a 6-row grid set `CSI 2;4 r`, fill rows, force a scroll. Rows 0
+and 5 are unchanged; rows 1..3 shifted. This is what `less` and `vim` status
+lines depend on.
+
+**Required mutation.** `RILL_MUTATE=ignore_decstbm` — scroll the whole grid.
+Rows 0 and 5 move.
+
+### T-CHIP1-DAMAGE — an untouched frame can be skipped
+
+Authority: [SPEC-VT-SCREEN](spec/SPEC-VT-SCREEN.md) §7,
+[SPEC-VT-TYPES](spec/SPEC-VT-TYPES.md) §3.
+
+**Oracle.** Feed one character on row 3 and snapshot: damage covers row 3 and not
+row 0. Snapshot again with no feed: `full_damage == false` and
+`damage_row0 > damage_row1`, so the caller may skip.
+
+**Required mutation.** `RILL_MUTATE=always_full_damage`. The skip assertion goes
+red.
+
+### T-CHIP1-BOUNDS — hostile sequences stay bounded
+
+Authority: [SPEC-VT-PARSER](spec/SPEC-VT-PARSER.md) §6,
+[ADR 0012](adr/0012-chip1-isolated-vt.md) D9.
+
+**Oracle.** 8 MiB unterminated OSC, 8 MiB unterminated DCS, and a CSI with
+1,000,000 parameters: a counting allocator around `feed` reports no growth
+attributable to `feed`, and a following `feed(b"A")` still prints. S-VT measured
+both candidates as bounded here, so this gate protects a property we have.
+The counting allocator is process-global: this gate MUST run with
+`--test-threads=1`, or the allocator MUST attribute allocations per thread.
+
+**Required mutation.** `RILL_MUTATE=unbounded_osc` — accumulate OSC into an
+uncapped `Vec`. Allocation grows with input.
+
+### T-CHIP1-COLOR-IDENTITY — SGR keeps its palette index until materialisation
+
+Authority: [ADR 0021](adr/0021-chip1-colour-identity.md) D1–D2,
+[SPEC-VT-COLOR](spec/SPEC-VT-COLOR.md) §6,
+[#267](https://github.com/mahboobmonnamd/RILL/issues/267).
+
+**Bug (doc comment).** Chip 0 snapshots are already RGB, so the host could only
+remap cells still equal to the VT default and ANSI 0–15 could not be themed
+without a compiled RGB catalog.
+
+**Oracle.** Feed `CSI 32 m G`. The cell's fg is `Indexed(2)` before
+materialisation. Materialise the same engine state against a palette parsed from
+`fixtures/look/themes/Catppuccin Latte`, then `Catppuccin Mocha`: the two `fg`
+values differ, and each equals that file's `palette = 2=`.
+
+**Required mutation.** `RILL_MUTATE=sgr_rgb_at_parse` — resolve SGR to RGB at
+parse time. Both materialisations return the same value.
+
+### T-CHIP1-LOOK-ANSI — SGR colours come from the theme file (Latte and Mocha)
+
+Authority: [ADR 0021](adr/0021-chip1-colour-identity.md) D4,
+[SPEC-VT-COLOR](spec/SPEC-VT-COLOR.md) §6,
+[#271](https://github.com/mahboobmonnamd/RILL/issues/271).
+
+**Bug (doc comment).** User-reported 2026-08-17: Catppuccin Latte was readable in
+Ghostty and cmux and unreadable in Rill until the Chip 0 adapter loaded the theme
+file palette. SGR greens stayed the built-in `#b5bd68` and washed out on Latte's
+`#eff1f5`. Chip 1 must not regress that when it becomes live.
+
+**Oracle.** With the Latte palette applied, `CSI 32 m G` gives `fg` equal to that
+file's `palette = 2=`. An unstyled `A` gives `fg` equal to the file's
+`foreground =`, with WCAG contrast ≥ 4.5 against the file's `background =`.
+Repeat for Mocha so one constant cannot fake it. Library gate, no packaged app,
+no Ghostty FFI.
+
+**Required mutation.** `RILL_MUTATE=skip_file_palette`. SGR 32 stays the VT
+default and Latte contrast fails.
+
+Packaged T-LOOK-ANSI / T-LOOK-CELL / T-SPLIT-LOOK stay Chip 0 / `lane:host`;
+this gate does not close them ([#272](https://github.com/mahboobmonnamd/RILL/issues/272)).
+
+### T-CHIP1-REPLY — DA and DSR are answered
+
+Authority: [ADR 0022](adr/0022-chip1-reply-channel.md) D5,
+[SPEC-VT-REPLY](spec/SPEC-VT-REPLY.md) §6.
+
+**Bug (doc comment).** SPEC-CHIP1 §3 required answering DA/DSR while the §2 API
+had no channel for a reply to leave the crate, so a `vim` that probes would hang
+against a conforming implementation (SPIKE-VT Result 7).
+
+**Oracle.** Feed `CSI 5 ; 3 H` then `CSI 6 n`; `take_replies()` yields
+`CSI 5 ; 3 R`. Feed `CSI c`; the reply is `CSI ? 6 c`. A second `take_replies()`
+is empty. The drained bytes are parsed — not a constant the test prepended, and
+not a flag saying a reply was queued.
+
+**Required mutation.** `RILL_MUTATE=no_reply` — never enqueue.
+Second mutation `unbounded_replies` MUST turn the `replies_dropped` assertion red.
+
+### T-CHIP1-WIDTH-DEFERRED — v0 advances one column per scalar
+
+Authority: [ADR 0023](adr/0023-chip1-v0-defers-character-width.md) D3,
+[SPEC-VT-SCREEN](spec/SPEC-VT-SCREEN.md) §9.
+
+**Oracle.** Feed `日本X` into an 80×24 Chip 1; the cursor is at column 3. This
+**documents the v0 miss**: a conforming terminal advances 5. The test's doc
+comment cites ADR 0023.
+
+**Required mutation.** `RILL_MUTATE=wide_advances_two` — advance two columns for
+East Asian Wide. Under v0 that turns this gate red, proving it observes the
+cursor and not a constant.
+
+When width lands, this gate is **replaced** by T-CHIP1-WIDTH (cursor at column
+5) and ADR 0023 is amended. It MUST NOT be deleted quietly. Width is an M7
+precondition (ADR 0023 D4).
+
+### T-CHIP1-DIFF — an independent parser agrees over the corpus
+
+Authority: [ADR 0020](adr/0020-chip1-parser-in-tree.md) D2,
+[SPEC-VT-CONFORMANCE](spec/SPEC-VT-CONFORMANCE.md) §4.
+
+**Oracle.** `vte` (`[dev-dependencies]`, `default-features = false`) and the
+in-tree parser drive the same `Actions` sink over the fixture corpus and the v0
+sequence cases; the resulting grids and cursors agree, with divergence 1 (C1
+handling) applied as an explicit remap.
+
+**Secondary oracle only.** This is the named exception to SPEC-VT-CONFORMANCE
+§1's ban on "equals `vte`" as a gate. It remains secondary: no *other* gate may
+be expressed solely as "equals `vte`", and where they disagree the spec wins
+and the divergence is registered. Mutations MUST hit the in-tree parser front
+only (SPEC-VT-CONFORMANCE §4).
+
+**Required mutation.** Any parser mutation above must also turn this red; if a
+mutation leaves the differential green, the corpus is too small.
 
 
 
