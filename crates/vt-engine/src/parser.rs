@@ -42,6 +42,8 @@ pub(crate) struct Parser {
     ignore: bool,
     osc: [u8; MAX_OSC],
     osc_len: usize,
+    #[cfg(feature = "mutate")]
+    unbounded_osc: Vec<u8>,
     utf8: [u8; MAX_UTF8],
     utf8_len: u8,
     utf8_needed: u8,
@@ -60,6 +62,8 @@ impl Parser {
             ignore: false,
             osc: [0; MAX_OSC],
             osc_len: 0,
+            #[cfg(feature = "mutate")]
+            unbounded_osc: Vec::new(),
             utf8: [0; MAX_UTF8],
             utf8_len: 0,
             utf8_needed: 0,
@@ -481,6 +485,13 @@ impl Parser {
     }
 
     fn push_osc(&mut self, b: u8) {
+        if crate::mutate("unbounded_osc") {
+            #[cfg(feature = "mutate")]
+            self.unbounded_osc.push(b);
+            #[cfg(not(feature = "mutate"))]
+            let _ = b;
+            return;
+        }
         if self.osc_len < MAX_OSC {
             self.osc[self.osc_len] = b;
             self.osc_len += 1;
