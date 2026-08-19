@@ -56,7 +56,18 @@ pub(crate) struct Screen {
     in_alt: bool,
     replies: Vec<u8>,
     replies_dropped: u32,
+    open_cluster: Option<OpenCluster>,
+    grapheme_truncated: u32,
 }
+
+#[derive(Clone, Copy)]
+struct OpenCluster {
+    row: u16,
+    len: u8,
+    after_zwj: bool,
+}
+
+const RILL_GRAPHEME_MAX: u8 = 32;
 
 impl Screen {
     pub(crate) fn new(cols: u16, rows: u16) -> Result<Self, Error> {
@@ -88,6 +99,8 @@ impl Screen {
             in_alt: false,
             replies: Vec::new(),
             replies_dropped: 0,
+            open_cluster: None,
+            grapheme_truncated: 0,
         })
     }
 
@@ -117,6 +130,7 @@ impl Screen {
         self.saved_cursor = None;
         self.alt_cursor = None;
         self.in_alt = false;
+        self.open_cluster = None;
         Ok(())
     }
 
@@ -157,7 +171,7 @@ impl Screen {
             damage_row1,
             default_fg: pack(self.palette.foreground),
             default_bg: pack(self.palette.background),
-            grapheme_truncated: 0,
+            grapheme_truncated: self.grapheme_truncated,
             replies_dropped: self.replies_dropped,
             cells,
         };
@@ -534,6 +548,10 @@ impl Screen {
         if crate::mutate("drop_print") {
             return;
         }
+        let after_zwj = self.open_cluster.map(|cl| cl.after_zwj).unwrap_or(false);
+        if (is_cluster_continuer(c) || after_zwj) && self.append_to_cluster(c) {
+            return;
+        }
         if crate::mutate("eager_wrap")
             && self.autowrap
             && self.cursor_col + 1 == self.cols
@@ -546,14 +564,49 @@ impl Screen {
         } else {
             self.wrap_if_needed();
         }
-        let i = self.idx(self.cursor_col, self.cursor_row);
+        let row = self.cursor_row;
+        let i = self.idx(self.cursor_col, row);
         self.cells[i] = Cell {
             codepoint: c as u32,
             fg: self.pen_fg,
             bg: self.pen_bg,
             attrs: self.pen_attrs,
         };
-        self.dirty(self.cursor_row);
+        self.open_cluster = Some(OpenCluster {
+            row,
+            len: 1,
+            after_zwj: c == '\u{200d}',
+        });
+        self.dirty(row);
+        self.advance_cursor();
+        if crate::mutate("wide_advances_two") && is_cjk_ideograph(c) {
+            self.advance_cursor();
+        }
+    }
+
+    fn append_to_cluster(&mut self, c: char) -> bool {
+        let Some(mut cl) = self.open_cluster else {
+            return false;
+        };
+        let cap = if crate::mutate("fixed_grapheme_buf") {
+            8
+        } else {
+            RILL_GRAPHEME_MAX
+        };
+        if cl.len >= cap {
+            if !crate::mutate("fixed_grapheme_buf") {
+                self.grapheme_truncated = self.grapheme_truncated.saturating_add(1);
+            }
+        } else {
+            cl.len = cl.len.saturating_add(1);
+        }
+        cl.after_zwj = c == '\u{200d}';
+        self.dirty(cl.row);
+        self.open_cluster = Some(cl);
+        true
+    }
+
+    fn advance_cursor(&mut self) {
         if self.cursor_col + 1 < self.cols {
             self.cursor_col += 1;
             self.pending_wrap = false;
@@ -572,6 +625,7 @@ impl Screen {
 
     fn set_cursor(&mut self, row: u16, col: u16) {
         self.clear_pending_wrap();
+        self.open_cluster = None;
         self.cursor_row = row.min(self.last_row());
         self.cursor_col = col.min(self.last_col());
     }
@@ -825,6 +879,18 @@ fn write_u16(out: &mut [u8], n: u16) -> usize {
     w
 }
 
+fn is_cluster_continuer(c: char) -> bool {
+    let u = c as u32;
+    (0x0300..=0x036f).contains(&u)
+        || c == '\u{200d}'
+        || (0xfe00..=0xfe0f).contains(&u)
+        || (0xe0100..=0xe01ef).contains(&u)
+}
+
+fn is_cjk_ideograph(c: char) -> bool {
+    (0x4e00..=0x9fff).contains(&(c as u32))
+}
+
 fn csi_n(params: &[u16], i: usize, default: u16) -> u16 {
     match params.get(i) {
         None | Some(0) => default,
@@ -841,12 +907,14 @@ impl Actions for Screen {
         match byte {
             0x08 => {
                 self.clear_pending_wrap();
+                self.open_cluster = None;
                 if self.cursor_col > 0 {
                     self.cursor_col -= 1;
                 }
             }
             0x09 => {
                 self.clear_pending_wrap();
+                self.open_cluster = None;
                 let next = (self.cursor_col / 8 + 1) * 8;
                 self.cursor_col = next.min(self.cols.saturating_sub(1));
             }
@@ -855,6 +923,7 @@ impl Actions for Screen {
                     return;
                 }
                 self.clear_pending_wrap();
+                self.open_cluster = None;
                 self.index();
             }
             0x0d => {
@@ -862,6 +931,7 @@ impl Actions for Screen {
                     return;
                 }
                 self.clear_pending_wrap();
+                self.open_cluster = None;
                 self.cursor_col = 0;
             }
             _ => {}
