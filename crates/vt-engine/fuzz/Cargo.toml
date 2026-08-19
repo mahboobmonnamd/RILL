@@ -9,7 +9,6 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-rill-vt-types = { path = "../rill-vt-types" }
 vt-engine = { path = ".." }
 
 [workspace]

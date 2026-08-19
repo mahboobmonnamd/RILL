@@ -1,8 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use rill_vt_types::TerminalEmulation;
-use vt_engine::VtEngine;
+use vt_engine::{TerminalEmulation, VtEngine};
 
 fuzz_target!(|data: &[u8]| {
     let mut vt = match VtEngine::new(80, 24) {

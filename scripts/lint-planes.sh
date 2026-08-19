@@ -147,7 +147,7 @@ for raw in open(sys.argv[1], encoding="utf-8"):
     if not m:
         continue
     path, _, code = m.group(1), m.group(2), m.group(3)
-    if "#[cfg(test)]" in code:
+    if "#[cfg(test)]" in code or "#![cfg(test)]" in code:
         in_test[path] = True
     if in_test.get(path):
         continue
