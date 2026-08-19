@@ -22,6 +22,16 @@ impl Cell {
     }
 }
 
+#[derive(Clone, Copy)]
+struct SavedCursor {
+    col: u16,
+    row: u16,
+    pending_wrap: bool,
+    fg: Color,
+    bg: Color,
+    attrs: u16,
+}
+
 pub(crate) struct Screen {
     cols: u16,
     rows: u16,
@@ -40,6 +50,10 @@ pub(crate) struct Screen {
     pen_fg: Color,
     pen_bg: Color,
     pen_attrs: u16,
+    saved_cursor: Option<SavedCursor>,
+    alt_cursor: Option<SavedCursor>,
+    saved_grid: Option<Vec<Cell>>,
+    in_alt: bool,
 }
 
 impl Screen {
@@ -66,6 +80,10 @@ impl Screen {
             pen_fg: Color::Default,
             pen_bg: Color::Default,
             pen_attrs: 0,
+            saved_cursor: None,
+            alt_cursor: None,
+            saved_grid: None,
+            in_alt: false,
         })
     }
 
@@ -91,6 +109,10 @@ impl Screen {
         self.scroll_bottom = rows.saturating_sub(1);
         self.pending_wrap = false;
         self.full_damage = true;
+        self.saved_grid = None;
+        self.saved_cursor = None;
+        self.alt_cursor = None;
+        self.in_alt = false;
         Ok(())
     }
 
@@ -216,6 +238,146 @@ impl Screen {
             *cell = Cell::blank(self.pen_bg);
         }
         self.full_damage = true;
+    }
+
+    fn scroll_down(&mut self) {
+        let top = usize::from(self.scroll_top);
+        let bot = usize::from(self.scroll_bottom);
+        let cols = usize::from(self.cols);
+        if bot > top {
+            for r in (top + 1..=bot).rev() {
+                let src = (r - 1) * cols;
+                self.cells.copy_within(src..src + cols, r * cols);
+            }
+        }
+        let start = top * cols;
+        let blank = Cell::blank(self.pen_bg);
+        for cell in &mut self.cells[start..start + cols] {
+            *cell = blank;
+        }
+        self.full_damage = true;
+    }
+
+    fn reverse_index(&mut self) {
+        if self.cursor_row > self.scroll_top {
+            self.cursor_row -= 1;
+            return;
+        }
+        self.scroll_down();
+    }
+
+    fn capture_cursor(&self) -> SavedCursor {
+        SavedCursor {
+            col: self.cursor_col,
+            row: self.cursor_row,
+            pending_wrap: self.pending_wrap,
+            fg: self.pen_fg,
+            bg: self.pen_bg,
+            attrs: self.pen_attrs,
+        }
+    }
+
+    fn restore_cursor(&mut self, saved: SavedCursor) {
+        self.clear_pending_wrap();
+        self.cursor_col = saved.col.min(self.last_col());
+        self.cursor_row = saved.row.min(self.last_row());
+        self.pending_wrap = saved.pending_wrap;
+        self.pen_fg = saved.fg;
+        self.pen_bg = saved.bg;
+        self.pen_attrs = saved.attrs;
+    }
+
+    fn blank_grid(&self) -> Vec<Cell> {
+        vec![Cell::blank(self.pen_bg); usize::from(self.cols) * usize::from(self.rows)]
+    }
+
+    fn enter_alt(&mut self, save_cursor: bool, clear: bool) {
+        if crate::mutate("single_buffer") {
+            if clear {
+                self.erase_display(2);
+                self.set_cursor(0, 0);
+            }
+            return;
+        }
+        if !self.in_alt {
+            self.saved_grid = Some(self.cells.clone());
+            if save_cursor {
+                self.alt_cursor = Some(self.capture_cursor());
+            } else {
+                self.alt_cursor = None;
+            }
+        }
+        if clear {
+            self.cells = self.blank_grid();
+            self.set_cursor(0, 0);
+        }
+        self.in_alt = true;
+        self.full_damage = true;
+    }
+
+    fn leave_alt(&mut self, restore_cursor: bool) {
+        if crate::mutate("single_buffer") {
+            return;
+        }
+        if !self.in_alt {
+            return;
+        }
+        if let Some(grid) = self.saved_grid.take() {
+            self.cells = grid;
+        }
+        if restore_cursor {
+            if let Some(c) = self.alt_cursor.take() {
+                self.restore_cursor(c);
+            }
+        } else {
+            self.alt_cursor = None;
+        }
+        self.in_alt = false;
+        self.full_damage = true;
+    }
+
+    fn set_scroll_region(&mut self, params: &[u16]) {
+        if crate::mutate("ignore_decstbm") {
+            return;
+        }
+        let top = match params.first() {
+            None | Some(0) => 1,
+            Some(n) => *n,
+        };
+        let bot = match params.get(1) {
+            None | Some(0) => self.rows,
+            Some(n) => *n,
+        };
+        if top < 1 || bot > self.rows || top >= bot {
+            return;
+        }
+        self.scroll_top = top - 1;
+        self.scroll_bottom = bot - 1;
+        self.set_cursor(0, 0);
+    }
+
+    fn private_mode(&mut self, params: &[u16], set: bool) {
+        for p in params {
+            match *p {
+                7 => self.autowrap = set,
+                25 => self.cursor_visible = set,
+                1047 => {
+                    if set {
+                        self.enter_alt(false, true);
+                    } else {
+                        self.leave_alt(false);
+                    }
+                }
+                1049 => {
+                    if set {
+                        self.enter_alt(true, true);
+                    } else {
+                        self.leave_alt(true);
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 
     fn write_char(&mut self, c: char) {
@@ -461,8 +623,20 @@ impl Screen {
             'M' => self.delete_lines(csi_n(params, 0, 1)),
             '@' => self.insert_cells(csi_n(params, 0, 1)),
             'P' => self.delete_cells(csi_n(params, 0, 1)),
-            // REP (`b`) is a named miss (SPEC-VT-SCREEN §4). Other finals
-            // including SGR/DECSTBM/DA are later slices.
+            'r' => self.set_scroll_region(params),
+            'S' => {
+                let n = csi_n(params, 0, 1);
+                for _ in 0..n {
+                    self.scroll_up();
+                }
+            }
+            'T' => {
+                let n = csi_n(params, 0, 1);
+                for _ in 0..n {
+                    self.scroll_down();
+                }
+            }
+            // REP (`b`) is a named miss (SPEC-VT-SCREEN §4). SGR/DA are later slices.
             _ => {}
         }
     }
@@ -513,8 +687,14 @@ impl Actions for Screen {
 
     fn csi(&mut self, params: &[u16], intermediates: &[u8], ignore: bool, action: char) {
         // ADR 0020 D4: overflow sets ignore; do not execute a truncated CSI.
-        // Private markers (`?`) are intermediates; Slice 4 owns those finals.
-        if crate::mutate("ignore_csi") || ignore || !intermediates.is_empty() {
+        if crate::mutate("ignore_csi") || ignore {
+            return;
+        }
+        if intermediates == b"?" && matches!(action, 'h' | 'l') {
+            self.private_mode(params, action == 'h');
+            return;
+        }
+        if !intermediates.is_empty() {
             return;
         }
         self.csi_dispatch(params, action);
@@ -522,6 +702,12 @@ impl Actions for Screen {
 
     fn esc(&mut self, _intermediates: &[u8], byte: u8) {
         match byte {
+            b'7' => self.saved_cursor = Some(self.capture_cursor()),
+            b'8' => {
+                if let Some(c) = self.saved_cursor {
+                    self.restore_cursor(c);
+                }
+            }
             b'D' => {
                 self.clear_pending_wrap();
                 self.index();
@@ -533,9 +719,7 @@ impl Actions for Screen {
             }
             b'M' => {
                 self.clear_pending_wrap();
-                if self.cursor_row > self.scroll_top {
-                    self.cursor_row -= 1;
-                }
+                self.reverse_index();
             }
             _ => {}
         }
