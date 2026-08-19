@@ -5,6 +5,7 @@
 
 #![forbid(unsafe_code)]
 
+mod color;
 mod parser;
 mod screen;
 
@@ -25,6 +26,16 @@ impl VtEngine {
             parser: Parser::new(),
             screen: Screen::new(cols, rows)?,
         })
+    }
+
+    /// Colour identity before `snapshot()` materialises (ADR 0021 D1).
+    pub fn color_at(&self, col: u16, row: u16) -> Option<(Color, Color)> {
+        self.screen.color_at(col, row)
+    }
+
+    /// Host-supplied palette. Not a look-file parse (ADR 0021 D2–D3).
+    pub fn set_palette(&mut self, palette: Palette) -> Result<(), Error> {
+        self.screen.set_palette(palette)
     }
 }
 
