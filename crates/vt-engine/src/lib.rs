@@ -37,6 +37,15 @@ impl VtEngine {
     pub fn set_palette(&mut self, palette: Palette) -> Result<(), Error> {
         self.screen.set_palette(palette)
     }
+
+    /// Bytes the program is owed (ADR 0022 D1). Drains.
+    pub fn take_replies(&mut self) -> Result<Vec<u8>, Error> {
+        self.screen.take_replies()
+    }
+
+    pub fn has_replies(&self) -> bool {
+        self.screen.has_replies()
+    }
 }
 
 pub(crate) fn mutate(name: &str) -> bool {

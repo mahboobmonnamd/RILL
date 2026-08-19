@@ -54,6 +54,8 @@ pub(crate) struct Screen {
     alt_cursor: Option<SavedCursor>,
     saved_grid: Option<Vec<Cell>>,
     in_alt: bool,
+    replies: Vec<u8>,
+    replies_dropped: u32,
 }
 
 impl Screen {
@@ -84,6 +86,8 @@ impl Screen {
             alt_cursor: None,
             saved_grid: None,
             in_alt: false,
+            replies: Vec::new(),
+            replies_dropped: 0,
         })
     }
 
@@ -154,7 +158,7 @@ impl Screen {
             default_fg: pack(self.palette.foreground),
             default_bg: pack(self.palette.background),
             grapheme_truncated: 0,
-            replies_dropped: 0,
+            replies_dropped: self.replies_dropped,
             cells,
         };
         self.full_damage = false;
@@ -178,6 +182,60 @@ impl Screen {
         self.palette = palette;
         self.full_damage = true;
         Ok(())
+    }
+
+    pub(crate) fn take_replies(&mut self) -> Result<Vec<u8>, Error> {
+        Ok(std::mem::take(&mut self.replies))
+    }
+
+    pub(crate) fn has_replies(&self) -> bool {
+        !self.replies.is_empty()
+    }
+
+    const REPLY_CAP: usize = 1024;
+
+    fn enqueue_reply(&mut self, bytes: &[u8]) {
+        if crate::mutate("no_reply") {
+            return;
+        }
+        if crate::mutate("unbounded_replies") {
+            self.replies.extend_from_slice(bytes);
+            return;
+        }
+        if self.replies.len().saturating_add(bytes.len()) > Self::REPLY_CAP {
+            self.replies_dropped = self.replies_dropped.saturating_add(1);
+            return;
+        }
+        self.replies.extend_from_slice(bytes);
+    }
+
+    fn reply_primary_da(&mut self) {
+        self.enqueue_reply(b"\x1b[?6c");
+    }
+
+    fn reply_secondary_da(&mut self) {
+        self.enqueue_reply(b"\x1b[>0;0;0c");
+    }
+
+    fn reply_dsr_status(&mut self) {
+        self.enqueue_reply(b"\x1b[0n");
+    }
+
+    fn reply_dsr_cursor(&mut self) {
+        // Snapshot cursor, 1-based. Do not resolve pending wrap (SPEC-VT-REPLY §3).
+        let row = self.cursor_row.saturating_add(1);
+        let col = self.cursor_col.saturating_add(1);
+        let mut buf = [0u8; 16];
+        buf[0] = 0x1b;
+        buf[1] = b'[';
+        let mut i = 2;
+        i += write_u16(&mut buf[i..], row);
+        buf[i] = b';';
+        i += 1;
+        i += write_u16(&mut buf[i..], col);
+        buf[i] = b'R';
+        i += 1;
+        self.enqueue_reply(&buf[..i]);
     }
 
     fn paint_indexed(&self, n: u16) -> Color {
@@ -729,10 +787,42 @@ impl Screen {
                 }
             }
             'm' => self.apply_sgr(params),
-            // REP (`b`) is a named miss (SPEC-VT-SCREEN §4). DA is Slice 6.
+            'c' => {
+                let n = params.first().copied().unwrap_or(0);
+                if n == 0 {
+                    self.reply_primary_da();
+                }
+            }
+            'n' => match params.first().copied() {
+                Some(6) => self.reply_dsr_cursor(),
+                Some(5) => self.reply_dsr_status(),
+                _ => {}
+            },
+            // REP (`b`) is a named miss (SPEC-VT-SCREEN §4).
             _ => {}
         }
     }
+}
+
+fn write_u16(out: &mut [u8], n: u16) -> usize {
+    let mut tmp = [0u8; 5];
+    let mut x = n;
+    let mut k = 0;
+    loop {
+        tmp[k] = b'0' + (x % 10) as u8;
+        k += 1;
+        x /= 10;
+        if x == 0 {
+            break;
+        }
+    }
+    let mut w = 0;
+    while k > 0 {
+        k -= 1;
+        out[w] = tmp[k];
+        w += 1;
+    }
+    w
 }
 
 fn csi_n(params: &[u16], i: usize, default: u16) -> u16 {
@@ -785,6 +875,10 @@ impl Actions for Screen {
         }
         if intermediates == b"?" && matches!(action, 'h' | 'l') {
             self.private_mode(params, action == 'h');
+            return;
+        }
+        if intermediates == b">" && action == 'c' {
+            self.reply_secondary_da();
             return;
         }
         if !intermediates.is_empty() {
