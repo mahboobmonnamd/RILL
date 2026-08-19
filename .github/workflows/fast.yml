@@ -149,6 +149,23 @@ jobs:
           red T-CHIP1-GRAPHEME fixed_grapheme_buf t_chip1_grapheme_long_cluster_does_not_overrun
           red T-CHIP1-WIDTH-DEFERRED wide_advances_two t_chip1_width_deferred_one_column_per_scalar
 
+      - name: T-CHIP1 slice 8 negative controls
+        run: |
+          set -eu
+          red() {
+            name="$1"
+            mut="$2"
+            shift 2
+            if RILL_MUTATE="$mut" cargo test -p vt-engine --features mutate "$@" -- --nocapture; then
+              echo "BROKEN INSTRUMENT: $name stayed green under $mut" >&2
+              exit 1
+            fi
+            echo "ok: $name went red under $mut"
+          }
+          red T-CHIP1-BOUNDS unbounded_osc --test t_chip1_slice8 t_chip1_bounds_hostile_sequences_stay_bounded
+          red T-CHIP1-DIFF drop_high_bytes t_chip1_diff_in_tree_agrees_with_vte_over_the_corpus
+          red T-CHIP1-DIFF c1_as_control t_chip1_diff_in_tree_agrees_with_vte_over_the_corpus
+
       # M1 T-GRAPH (ADR 0014 D1). Mutations must go red (ADR 0002 D3).
       # rilld named-id / flood stay in validate-spike0.sh (Chip 0 toolchain).
       - name: T-GRAPH kernel negative controls
@@ -185,6 +202,18 @@ jobs:
       - name: Fuzz the frame decoder
         working-directory: crates/rill-attach
         run: cargo fuzz run decoder -- -max_total_time=60 -runs=200000
+
+  fuzz-vt-engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+      - name: Fuzz Chip 1 feed
+        working-directory: crates/vt-engine
+        run: cargo fuzz run feed -- -max_total_time=30 -runs=50000
 
   pin-integrity:
     runs-on: ubuntu-latest

@@ -21,3 +21,5 @@ DerivedData/
 # cargo-fuzz scratch (separate workspace under crates/rill-attach/fuzz)
 /crates/rill-attach/fuzz/target
 /crates/rill-attach/fuzz/Cargo.lock
+/crates/vt-engine/fuzz/target
+/crates/vt-engine/fuzz/Cargo.lock

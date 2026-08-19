@@ -9,6 +9,9 @@ mod color;
 mod parser;
 mod screen;
 
+#[cfg(test)]
+mod diff;
+
 pub use rill_vt_types::{Color, Error, Palette, PodCell, PodGrid, Rgb, TerminalEmulation};
 
 use crate::parser::Parser;
