@@ -49,6 +49,37 @@ impl VtEngine {
     pub fn has_replies(&self) -> bool {
         self.screen.has_replies()
     }
+
+    /// Clear parser and grid. Size is unchanged.
+    pub fn reset(&mut self) -> Result<(), Error> {
+        let cols = self.screen.cols();
+        let rows = self.screen.rows();
+        self.parser = Parser::new();
+        self.screen = Screen::new(cols, rows)?;
+        Ok(())
+    }
+
+    /// Visible grid as VT bytes (ADR 0012 D4). Does not prepend ED.
+    pub fn repaint_bytes(&mut self) -> Result<Vec<u8>, Error> {
+        Ok(self.screen.repaint_bytes())
+    }
+
+    /// Cold resync: replay history, emit a byte repaint. Kernel does not call
+    /// this in M4. Replies from history are discarded and counted.
+    pub fn resync_from_history(&mut self, history: &[u8]) -> Result<Vec<u8>, Error> {
+        self.reset()?;
+        self.screen.set_discard_replies(true);
+        if !history.is_empty() {
+            self.feed(history)?;
+        }
+        self.screen.set_discard_replies(false);
+        if crate::mutate("empty_resync") {
+            return Ok(b"\x1b[2J\x1b[H".to_vec());
+        }
+        let mut out = b"\x1b[2J\x1b[H".to_vec();
+        out.extend(self.screen.repaint_bytes());
+        Ok(out)
+    }
 }
 
 pub(crate) fn mutate(name: &str) -> bool {
