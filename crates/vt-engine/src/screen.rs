@@ -56,6 +56,7 @@ pub(crate) struct Screen {
     in_alt: bool,
     replies: Vec<u8>,
     replies_dropped: u32,
+    discard_replies: bool,
     open_cluster: Option<OpenCluster>,
     grapheme_truncated: u32,
 }
@@ -99,6 +100,7 @@ impl Screen {
             in_alt: false,
             replies: Vec::new(),
             replies_dropped: 0,
+            discard_replies: false,
             open_cluster: None,
             grapheme_truncated: 0,
         })
@@ -206,9 +208,74 @@ impl Screen {
         !self.replies.is_empty()
     }
 
+    pub(crate) fn cols(&self) -> u16 {
+        self.cols
+    }
+
+    pub(crate) fn rows(&self) -> u16 {
+        self.rows
+    }
+
+    pub(crate) fn set_discard_replies(&mut self, discard: bool) {
+        self.discard_replies = discard;
+    }
+
+    pub(crate) fn repaint_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        if self.in_alt {
+            out.extend_from_slice(b"\x1b[?1049h");
+        }
+        out.extend_from_slice(b"\x1b[0m");
+        let mut last_fg = Color::Default;
+        let mut last_bg = Color::Default;
+        let mut last_attrs: u16 = 0;
+        for r in 0..self.rows {
+            let mut last = 0u16;
+            for c in 0..self.cols {
+                let cell = self.cells[self.idx(c, r)];
+                if !cell_is_blank(cell) {
+                    last = c + 1;
+                }
+            }
+            for c in 0..last {
+                let cell = self.cells[self.idx(c, r)];
+                if cell.fg != last_fg || cell.bg != last_bg || cell.attrs != last_attrs {
+                    out.extend_from_slice(b"\x1b[0m");
+                    emit_attrs(&mut out, cell.attrs);
+                    emit_color(&mut out, true, cell.fg);
+                    emit_color(&mut out, false, cell.bg);
+                    last_fg = cell.fg;
+                    last_bg = cell.bg;
+                    last_attrs = cell.attrs;
+                }
+                push_codepoint(&mut out, cell.codepoint);
+            }
+            if r + 1 < self.rows {
+                out.extend_from_slice(b"\r\n");
+                last_fg = Color::Default;
+                last_bg = Color::Default;
+                last_attrs = 0;
+                out.extend_from_slice(b"\x1b[0m");
+            }
+        }
+        out.extend_from_slice(b"\x1b[");
+        push_u16(&mut out, self.cursor_row.saturating_add(1));
+        out.push(b';');
+        push_u16(&mut out, self.cursor_col.saturating_add(1));
+        out.push(b'H');
+        if !self.cursor_visible {
+            out.extend_from_slice(b"\x1b[?25l");
+        }
+        out
+    }
+
     const REPLY_CAP: usize = 1024;
 
     fn enqueue_reply(&mut self, bytes: &[u8]) {
+        if self.discard_replies {
+            self.replies_dropped = self.replies_dropped.saturating_add(1);
+            return;
+        }
         if crate::mutate("no_reply") {
             return;
         }
@@ -854,6 +921,72 @@ impl Screen {
             },
             // REP (`b`) is a named miss (SPEC-VT-SCREEN §4).
             _ => {}
+        }
+    }
+}
+
+fn cell_is_blank(cell: Cell) -> bool {
+    cell.codepoint == 32
+        && cell.attrs == 0
+        && matches!(cell.fg, Color::Default)
+        && matches!(cell.bg, Color::Default)
+}
+
+fn push_codepoint(out: &mut Vec<u8>, cp: u32) {
+    let Some(c) = char::from_u32(cp) else {
+        return;
+    };
+    let mut buf = [0u8; 4];
+    out.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
+}
+
+fn push_u16(out: &mut Vec<u8>, n: u16) {
+    let mut buf = [0u8; 5];
+    let k = write_u16(&mut buf, n);
+    out.extend_from_slice(&buf[..k]);
+}
+
+fn emit_attrs(out: &mut Vec<u8>, attrs: u16) {
+    if attrs & 1 != 0 {
+        out.extend_from_slice(b"\x1b[1m");
+    }
+    if attrs & 2 != 0 {
+        out.extend_from_slice(b"\x1b[4m");
+    }
+    if attrs & 4 != 0 {
+        out.extend_from_slice(b"\x1b[7m");
+    }
+}
+
+fn emit_color(out: &mut Vec<u8>, fg: bool, color: Color) {
+    match color {
+        Color::Default => {}
+        Color::Indexed(n) if n < 8 => {
+            out.extend_from_slice(b"\x1b[");
+            push_u16(out, (if fg { 30u16 } else { 40 }) + u16::from(n));
+            out.push(b'm');
+        }
+        Color::Indexed(n) if n < 16 => {
+            out.extend_from_slice(b"\x1b[");
+            push_u16(
+                out,
+                (if fg { 90u16 } else { 100 }) + u16::from(n.saturating_sub(8)),
+            );
+            out.push(b'm');
+        }
+        Color::Indexed(n) => {
+            out.extend_from_slice(if fg { b"\x1b[38;5;" } else { b"\x1b[48;5;" });
+            push_u16(out, u16::from(n));
+            out.push(b'm');
+        }
+        Color::Rgb(r, g, b) => {
+            out.extend_from_slice(if fg { b"\x1b[38;2;" } else { b"\x1b[48;2;" });
+            push_u16(out, u16::from(r));
+            out.push(b';');
+            push_u16(out, u16::from(g));
+            out.push(b';');
+            push_u16(out, u16::from(b));
+            out.push(b'm');
         }
     }
 }
