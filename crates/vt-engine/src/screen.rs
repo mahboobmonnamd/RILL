@@ -249,6 +249,230 @@ impl Screen {
             self.pending_wrap = self.autowrap;
         }
     }
+
+    fn last_col(&self) -> u16 {
+        self.cols.saturating_sub(1)
+    }
+
+    fn last_row(&self) -> u16 {
+        self.rows.saturating_sub(1)
+    }
+
+    fn set_cursor(&mut self, row: u16, col: u16) {
+        self.clear_pending_wrap();
+        self.cursor_row = row.min(self.last_row());
+        self.cursor_col = col.min(self.last_col());
+    }
+
+    fn erase_span(&mut self, from: usize, to: usize) {
+        let to = to.min(self.cells.len());
+        let from = from.min(to);
+        let blank = Cell::blank(self.pen_bg);
+        for cell in &mut self.cells[from..to] {
+            *cell = blank;
+        }
+        if from < to {
+            let cols = usize::from(self.cols).max(1);
+            let r0 = (from / cols) as u16;
+            let r1 = ((to - 1) / cols) as u16;
+            for r in r0..=r1 {
+                self.dirty(r);
+            }
+        }
+    }
+
+    fn erase_display(&mut self, mode: u16) {
+        let cur = self.idx(self.cursor_col, self.cursor_row);
+        match mode {
+            0 => self.erase_span(cur, self.cells.len()),
+            1 => self.erase_span(0, cur.saturating_add(1)),
+            _ => {
+                self.erase_span(0, self.cells.len());
+                self.full_damage = true;
+            }
+        }
+    }
+
+    fn erase_line(&mut self, mode: u16) {
+        let row_start = self.idx(0, self.cursor_row);
+        let row_end = row_start + usize::from(self.cols);
+        let cur = self.idx(self.cursor_col, self.cursor_row);
+        match mode {
+            0 => self.erase_span(cur, row_end),
+            1 => self.erase_span(row_start, cur.saturating_add(1)),
+            _ => self.erase_span(row_start, row_end),
+        }
+    }
+
+    fn erase_chars(&mut self, n: u16) {
+        let n = n.min(self.cols.saturating_sub(self.cursor_col));
+        let from = self.idx(self.cursor_col, self.cursor_row);
+        self.erase_span(from, from + usize::from(n));
+    }
+
+    fn insert_lines(&mut self, n: u16) {
+        if self.cursor_row < self.scroll_top || self.cursor_row > self.scroll_bottom {
+            return;
+        }
+        let n = n.min(self.scroll_bottom.saturating_sub(self.cursor_row) + 1);
+        if n == 0 {
+            return;
+        }
+        let cols = usize::from(self.cols);
+        let first = usize::from(self.cursor_row);
+        let last = usize::from(self.scroll_bottom);
+        let n_us = usize::from(n);
+        if last >= first + n_us {
+            for r in (first..=last - n_us).rev() {
+                let src = r * cols;
+                self.cells.copy_within(src..src + cols, src + n_us * cols);
+            }
+        }
+        let blank = Cell::blank(self.pen_bg);
+        for r in first..first + n_us {
+            for cell in &mut self.cells[r * cols..r * cols + cols] {
+                *cell = blank;
+            }
+        }
+        for r in self.cursor_row..=self.scroll_bottom {
+            self.dirty(r);
+        }
+    }
+
+    fn delete_lines(&mut self, n: u16) {
+        if self.cursor_row < self.scroll_top || self.cursor_row > self.scroll_bottom {
+            return;
+        }
+        let n = n.min(self.scroll_bottom.saturating_sub(self.cursor_row) + 1);
+        if n == 0 {
+            return;
+        }
+        let cols = usize::from(self.cols);
+        let first = usize::from(self.cursor_row);
+        let last = usize::from(self.scroll_bottom);
+        let n_us = usize::from(n);
+        if last >= first + n_us {
+            for r in first..=last - n_us {
+                let src = (r + n_us) * cols;
+                self.cells.copy_within(src..src + cols, r * cols);
+            }
+        }
+        let blank = Cell::blank(self.pen_bg);
+        for r in last + 1 - n_us..=last {
+            for cell in &mut self.cells[r * cols..r * cols + cols] {
+                *cell = blank;
+            }
+        }
+        for r in self.cursor_row..=self.scroll_bottom {
+            self.dirty(r);
+        }
+    }
+
+    fn insert_cells(&mut self, n: u16) {
+        let n = n.min(self.cols.saturating_sub(self.cursor_col));
+        if n == 0 {
+            return;
+        }
+        let cols = usize::from(self.cols);
+        let col = usize::from(self.cursor_col);
+        let n_us = usize::from(n);
+        let row_start = self.idx(0, self.cursor_row);
+        if col + n_us < cols {
+            self.cells.copy_within(
+                row_start + col..row_start + cols - n_us,
+                row_start + col + n_us,
+            );
+        }
+        let blank = Cell::blank(self.pen_bg);
+        for cell in &mut self.cells[row_start + col..row_start + col + n_us] {
+            *cell = blank;
+        }
+        self.dirty(self.cursor_row);
+    }
+
+    fn delete_cells(&mut self, n: u16) {
+        let n = n.min(self.cols.saturating_sub(self.cursor_col));
+        if n == 0 {
+            return;
+        }
+        let cols = usize::from(self.cols);
+        let col = usize::from(self.cursor_col);
+        let n_us = usize::from(n);
+        let row_start = self.idx(0, self.cursor_row);
+        if col + n_us < cols {
+            self.cells
+                .copy_within(row_start + col + n_us..row_start + cols, row_start + col);
+        }
+        let blank = Cell::blank(self.pen_bg);
+        for cell in &mut self.cells[row_start + cols - n_us..row_start + cols] {
+            *cell = blank;
+        }
+        self.dirty(self.cursor_row);
+    }
+
+    fn csi_dispatch(&mut self, params: &[u16], action: char) {
+        match action {
+            'A' => {
+                let n = csi_n(params, 0, 1);
+                self.set_cursor(self.cursor_row.saturating_sub(n), self.cursor_col);
+            }
+            'B' => {
+                let n = csi_n(params, 0, 1);
+                self.set_cursor(self.cursor_row.saturating_add(n), self.cursor_col);
+            }
+            'C' => {
+                let n = csi_n(params, 0, 1);
+                self.set_cursor(self.cursor_row, self.cursor_col.saturating_add(n));
+            }
+            'D' => {
+                let n = csi_n(params, 0, 1);
+                self.set_cursor(self.cursor_row, self.cursor_col.saturating_sub(n));
+            }
+            'E' => {
+                let n = csi_n(params, 0, 1);
+                self.set_cursor(self.cursor_row.saturating_add(n), 0);
+            }
+            'F' => {
+                let n = csi_n(params, 0, 1);
+                self.set_cursor(self.cursor_row.saturating_sub(n), 0);
+            }
+            'G' => {
+                let col = csi_n(params, 0, 1).saturating_sub(1);
+                self.set_cursor(self.cursor_row, col);
+            }
+            'H' | 'f' => {
+                let row = csi_n(params, 0, 1).saturating_sub(1);
+                let col = csi_n(params, 1, 1).saturating_sub(1);
+                self.set_cursor(row, col);
+            }
+            'd' => {
+                let row = csi_n(params, 0, 1).saturating_sub(1);
+                self.set_cursor(row, self.cursor_col);
+            }
+            'J' => {
+                if crate::mutate("noop_ed") {
+                    return;
+                }
+                self.erase_display(csi_n(params, 0, 0));
+            }
+            'K' => self.erase_line(csi_n(params, 0, 0)),
+            'X' => self.erase_chars(csi_n(params, 0, 1)),
+            'L' => self.insert_lines(csi_n(params, 0, 1)),
+            'M' => self.delete_lines(csi_n(params, 0, 1)),
+            '@' => self.insert_cells(csi_n(params, 0, 1)),
+            'P' => self.delete_cells(csi_n(params, 0, 1)),
+            // REP (`b`) is a named miss (SPEC-VT-SCREEN §4). Other finals
+            // including SGR/DECSTBM/DA are later slices.
+            _ => {}
+        }
+    }
+}
+
+fn csi_n(params: &[u16], i: usize, default: u16) -> u16 {
+    match params.get(i) {
+        None | Some(0) => default,
+        Some(n) => *n,
+    }
 }
 
 impl Actions for Screen {
@@ -287,10 +511,13 @@ impl Actions for Screen {
         }
     }
 
-    fn csi(&mut self, _params: &[u16], _intermediates: &[u8], ignore: bool, _action: char) {
-        // Slice 3 owns CUP/ED. Slice 2 consumes CSI so high bytes inside
-        // parameters do not become cells (ADR 0020 / S-VT).
-        let _ = ignore;
+    fn csi(&mut self, params: &[u16], intermediates: &[u8], ignore: bool, action: char) {
+        // ADR 0020 D4: overflow sets ignore; do not execute a truncated CSI.
+        // Private markers (`?`) are intermediates; Slice 4 owns those finals.
+        if crate::mutate("ignore_csi") || ignore || !intermediates.is_empty() {
+            return;
+        }
+        self.csi_dispatch(params, action);
     }
 
     fn esc(&mut self, _intermediates: &[u8], byte: u8) {
