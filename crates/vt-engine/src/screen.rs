@@ -163,6 +163,99 @@ impl Screen {
         grid
     }
 
+    pub(crate) fn color_at(&self, col: u16, row: u16) -> Option<(Color, Color)> {
+        if col >= self.cols || row >= self.rows {
+            return None;
+        }
+        let c = self.cells[self.idx(col, row)];
+        Some((c.fg, c.bg))
+    }
+
+    pub(crate) fn set_palette(&mut self, palette: Palette) -> Result<(), Error> {
+        if crate::mutate("skip_file_palette") {
+            return Ok(());
+        }
+        self.palette = palette;
+        self.full_damage = true;
+        Ok(())
+    }
+
+    fn paint_indexed(&self, n: u16) -> Color {
+        let idx = n.min(255) as u8;
+        if crate::mutate("sgr_rgb_at_parse") {
+            let rgb = crate::color::indexed(idx, &self.palette);
+            Color::Rgb(rgb.r, rgb.g, rgb.b)
+        } else {
+            Color::Indexed(idx)
+        }
+    }
+
+    fn apply_sgr(&mut self, params: &[u16]) {
+        if crate::mutate("ignore_sgr") {
+            return;
+        }
+        let params: &[u16] = if params.is_empty() { &[0] } else { params };
+        let mut i = 0;
+        while i < params.len() {
+            let n = params[i];
+            i += 1;
+            match n {
+                0 => {
+                    self.pen_attrs = 0;
+                    self.pen_fg = Color::Default;
+                    self.pen_bg = Color::Default;
+                }
+                1 => self.pen_attrs |= 1,
+                3 => {}
+                4 => self.pen_attrs |= 2,
+                7 => self.pen_attrs |= 4,
+                22 => self.pen_attrs &= !1,
+                24 => self.pen_attrs &= !2,
+                27 => self.pen_attrs &= !4,
+                30..=37 => self.pen_fg = self.paint_indexed(n - 30),
+                90..=97 => self.pen_fg = self.paint_indexed(n - 90 + 8),
+                40..=47 => self.pen_bg = self.paint_indexed(n - 40),
+                100..=107 => self.pen_bg = self.paint_indexed(n - 100 + 8),
+                39 => self.pen_fg = Color::Default,
+                49 => self.pen_bg = Color::Default,
+                38 | 48 => {
+                    let fg = n == 38;
+                    match params.get(i).copied() {
+                        Some(5) => {
+                            i += 1;
+                            if let Some(idx) = params.get(i).copied() {
+                                i += 1;
+                                let c = self.paint_indexed(idx);
+                                if fg {
+                                    self.pen_fg = c;
+                                } else {
+                                    self.pen_bg = c;
+                                }
+                            }
+                        }
+                        Some(2) => {
+                            i += 1;
+                            if i + 2 < params.len() {
+                                let r = params[i].min(255) as u8;
+                                let g = params[i + 1].min(255) as u8;
+                                let b = params[i + 2].min(255) as u8;
+                                i += 3;
+                                let c = Color::Rgb(r, g, b);
+                                if fg {
+                                    self.pen_fg = c;
+                                } else {
+                                    self.pen_bg = c;
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
     fn idx(&self, col: u16, row: u16) -> usize {
         usize::from(row) * usize::from(self.cols) + usize::from(col)
     }
@@ -176,8 +269,7 @@ impl Screen {
                     self.palette.background
                 }
             }
-            Color::Indexed(n) if n < 16 => self.palette.ansi[n as usize],
-            Color::Indexed(_) => self.palette.foreground,
+            Color::Indexed(n) => crate::color::indexed(n, &self.palette),
             Color::Rgb(r, g, b) => Rgb { r, g, b },
         }
     }
@@ -636,7 +728,8 @@ impl Screen {
                     self.scroll_down();
                 }
             }
-            // REP (`b`) is a named miss (SPEC-VT-SCREEN §4). SGR/DA are later slices.
+            'm' => self.apply_sgr(params),
+            // REP (`b`) is a named miss (SPEC-VT-SCREEN §4). DA is Slice 6.
             _ => {}
         }
     }

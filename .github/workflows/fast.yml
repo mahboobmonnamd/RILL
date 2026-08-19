@@ -100,6 +100,23 @@ jobs:
           red T-CHIP1-SCROLL ignore_decstbm t_chip1_scroll_decstbm_confines_the_scroll
           red T-CHIP1-ALT single_buffer t_chip1_alt_1049_preserves_primary
 
+      - name: T-CHIP1 slice 5 negative controls
+        run: |
+          set -eu
+          red() {
+            name="$1"
+            mut="$2"
+            shift 2
+            if RILL_MUTATE="$mut" cargo test -p vt-engine --features mutate --test t_chip1_slice5 "$@" -- --nocapture; then
+              echo "BROKEN INSTRUMENT: $name stayed green under $mut" >&2
+              exit 1
+            fi
+            echo "ok: $name went red under $mut"
+          }
+          red T-CHIP1-SGR ignore_sgr t_chip1_sgr_bold_sets_attrs_bit_0
+          red T-CHIP1-COLOR-IDENTITY sgr_rgb_at_parse t_chip1_color_identity_sgr_keeps_palette_index
+          red T-CHIP1-LOOK-ANSI skip_file_palette t_chip1_look_ansi_sgr_colours_come_from_the_theme_file
+
       # M1 T-GRAPH (ADR 0014 D1). Mutations must go red (ADR 0002 D3).
       # rilld named-id / flood stay in validate-spike0.sh (Chip 0 toolchain).
       - name: T-GRAPH kernel negative controls
