@@ -86,7 +86,7 @@ mod tests {
             load_host_surface("../../host-surface.toml").expect("host-surface"),
             &look,
         );
-        assert_eq!(surface.font_size, 14.0);
+        assert_eq!(surface.font_size, 16.0);
         assert_eq!(surface.theme.as_deref(), Some("Catppuccin Latte"));
     }
 
