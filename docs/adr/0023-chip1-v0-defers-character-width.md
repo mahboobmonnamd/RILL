@@ -1,6 +1,11 @@
 # ADR 0023: Chip 1 v0 defers character width; M7 is blocked on it
 
-- **Status:** Accepted — 2026-08-18
+- **Status:** Accepted — 2026-08-18. **Amended 2026-08-19** by
+  [ADR 0035](0035-chip1-character-width.md): D1, D3, D4 and D5 are
+  **superseded**. D2's combining-range restriction (`U+0300..=U+036F`) is
+  **replaced** by 0035 (generated Mn/Me), not merely extended. D2's bound,
+  counted truncation, and "not full UAX #29" still hold. This file is kept
+  so the deferral's history stays on the record; do not delete it.
 - **Tree:** this repository only
 - **Issue:** epic [#6](https://github.com/mahboobmonnamd/RILL/issues/6)
   (child issues to be filed: T-CHIP1-WIDTH-DEFERRED, and the width slice itself)
@@ -12,6 +17,7 @@
   [#272](https://github.com/mahboobmonnamd/RILL/issues/272)
 - **Does not authorize:** shipping Chip 1 as the live chip with this gap, adding
   a width dependency, extra `attrs` bits, or describing the deferral as done
+  (the width-source pick and the T-CHIP1-WIDTH replacement are ADR 0035)
 
 ## Context
 
@@ -37,12 +43,24 @@ they control.
 
 ### D1 — v0 advances one column per scalar, and says so
 
+**Superseded by [ADR 0035](0035-chip1-character-width.md) D1/D5.** Chip 1 now
+clusters, then widths; `attrs` bits 3 and 4 are wide-lead / wide-tail;
+`PodCell` stays 16 bytes. The v0 miss this paragraph named is closed by
+T-CHIP1-WIDTH, not by deleting this ADR.
+
 Every printable scalar occupies exactly one cell in v0. `attrs` gains no
 wide-lead or wide-tail bit (SPEC-CHIP1 §2 keeps three bits and 16-byte
 `PodCell`). CJK, emoji and other wide characters render **narrow and
 misaligned**. This is a known, named miss, not a bug to be filed later.
 
 ### D2 — Clustering is bounded, simplified, and counted
+
+**Amended by [ADR 0035](0035-chip1-character-width.md) D1.** The
+combining-range restriction (`U+0300..=U+036F` only) is **replaced**, not
+merely extended: clustering uses generated Mn/Me (and ZWJ, variation
+selectors, printable after ZWJ, regional-indicator pairs).
+`RILL_GRAPHEME_MAX = 32`, counted truncation, no fixed stack buffer, and
+"not full UAX #29" still hold. Indic conjuncts remain a named miss.
 
 Combining marks in `U+0300..=U+036F`, ZWJ (`U+200D`) and variation selectors
 append to the preceding cell's cluster rather than consuming a new cell.
@@ -61,6 +79,10 @@ later slice.
 
 ### D3 — The deferral carries its own gate
 
+**Superseded by [ADR 0035](0035-chip1-character-width.md) D7.**
+T-CHIP1-WIDTH-DEFERRED is **replaced** by T-CHIP1-WIDTH (`cursor_col == 5`,
+lead/tail cells), not deleted quietly. Mutation inverts to `narrow_cjk`.
+
 **T-CHIP1-WIDTH-DEFERRED** — feed `日本X` into an 80×24 Chip 1; assert the
 cursor is at column 3 and that this **documents the v0 miss**, citing this ADR
 in the test's doc comment.
@@ -76,6 +98,11 @@ cursor and not a constant.
 
 ### D4 — M7 MUST NOT swap the live chip while this gap is open
 
+**Superseded in part by [ADR 0035](0035-chip1-character-width.md) D7:** the
+v0 gap this paragraph described is closed in `vt-engine` once T-CHIP1-WIDTH
+is Proven. The **precondition on M7** survives: the live-swap ADR MUST still
+cite T-CHIP1-WIDTH as Proven. ADR 0035 does not authorize the swap.
+
 Chip 0 today lays out CJK and emoji correctly through libghostty-vt. Making
 Chip 1 live with D1 in force would visibly regress any user typing or displaying
 CJK, and would regress it in exactly the way
@@ -87,6 +114,11 @@ M7 live-swap ADR MUST cite T-CHIP1-WIDTH as Proven. M4 is complete without it;
 M7 is not.
 
 ### D5 — The width source is undecided, and that is deliberate
+
+**Superseded by [ADR 0035](0035-chip1-character-width.md) D2/D3** after
+[SPIKE-WIDTH](../SPIKE-WIDTH.md): generated in-tree UCD, Unicode version
+pinned; `unicode-width` is `[dev-dependencies]` only. The two constraints
+below still hold and 0035 repeats them.
 
 This ADR does **not** pick between a generated in-tree UCD table and a crate
 such as `unicode-width`. That decision needs its own spike, because the tradeoff

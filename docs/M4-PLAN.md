@@ -148,13 +148,13 @@ resolved SGR to RGB — that is why ADR 0021 was written before any of this.
 and `5n`, `replies_dropped`, discard on resync.
 **Mutations:** `no_reply`, `unbounded_replies`.
 
-### Slice 7 — clusters and the width marker
+### Slice 7 — clusters and width
 
-**Spec:** SPEC-VT-SCREEN §9, ADR 0023.
-**Gates:** T-CHIP1-GRAPHEME, T-CHIP1-WIDTH-DEFERRED.
+**Spec:** SPEC-VT-SCREEN §9, ADR 0035 (amends ADR 0023).
+**Gates:** T-CHIP1-GRAPHEME, T-CHIP1-WIDTH.
 **Work:** bounded cluster append, `RILL_GRAPHEME_MAX = 32`,
-`grapheme_truncated`, and the gate that documents the one-column-per-scalar miss.
-**Mutations:** `fixed_grapheme_buf`, `wide_advances_two`.
+`grapheme_truncated`, generated East Asian Width, lead/tail cells.
+**Mutations:** `fixed_grapheme_buf`, `narrow_cjk`.
 
 ### Slice 8 — bounds, differential, fuzz
 
@@ -212,8 +212,8 @@ of:
 
 1. Every T-CHIP1 gate Proven.
 2. **Character width implemented**, T-CHIP1-WIDTH Proven, ADR 0023 amended
-   (ADR 0023 D4). Otherwise the swap regresses CJK against a live chip that
-   handles it today.
+   by ADR 0035 (ADR 0023 D4 / ADR 0035 D7). Otherwise the swap regresses CJK
+   against a live chip that handles it today.
 3. **T-CHIP1-LOOK-ANSI Proven**, and packaged T-LOOK-ANSI / T-LOOK-CELL /
    T-SPLIT-LOOK still green after the swap
    ([#272](https://github.com/mahboobmonnamd/RILL/issues/272)).
@@ -228,14 +228,16 @@ of:
    modes; the host encodes keys and mouse. Without the channel, application
    cursor keys, keypad, paste bracketing and mouse tracking cannot be produced
    correctly after the swap. The live-swap ADR MUST name this channel. v0 does
-   not implement it.
+   not implement it. Proposed (not Accepted; does not authorize code or
+   [#24](https://github.com/mahboobmonnamd/RILL/issues/24)):
+   [ADR 0036](adr/0036-chip1-mode-state-channel.md).
 
 ## Risks
 
 | Risk | Mitigation |
 |---|---|
 | We own parser bugs now | `vte` differential over the corpus, plus fuzzing `feed` |
-| Width deferral quietly becomes permanent | T-CHIP1-WIDTH-DEFERRED plus ADR 0023 D4 blocking M7 |
+| Width implemented but M7 swaps before T-CHIP1-WIDTH is Proven | ADR 0035 D7 plus ADR 0023 D4 blocking M7 |
 | ADR 0020 D3's C1 inference is wrong | M7 precondition 4; T-CHIP1-C1 pins our own behaviour meanwhile |
 | The differential drifts into bug-for-bug matching | Secondary-only rule, divergence register, spec wins (ADR 0020 D2) |
 | A theme constant creeps into Rust | `no-theme-rgb-in-rust` lint, and gates parse the fixture files |
@@ -253,7 +255,7 @@ one per slice above, each naming its spec, gates, mutations and non-goals per
   ADR 0021 unblocks it.
 - Update [#267](https://github.com/mahboobmonnamd/RILL/issues/267): the colour
   ADR it required is ADR 0021.
-- New: the **width slice** (M7 precondition) with its own spike for the width
-  data source, which ADR 0023 D5 deliberately left open.
+- Width source: [ADR 0035](adr/0035-chip1-character-width.md) after
+  [SPIKE-WIDTH](SPIKE-WIDTH.md); ADR 0023 D5 is superseded.
 - Add width, the Chip 0 C1 differential, and the mode-state channel to
   [#24](https://github.com/mahboobmonnamd/RILL/issues/24)'s blocked-on list.

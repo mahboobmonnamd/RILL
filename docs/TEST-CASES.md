@@ -1022,7 +1022,8 @@ Authority: [ADR 0012](adr/0012-chip1-isolated-vt.md),
 [ADR 0020](adr/0020-chip1-parser-in-tree.md),
 [ADR 0021](adr/0021-chip1-colour-identity.md),
 [ADR 0022](adr/0022-chip1-reply-channel.md),
-[ADR 0023](adr/0023-chip1-v0-defers-character-width.md),
+[ADR 0023](adr/0023-chip1-v0-defers-character-width.md) as amended by
+[ADR 0035](adr/0035-chip1-character-width.md),
 [SPEC-CHIP1](spec/SPEC-CHIP1.md) and its six slice specs,
 [M4-HANDOFF](M4-HANDOFF.md), [M4-PLAN](M4-PLAN.md),
 [#6](https://github.com/mahboobmonnamd/RILL/issues/6).
@@ -1033,8 +1034,8 @@ The colour ADR [#267](https://github.com/mahboobmonnamd/RILL/issues/267)
 required now exists (ADR 0021), so
 [#271](https://github.com/mahboobmonnamd/RILL/issues/271) T-CHIP1-LOOK-ANSI is
 **unblocked**. Live swap must not regress packaged T-LOOK-ANSI:
-[#272](https://github.com/mahboobmonnamd/RILL/issues/272), and per ADR 0023 D4
-character width is also an M7 precondition.
+[#272](https://github.com/mahboobmonnamd/RILL/issues/272), and per ADR 0035
+character width (T-CHIP1-WIDTH Proven) is also an M7 precondition.
 
 These gates are **Red**. Named here first. No `vt-engine` behaviour until they
 exist and have been observed failing (ADR 0002 D2). Not live. Not T-NFR.
@@ -1092,8 +1093,10 @@ controls. Row 0 loses its non-ASCII cell.
 
 ### T-CHIP1-GRAPHEME — long cluster does not overrun
 
-**Oracle.** `e` + 40× U+0301: snapshot survives; `grapheme_truncated >= 1`
-or the base is still a visible cell. No panic.
+**Oracle.** `e` + 40× U+0301: snapshot survives; `cursor_col == 1`;
+`grapheme_truncated >= 1` or the base is still a visible cell. No panic.
+ZWJ family (`fixtures/bytes/zwj_emoji.bin`; fail if absent) occupies **2**
+columns after width (ADR 0035 D1), not 1.
 
 **Required mutation.** Fixed 8-slot stack buffer / silent drop of extras.
 
@@ -1254,22 +1257,31 @@ not a flag saying a reply was queued.
 **Required mutation.** `RILL_MUTATE=no_reply` — never enqueue.
 Second mutation `unbounded_replies` MUST turn the `replies_dropped` assertion red.
 
-### T-CHIP1-WIDTH-DEFERRED — v0 advances one column per scalar
+### T-CHIP1-WIDTH — CJK occupies two columns; `日本X` cursor at column 5
 
-Authority: [ADR 0023](adr/0023-chip1-v0-defers-character-width.md) D3,
+Authority: [ADR 0035](adr/0035-chip1-character-width.md) D7,
 [SPEC-VT-SCREEN](spec/SPEC-VT-SCREEN.md) §9.
+Replaces T-CHIP1-WIDTH-DEFERRED ([ADR 0023](adr/0023-chip1-v0-defers-character-width.md) D3);
+do not delete that history quietly.
 
-**Oracle.** Feed `日本X` into an 80×24 Chip 1; the cursor is at column 3. This
-**documents the v0 miss**: a conforming terminal advances 5. The test's doc
-comment cites ADR 0023.
+**Bug (doc comment).** v0 advanced one column per scalar, so `'日本X'` left the
+cursor at column 3. A conforming terminal advances 5. Summing per-scalar
+widths is also wrong: a ZWJ family is 2 columns, not 8 (SPIKE-WIDTH Result 2).
 
-**Required mutation.** `RILL_MUTATE=wide_advances_two` — advance two columns for
-East Asian Wide. Under v0 that turns this gate red, proving it observes the
-cursor and not a constant.
+**Oracle.** Feed `日本X` into an 80×24 Chip 1. `cursor_col == 5`. Cells:
+`日` lead at col 0 (`attrs` bit3) + tail at col 1 (`attrs` bit4, codepoint
+not 0), `本` lead col 2 + tail col 3, `X` at col 4 with neither wide bit.
+Primary oracle is those snapshot fields, written in the test — not
+"equals `unicode-width`". Extra: ZWJ fixture occupies 2 columns; a wide
+glyph at the last column wraps instead of splitting. ECH, DCH, or overwrite
+of a wide lead or tail clears **both** halves to space and the current
+background; no orphan tail (ADR 0035). Pending cluster survives `feed()`:
+combining / ZWJ in the next `feed()` still appends; `snapshot()` after the
+first `feed()` of `日` already shows width 2 (ADR 0035 D8).
 
-When width lands, this gate is **replaced** by T-CHIP1-WIDTH (cursor at column
-5) and ADR 0023 is amended. It MUST NOT be deleted quietly. Width is an M7
-precondition (ADR 0023 D4).
+**Required mutation.** `RILL_MUTATE=narrow_cjk` — force one column per
+scalar (v0). That must turn this gate red. Smash mutation
+`RILL_MUTATE=orphan_wide_tail` must turn the ECH-of-lead assertion red.
 
 ### T-CHIP1-DIFF — an independent parser agrees over the corpus
 

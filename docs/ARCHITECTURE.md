@@ -4,7 +4,7 @@ Authority: [ADR 0001](adr/0001-session-operating-system.md). Spike 0 closed:
 [ADR 0010](adr/0010-spike-0-closes.md). Session graph: [ADR 0011](adr/0011-session-graph.md).
 Chip 1 isolated crate: [ADR 0012](adr/0012-chip1-isolated-vt.md) ([M4-HANDOFF](M4-HANDOFF.md), [M4-PLAN](M4-PLAN.md));
 parser [ADR 0020](adr/0020-chip1-parser-in-tree.md), colour [ADR 0021](adr/0021-chip1-colour-identity.md),
-replies [ADR 0022](adr/0022-chip1-reply-channel.md), width [ADR 0023](adr/0023-chip1-v0-defers-character-width.md).
+replies [ADR 0022](adr/0022-chip1-reply-channel.md), width [ADR 0035](adr/0035-chip1-character-width.md) (amends [0023](adr/0023-chip1-v0-defers-character-width.md)).
 Cwd tap: [ADR 0013](adr/0013-cwd-tap.md). M1 first slice: [ADR 0014](adr/0014-m1-first-slice-closes.md).
 M1 persist remainder: [ADR 0015](adr/0015-m1-persist-remainder.md).
 M2 three-pane chrome: [ADR 0018](adr/0018-three-pane-host-chrome.md).

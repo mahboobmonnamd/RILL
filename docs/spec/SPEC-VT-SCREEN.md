@@ -3,12 +3,13 @@
 - **Status:** Accepted for the M4 contract — 2026-08-18. Named tests are **Red**.
 - **Authority:** [ADR 0012](../adr/0012-chip1-isolated-vt.md) D3, D5,
   [ADR 0020](../adr/0020-chip1-parser-in-tree.md) D6,
-  [ADR 0023](../adr/0023-chip1-v0-defers-character-width.md)
+  [ADR 0023](../adr/0023-chip1-v0-defers-character-width.md) as amended by
+  [ADR 0035](../adr/0035-chip1-character-width.md)
 - **Issue:** [#6](https://github.com/mahboobmonnamd/RILL/issues/6)
 - **Crate:** `crates/vt-engine` (screen module)
 - **Gates:** T-CHIP1-ASCII, T-CHIP1-CRLF, T-CHIP1-CUP, T-CHIP1-ED,
   T-CHIP1-ALT, T-CHIP1-SIZE, T-CHIP1-GRAPHEME, T-CHIP1-WRAP, T-CHIP1-SCROLL,
-  T-CHIP1-DAMAGE, T-CHIP1-WIDTH-DEFERRED — **Red**. Not live. Not T-NFR.
+  T-CHIP1-DAMAGE, T-CHIP1-WIDTH — **Red**. Not live. Not T-NFR.
 
 Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
@@ -113,8 +114,9 @@ DECSTBM and scroll the whole grid.
   the **current background**, not the default background. A program that sets a
   background and clears expects the painted colour; using the default is the
   classic "black bar" bug.
-- `attrs` is bit0 bold, bit1 underline, bit2 inverse. v0 MUST NOT add bits
-  (SPEC-VT-TYPES §2).
+- `attrs` is bit0 bold, bit1 underline, bit2 inverse, bit3 wide-lead, bit4
+  wide-tail ([ADR 0035](../adr/0035-chip1-character-width.md) D5,
+  SPEC-VT-TYPES §2). SGR MUST NOT set bits 3–4.
 
 Gate: **T-CHIP1-SGR** — `ESC[1mX` leaves that cell `attrs & 1 != 0`.
 Mutation: ignore SGR.
@@ -150,32 +152,63 @@ fn resize(&mut self, cols: u16, rows: u16, cell_w: u32, cell_h: u32) -> Result<(
 
 ## 9. Clusters and width
 
-- Combining marks in `U+0300..=U+036F`, ZWJ (`U+200D`) and variation selectors
-  append to the preceding cell's cluster instead of consuming a cell.
-- A printable scalar **immediately following ZWJ** MUST also append to that
-  cluster. Otherwise a ZWJ sequence (e.g. `fixtures/bytes/zwj_emoji.bin`) would
-  split into one cell per emoji scalar.
-- The combining-mark range is **restricted** and that restriction is a named
-  miss: marks outside `U+0300..=U+036F` (including Combining Diacritical Marks
-  Extended `U+1AB0..=U+1AFF`, Supplement `U+1DC0..=U+1DFF`, for Symbols
-  `U+20D0..=U+20FF`, and Combining Half Marks `U+FE20..=U+FE2F`) consume a cell
-  in v0. Full clustering arrives with width (ADR 0023 D2).
+Authority: [ADR 0035](../adr/0035-chip1-character-width.md). The v0
+one-column-per-scalar miss ([ADR 0023](../adr/0023-chip1-v0-defers-character-width.md)
+D1) is superseded.
+
+- **Cluster, then width.** Combining marks (Unicode categories Mn and Me),
+  ZWJ (`U+200D`), variation selectors (`U+FE00..=U+FE0F`,
+  `U+E0100..=U+E01EF`), a printable scalar immediately following ZWJ, and a
+  regional-indicator pair (`U+1F1E6..=U+1F1FF`) append to the open cluster
+  instead of consuming a new cell. Otherwise a ZWJ sequence (e.g.
+  `fixtures/bytes/zwj_emoji.bin`) would split into one cell per emoji scalar
+  and summing per-scalar widths would make a family emoji eight columns
+  (SPIKE-WIDTH Result 2).
+- The first scalar that opens a cluster decides placement: East Asian Width
+  **Wide** or **Fullwidth** → 2 columns; Ambiguous, Neutral, Narrow,
+  Halfwidth → **1** column. Do not enable `width_cjk`. Subsequent appends
+  MUST NOT add columns (ZWJ family occupies 2; `e` + U+0301 occupies 1). A
+  second regional indicator MAY expand a lone RI from 1 to 2 on the same row
+  and MUST NOT split the pair across rows.
+- Width data is generated in this tree from a pinned Unicode version
+  (`third_party/unicode.pin`, `scripts/gen-east-asian-width.py`). Humans do
+  not edit the table. `unicode-width` MUST NOT be a `[dependencies]` crate;
+  as a `[dev-dependencies]` secondary oracle it MUST NOT be the only
+  assertion (ADR 0035 D2/D3).
 - `RILL_GRAPHEME_MAX` is 32, matching Chip 0. Beyond it: keep the base
   codepoint, increment `grapheme_truncated`, never silently drop, and never use
   a fixed stack buffer (audit S3-1).
-- **Every printable scalar advances exactly one column in v0.** CJK and emoji
-  render narrow and misaligned. This is a named miss
-  ([ADR 0023](../adr/0023-chip1-v0-defers-character-width.md) D1), a
-  precondition of M7, and not a defect to be filed.
+- A wide cluster occupies two `PodCell`s on the same row: lead (`attrs` bit3)
+  holds the base scalar; tail (`attrs` bit4) stores the same base scalar.
+  Tail `codepoint` MUST NOT be `0`. Empty cell remains space `32`.
+- If remaining columns on the cursor row are fewer than the cluster width,
+  apply pending-wrap / DECAWM as ASCII does (§2), **then** place the whole
+  cluster. A wide glyph MUST NOT split across rows. With DECAWM off, if it
+  still does not fit, do not place it.
+- ECH, DCH, or a print that lands on a wide lead or tail MUST smash both
+  halves to space and the **current** background (ADR 0035). No orphan tail.
+- An open cluster is pending state on `Screen` (`open_cluster`), bounded by
+  `RILL_GRAPHEME_MAX`. It survives `feed()`. `snapshot()` after the first
+  `feed()` of `日` already shows width 2; the engine MUST NOT buffer the
+  cluster until it closes, and MUST NOT allocate proportional to input
+  (ADR 0035 D8).
+- **Named misses.** Full UAX #29 (Indic conjuncts, Brahmic aksaras), keycap
+  sequences, emoji-presentation promotion by VS16. Devanagari `क्ष` may occupy
+  1+1 if only EAW is applied to the scalars.
 
-Gates: **T-CHIP1-GRAPHEME** — `e` + 40× U+0301 survives; `grapheme_truncated >=
-1` or the base is still visible; no panic. Mutation: fixed 8-slot stack buffer
-or silent drop. **T-CHIP1-WIDTH-DEFERRED** — `日本X` leaves the cursor at column
-3, documenting the v0 miss. Mutation: advance two columns for East Asian Wide.
+Gates: **T-CHIP1-GRAPHEME** — `e` + 40× U+0301 survives (`cursor_col == 1`);
+`grapheme_truncated >= 1` or the base is still visible; no panic; ZWJ family
+fixture occupies **2** columns, not 1. Mutation: fixed 8-slot stack buffer
+or silent drop. **T-CHIP1-WIDTH** — `日本X` on 80×24 leaves `cursor_col == 5`;
+cells 0–1 lead/tail for `日`, 2–3 for `本`, 4 = `X`. Mutation:
+`narrow_cjk` (one column per scalar). Extra fixtures: ZWJ family width 2,
+wide wrap at the last column. T-CHIP1-WIDTH-DEFERRED is replaced, not
+deleted quietly.
 
 ## 10. Out of scope
 
-Width tables and UAX #29 (ADR 0023), reflow on resize, scrollback, sixel and
-images, mouse and key encoding, `snapshot_damaged`
+Full UAX #29, locale-dependent Ambiguous width, reflow on resize, scrollback,
+sixel and images, mouse and key encoding, `snapshot_damaged`
 ([#18](https://github.com/mahboobmonnamd/RILL/issues/18)), paint, Blocks, the
-live swap (M7).
+live swap (M7). Host honouring of wide-lead/tail bits is the live-swap PR,
+not this spec.

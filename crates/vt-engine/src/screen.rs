@@ -1,7 +1,7 @@
 //! Visible grid, cursor, damage. Does not parse bytes (SPEC-VT-SCREEN §1).
 
 use crate::parser::Actions;
-use rill_vt_types::{Color, Error, Palette, PodCell, PodGrid, Rgb};
+use rill_vt_types::{Color, Error, Palette, PodCell, PodGrid, Rgb, ATTR_WIDE_LEAD, ATTR_WIDE_TAIL};
 
 #[derive(Clone, Copy)]
 struct Cell {
@@ -64,8 +64,11 @@ pub(crate) struct Screen {
 #[derive(Clone, Copy)]
 struct OpenCluster {
     row: u16,
+    col: u16,
     len: u8,
     after_zwj: bool,
+    last_was_ri: bool,
+    width: u8,
 }
 
 const RILL_GRAPHEME_MAX: u8 = 32;
@@ -239,14 +242,17 @@ impl Screen {
             }
             for c in 0..last {
                 let cell = self.cells[self.idx(c, r)];
-                if cell.fg != last_fg || cell.bg != last_bg || cell.attrs != last_attrs {
+                if cell.fg != last_fg || cell.bg != last_bg || (cell.attrs & 0b111) != last_attrs {
                     out.extend_from_slice(b"\x1b[0m");
                     emit_attrs(&mut out, cell.attrs);
                     emit_color(&mut out, true, cell.fg);
                     emit_color(&mut out, false, cell.bg);
                     last_fg = cell.fg;
                     last_bg = cell.bg;
-                    last_attrs = cell.attrs;
+                    last_attrs = cell.attrs & 0b111;
+                }
+                if cell.attrs & ATTR_WIDE_TAIL != 0 && !crate::mutate("emit_wide_tails") {
+                    continue;
                 }
                 push_codepoint(&mut out, cell.codepoint);
             }
@@ -434,16 +440,6 @@ impl Screen {
         self.pending_wrap = false;
     }
 
-    fn wrap_if_needed(&mut self) {
-        if !self.pending_wrap || !self.autowrap {
-            self.pending_wrap = false;
-            return;
-        }
-        self.pending_wrap = false;
-        self.cursor_col = 0;
-        self.index();
-    }
-
     fn index(&mut self) {
         if self.cursor_row < self.scroll_bottom {
             self.cursor_row += 1;
@@ -615,10 +611,13 @@ impl Screen {
         if crate::mutate("drop_print") {
             return;
         }
-        let after_zwj = self.open_cluster.map(|cl| cl.after_zwj).unwrap_or(false);
-        if (is_cluster_continuer(c) || after_zwj) && self.append_to_cluster(c) {
+        if self.should_append(c) && self.append_to_cluster(c) {
+            if is_regional_indicator(c) {
+                self.maybe_expand_ri_pair();
+            }
             return;
         }
+        let width = self.cluster_width(c);
         if crate::mutate("eager_wrap")
             && self.autowrap
             && self.cursor_col + 1 == self.cols
@@ -629,25 +628,133 @@ impl Screen {
             self.cursor_col = 0;
             self.index();
         } else {
-            self.wrap_if_needed();
+            self.wrap_if_needed_width(width);
+        }
+        if self.cols < width || self.remaining_cols() < width {
+            return;
         }
         let row = self.cursor_row;
-        let i = self.idx(self.cursor_col, row);
-        self.cells[i] = Cell {
+        let col = self.cursor_col;
+        self.smash_wide_at(col, row);
+        if width == 2 {
+            self.smash_wide_at(col + 1, row);
+        }
+        let sgr = self.pen_attrs & 0b111;
+        let lead_i = self.idx(col, row);
+        self.cells[lead_i] = Cell {
             codepoint: c as u32,
             fg: self.pen_fg,
             bg: self.pen_bg,
-            attrs: self.pen_attrs,
+            attrs: sgr | if width == 2 { ATTR_WIDE_LEAD } else { 0 },
         };
+        if width == 2 {
+            let tail_i = self.idx(col + 1, row);
+            self.cells[tail_i] = Cell {
+                codepoint: c as u32,
+                fg: self.pen_fg,
+                bg: self.pen_bg,
+                attrs: sgr | ATTR_WIDE_TAIL,
+            };
+        }
         self.open_cluster = Some(OpenCluster {
             row,
+            col,
             len: 1,
             after_zwj: c == '\u{200d}',
+            last_was_ri: is_regional_indicator(c),
+            width: width as u8,
         });
         self.dirty(row);
-        self.advance_cursor();
-        if crate::mutate("wide_advances_two") && is_cjk_ideograph(c) {
-            self.advance_cursor();
+        self.advance_after_width(width);
+    }
+
+    fn should_append(&self, c: char) -> bool {
+        let Some(cl) = self.open_cluster else {
+            return false;
+        };
+        is_cluster_continuer(c) || cl.after_zwj || (cl.last_was_ri && is_regional_indicator(c))
+    }
+
+    fn cluster_width(&self, c: char) -> u16 {
+        if crate::mutate("narrow_cjk") {
+            return 1;
+        }
+        if crate::east_asian_width::is_wide(c as u32) {
+            2
+        } else {
+            1
+        }
+    }
+
+    fn remaining_cols(&self) -> u16 {
+        self.cols.saturating_sub(self.cursor_col)
+    }
+
+    fn wrap_if_needed_width(&mut self, width: u16) {
+        let need = self.pending_wrap || self.remaining_cols() < width;
+        if !need {
+            return;
+        }
+        if !self.autowrap {
+            self.pending_wrap = false;
+            return;
+        }
+        self.pending_wrap = false;
+        self.cursor_col = 0;
+        self.index();
+    }
+
+    fn smash_wide_at(&mut self, col: u16, row: u16) {
+        if crate::mutate("orphan_wide_tail") {
+            return;
+        }
+        if col >= self.cols || row >= self.rows {
+            return;
+        }
+        let i = self.idx(col, row);
+        let attrs = self.cells[i].attrs;
+        if attrs & ATTR_WIDE_LEAD != 0 && col + 1 < self.cols {
+            let j = self.idx(col + 1, row);
+            if self.cells[j].attrs & ATTR_WIDE_TAIL != 0 {
+                self.cells[j] = Cell::blank(self.pen_bg);
+            }
+        }
+        if attrs & ATTR_WIDE_TAIL != 0 && col > 0 {
+            let j = self.idx(col - 1, row);
+            if self.cells[j].attrs & ATTR_WIDE_LEAD != 0 {
+                self.cells[j] = Cell::blank(self.pen_bg);
+            }
+        }
+    }
+
+    fn maybe_expand_ri_pair(&mut self) {
+        let Some(mut cl) = self.open_cluster else {
+            return;
+        };
+        if cl.width >= 2 || crate::mutate("narrow_cjk") {
+            return;
+        }
+        let tail_col = cl.col.saturating_add(1);
+        if tail_col >= self.cols || cl.row != self.cursor_row {
+            return;
+        }
+        self.smash_wide_at(tail_col, cl.row);
+        let lead_i = self.idx(cl.col, cl.row);
+        let tail_i = self.idx(tail_col, cl.row);
+        let lead = self.cells[lead_i];
+        self.cells[lead_i].attrs = (lead.attrs & 0b111) | ATTR_WIDE_LEAD;
+        self.cells[tail_i] = Cell {
+            codepoint: lead.codepoint,
+            fg: lead.fg,
+            bg: lead.bg,
+            attrs: (lead.attrs & 0b111) | ATTR_WIDE_TAIL,
+        };
+        cl.width = 2;
+        self.open_cluster = Some(cl);
+        self.dirty(cl.row);
+        if self.cursor_col <= tail_col && self.cursor_row == cl.row {
+            self.cursor_col = tail_col;
+            self.advance_after_width(1);
         }
     }
 
@@ -668,16 +775,19 @@ impl Screen {
             cl.len = cl.len.saturating_add(1);
         }
         cl.after_zwj = c == '\u{200d}';
+        cl.last_was_ri = is_regional_indicator(c);
         self.dirty(cl.row);
         self.open_cluster = Some(cl);
         true
     }
 
-    fn advance_cursor(&mut self) {
-        if self.cursor_col + 1 < self.cols {
-            self.cursor_col += 1;
+    fn advance_after_width(&mut self, width: u16) {
+        let next = self.cursor_col.saturating_add(width);
+        if next < self.cols {
+            self.cursor_col = next;
             self.pending_wrap = false;
         } else {
+            self.cursor_col = self.last_col();
             self.pending_wrap = self.autowrap;
         }
     }
@@ -700,6 +810,12 @@ impl Screen {
     fn erase_span(&mut self, from: usize, to: usize) {
         let to = to.min(self.cells.len());
         let from = from.min(to);
+        let cols = usize::from(self.cols).max(1);
+        for i in from..to {
+            let col = (i % cols) as u16;
+            let row = (i / cols) as u16;
+            self.smash_wide_at(col, row);
+        }
         let blank = Cell::blank(self.pen_bg);
         for cell in &mut self.cells[from..to] {
             *cell = blank;
@@ -827,6 +943,10 @@ impl Screen {
         let n = n.min(self.cols.saturating_sub(self.cursor_col));
         if n == 0 {
             return;
+        }
+        let row = self.cursor_row;
+        for c in self.cursor_col..self.cursor_col + n {
+            self.smash_wide_at(c, row);
         }
         let cols = usize::from(self.cols);
         let col = usize::from(self.cursor_col);
@@ -1014,14 +1134,14 @@ fn write_u16(out: &mut [u8], n: u16) -> usize {
 
 fn is_cluster_continuer(c: char) -> bool {
     let u = c as u32;
-    (0x0300..=0x036f).contains(&u)
+    crate::east_asian_width::is_mark(u)
         || c == '\u{200d}'
         || (0xfe00..=0xfe0f).contains(&u)
         || (0xe0100..=0xe01ef).contains(&u)
 }
 
-fn is_cjk_ideograph(c: char) -> bool {
-    (0x4e00..=0x9fff).contains(&(c as u32))
+fn is_regional_indicator(c: char) -> bool {
+    (0x1f1e6..=0x1f1ff).contains(&(c as u32))
 }
 
 fn csi_n(params: &[u16], i: usize, default: u16) -> u16 {

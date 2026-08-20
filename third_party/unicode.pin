@@ -1,0 +1,10 @@
+# Unicode data pin for Chip 1 East Asian Width and Mn/Me clustering.
+# ADR 0035 D2, ADR 0002 D7.
+#
+# Source is Python's unicodedata (no network in fast.yml). Moving this pin is
+# its own PR: regenerate crates/vt-engine/src/east_asian_width.rs and re-run
+# T-CHIP1-WIDTH. Never a side effect of a clean checkout.
+#
+# scripts/gen-east-asian-width.py refuses to emit if unidata_version mismatches.
+source = python3 unicodedata
+unidata_version = 16.0.0

@@ -3,7 +3,8 @@
 - **Status:** Accepted for the M4 contract — 2026-08-18. Named tests are **Red**.
 - **Authority:** [ADR 0012](../adr/0012-chip1-isolated-vt.md) D2,
   [ADR 0021](../adr/0021-chip1-colour-identity.md),
-  [ADR 0022](../adr/0022-chip1-reply-channel.md)
+  [ADR 0022](../adr/0022-chip1-reply-channel.md),
+  [ADR 0035](../adr/0035-chip1-character-width.md) D5
 - **Issue:** [#6](https://github.com/mahboobmonnamd/RILL/issues/6)
 - **Crate:** `crates/rill-vt-types` (not in tree until its tests exist)
 - **Gates:** T-CHIP1-POD, T-CHIP1-SIZE — **Red**. Not live. Not T-NFR.
@@ -33,13 +34,17 @@ testable on Linux and Chip 0 keeps implementing the same trait
 | `codepoint` | `u32` | Base scalar. Empty cell is space `32`. |
 | `fg` | `u32` | RGBA8888, R in the high byte: `(r<<24)\|(g<<16)\|(b<<8)\|0xff` |
 | `bg` | `u32` | Same |
-| `attrs` | `u16` | bit0 bold, bit1 underline, bit2 inverse |
+| `attrs` | `u16` | bit0 bold, bit1 underline, bit2 inverse, bit3 wide-lead, bit4 wide-tail |
 | `_pad` | `u16` | zero |
 
 - A `String` — or any type transitively containing one, or any pointer, `Vec`,
   or reference — MUST NOT be reachable from `PodCell`.
-- v0 MUST NOT add attr bits. Italic, strikethrough and wide-lead/tail exist on
-  the presenter (ADR 0003 D1) but not here. Adding one needs an ADR.
+- Bits 3 and 4 mark a wide cluster's lead and tail
+  ([ADR 0035](../adr/0035-chip1-character-width.md) D5). Empty cell is space
+  `32` with those bits clear. Tail `codepoint` is the lead's base scalar and
+  MUST NOT be `0` (the host paints 0 as space). Italic and strikethrough
+  exist on the presenter (ADR 0003 D1) but not here. Adding further bits
+  needs an ADR. `_pad` stays zero.
 - Alpha is always `0xff`. Per-cell alpha is forbidden (ADR 0021 D5).
 - `PodCell` values in a snapshot are already materialised RGB. Colour
   **identity** does not appear in this type; it lives inside the engine
@@ -164,5 +169,6 @@ Neither the trait nor the engine is `Sync`. One thread feeds and snapshots
 ## 8. Out of scope
 
 PTY, sockets, paint, GPU, AppKit, fonts, Blocks, scrollback, JSON, cells over
-IPC, `snapshot_damaged` (#18), theme-file parsing, width tables
-([ADR 0023](../adr/0023-chip1-v0-defers-character-width.md)), live swap (M7).
+IPC, `snapshot_damaged` (#18), theme-file parsing, live swap (M7). Width
+tables live in `vt-engine` ([ADR 0035](../adr/0035-chip1-character-width.md)),
+not in this crate.

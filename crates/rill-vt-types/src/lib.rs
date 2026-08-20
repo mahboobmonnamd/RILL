@@ -10,6 +10,10 @@ use std::fmt;
 ///
 /// Snapshot cells are already materialised RGB. Colour identity lives inside
 /// the engine ([ADR 0021] D1).
+///
+/// `attrs`: bit0 bold, bit1 underline, bit2 inverse, bit3 wide-lead, bit4
+/// wide-tail ([ADR 0035] D5). Empty cell is space `32`. A wide tail stores the
+/// lead's base scalar; it MUST NOT be `codepoint == 0`.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PodCell {
@@ -19,6 +23,13 @@ pub struct PodCell {
     pub attrs: u16,
     pub _pad: u16,
 }
+
+/// `PodCell.attrs` bits (SPEC-VT-TYPES §2, ADR 0035 D5).
+pub const ATTR_BOLD: u16 = 1 << 0;
+pub const ATTR_UNDERLINE: u16 = 1 << 1;
+pub const ATTR_INVERSE: u16 = 1 << 2;
+pub const ATTR_WIDE_LEAD: u16 = 1 << 3;
+pub const ATTR_WIDE_TAIL: u16 = 1 << 4;
 
 /// Visible grid. `cells.len()` is exactly `cols * rows` (ADR 0012 D3).
 #[derive(Clone, Debug, PartialEq, Eq)]

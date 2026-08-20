@@ -14,3 +14,4 @@ rill-vt-types.workspace = true
 
 [dev-dependencies]
 vte = { version = "0.15", default-features = false }
+unicode-width = { version = "0.2", default-features = false }
