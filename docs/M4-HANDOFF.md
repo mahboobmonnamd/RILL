@@ -143,10 +143,11 @@ copied input buffer, not the `\x1b[2J` prefix.
 then green in `fast.yml`; host/`rilld` still do not depend on `vt-engine`;
 lint-planes clean. **Width is not required for M4.**
 
-**M7 (not you):** live swap ADR, resync = Chip 1, packaged T-NFR hid — plus
-every [M4-PLAN](M4-PLAN.md) M7 precondition (width, T-CHIP1-LOOK-ANSI, Chip 0
-C1 differential, `take_replies` drain onto `DATA`, and a channel for mode
-state to the host key/mouse encoder).
+**M7 (next):** [ADR 0037](adr/0037-chip1-live-swap.md) Accepted — implement
+[#24](https://github.com/mahboobmonnamd/RILL/issues/24): spec → named tests →
+swap PR (`VtEngine` in host + `rilld`, reply drain, `mode_state`, wide-bit
+presenter, lift `no-host-dep-on-vt-engine`), then packaged T-NFR hid on battery.
+All [M4-PLAN](M4-PLAN.md) M7 preconditions except the swap PR itself are met.
 
 **M6 (not you):** Blocks host the live chip; live TUI-in-block; cwd tap
 ([ADR 0013](adr/0013-cwd-tap.md): kernel fg `proc_pidinfo`, not

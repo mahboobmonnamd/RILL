@@ -33,8 +33,10 @@ GitHub [#6](https://github.com/mahboobmonnamd/RILL/issues/6) was a stub
 ### D1 — Isolated library only until M7
 
 Chip 1 lives as `crates/vt-engine` (plus `crates/rill-vt-types` for the shared
-POD/trait). `rill-host` and `rilld` MUST NOT depend on `vt-engine` until an
-Accepted M7 live-swap ADR and packaged T-NFR hid is re-proven.
+POD/trait). `rill-host` and `rilld` MUST NOT depend on `vt-engine` until
+[ADR 0037](0037-chip1-live-swap.md) is Accepted **and** the swap PR re-proves
+packaged T-NFR hid. ADR 0037 is Accepted; the dependency lift is still the
+[#24](https://github.com/mahboobmonnamd/RILL/issues/24) swap PR only.
 
 Land the crate on `main` often so it does not rot. That is not a live swap.
 

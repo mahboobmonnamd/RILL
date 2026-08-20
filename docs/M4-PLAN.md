@@ -217,17 +217,18 @@ of:
 3. **T-CHIP1-LOOK-ANSI Proven**, and packaged T-LOOK-ANSI / T-LOOK-CELL /
    T-SPLIT-LOOK still green after the swap
    ([#272](https://github.com/mahboobmonnamd/RILL/issues/272)).
-4. **T-CHIP0-C1-PAINT** on macOS with Zig, confirming ADR 0020 D3's inference
-   that libghostty-vt paints rather than executes decoded C1 scalars
-   ([#304](https://github.com/mahboobmonnamd/RILL/issues/304)). Not `fast.yml`.
-5. An Accepted live-swap ADR saying how the host drains `take_replies` onto
-   ordinary `DATA` frames, and packaged T-NFR hid re-proven on battery without
-   recutting the instrument.
-6. A channel for terminal **mode state** (DECCKM, DECKPAM, bracketed paste,
-   mouse modes) to reach the host key/mouse encoder. Chip 1 tracks those modes
-   ([ADR 0036](adr/0036-chip1-mode-state-channel.md) Accepted, T-CHIP1-MODE);
-   the host encodes keys and mouse. The live-swap ADR MUST name this channel
-   and MUST NOT start host wiring before T-CHIP1-MODE is Proven.
+4. **T-CHIP0-C1-PAINT** on macOS with Zig — **Proven**
+   ([#304](https://github.com/mahboobmonnamd/RILL/issues/304),
+   [#308](https://github.com/mahboobmonnamd/RILL/pull/308)). libghostty-vt paints
+   decoded C1; no divergence register entry. Not `fast.yml`.
+5. An Accepted live-swap ADR — **[ADR 0037](adr/0037-chip1-live-swap.md)
+   Accepted**. Implementation ([#24](https://github.com/mahboobmonnamd/RILL/issues/24))
+   still requires spec → named tests → swap PR and packaged T-NFR hid re-proven
+   on battery without recutting the instrument.
+6. A channel for terminal **mode state** — **Proven** in the isolated crate
+   ([ADR 0036](adr/0036-chip1-mode-state-channel.md), T-CHIP1-MODE [#307](https://github.com/mahboobmonnamd/RILL/pull/307)).
+   [ADR 0037](adr/0037-chip1-live-swap.md) D5 names host wiring at swap time;
+   host encoding MUST NOT land before the swap spec and tests exist.
 
 ## Risks
 
