@@ -75,7 +75,9 @@ pub trait TerminalEmulation {
   ([ADR 0022](../adr/0022-chip1-reply-channel.md),
   [SPEC-VT-REPLY](SPEC-VT-REPLY.md)) and `set_palette`
   ([ADR 0021](../adr/0021-chip1-colour-identity.md),
-  [SPEC-VT-COLOR](SPEC-VT-COLOR.md)). The **trait** is unchanged, so Chip 0 is
+  [SPEC-VT-COLOR](SPEC-VT-COLOR.md)), and `mode_state`
+  ([ADR 0036](../adr/0036-chip1-mode-state-channel.md),
+  [SPEC-VT-MODE](SPEC-VT-MODE.md)). The **trait** is unchanged, so Chip 0 is
   untouched and ADR 0012 D2 still holds.
 - `snapshot_damaged` is [#18](https://github.com/mahboobmonnamd/RILL/issues/18),
   not this spec.
