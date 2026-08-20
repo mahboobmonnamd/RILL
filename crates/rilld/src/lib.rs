@@ -3,7 +3,6 @@
 mod error;
 
 use rill_attach::{cold_identity_socket_path, Decoder, Frame, PROTOCOL_VERSION};
-use vt_engine::VtEngine;
 use rill_kernel::{Kernel, Session, SessionId, Winsize};
 use std::collections::VecDeque;
 use std::fs::File;
@@ -13,6 +12,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use vt_engine::VtEngine;
 
 pub use error::Error;
 

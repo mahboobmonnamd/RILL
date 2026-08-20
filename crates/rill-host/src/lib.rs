@@ -242,9 +242,7 @@ impl Client {
         if self.cached.is_none() {
             self.cached = Some(self.chip.snapshot()?);
         }
-        self.cached
-            .as_ref()
-            .ok_or(VtError::Vt("snapshot cache"))
+        self.cached.as_ref().ok_or(VtError::Vt("snapshot cache"))
     }
 
     pub fn mode_state(&self) -> TerminalModeState {

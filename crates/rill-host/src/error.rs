@@ -1,5 +1,5 @@
-use std::fmt;
 use rill_vt_types::Error as VtError;
+use std::fmt;
 
 #[derive(Debug)]
 pub enum Error {

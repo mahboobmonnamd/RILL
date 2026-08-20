@@ -44,6 +44,11 @@ jobs:
       - name: Build libghostty-vt at the pin
         run: sh scripts/fetch-libghostty-vt.sh
 
+      - name: Warm rill-chip0 for offline gates
+        # package-macos.sh no longer builds Chip 0 (live path is vt-engine).
+        # validate-spike0.sh uses --offline for T-BYTES / T-LOOK / T-CHIP0-C1.
+        run: cargo test -p rill-chip0 --no-run
+
       - name: Package Rill.app
         run: sh scripts/package-macos.sh
 

@@ -7,7 +7,6 @@
 
 use rill_attach::{Decoder, Frame};
 use rill_vt_types::TerminalEmulation;
-use vt_engine::VtEngine;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
@@ -15,6 +14,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
+use vt_engine::VtEngine;
 
 fn unique_sock() -> PathBuf {
     let n = std::time::SystemTime::now()

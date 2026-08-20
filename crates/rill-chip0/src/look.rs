@@ -126,7 +126,8 @@ mod tests {
         surface.colors = Some(colors);
         apply_theme(&mut grid, &surface);
         assert_eq!(
-            grid.cell(0, 0).expect("cell").bg, expected,
+            grid.cell(0, 0).expect("cell").bg,
+            expected,
             "empty cell bg must be the theme file background, not Chip0 {before:#08x}"
         );
     }

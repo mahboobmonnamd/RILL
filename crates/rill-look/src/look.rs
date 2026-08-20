@@ -308,10 +308,7 @@ fn look_file_candidates() -> Vec<PathBuf> {
     )
 }
 
-pub fn look_file_candidates_for(
-    home: Option<&Path>,
-    rill_config: Option<String>,
-) -> Vec<PathBuf> {
+pub fn look_file_candidates_for(home: Option<&Path>, rill_config: Option<String>) -> Vec<PathBuf> {
     let mut out = Vec::new();
     if let Some(p) = rill_config {
         out.push(PathBuf::from(p));

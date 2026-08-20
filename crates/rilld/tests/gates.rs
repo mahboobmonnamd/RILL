@@ -6,14 +6,14 @@
 //! close T-KILL, T-SPAWN, or T-NFR — socket-only tests never do (AGENTS.md §8).
 
 use rill_attach::{Decoder, Frame, RefuseReason};
-use rill_vt_types::{PodGrid, TerminalEmulation};
-use vt_engine::VtEngine;
 use rill_kernel::Winsize;
+use rill_vt_types::{PodGrid, TerminalEmulation};
 use rilld::{pump, Daemon};
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
+use vt_engine::VtEngine;
 
 fn temp_sock(tag: &str) -> PathBuf {
     let n = std::time::SystemTime::now()
