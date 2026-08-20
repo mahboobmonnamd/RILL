@@ -198,6 +198,25 @@ jobs:
           }
           red T-CHIP1-MODE ignore_mode_updates t_chip1_mode_tracks_host_encoder_flags
 
+      - name: T-LIVE swap gates (ADR 0037)
+        run: cargo test -p rill-host --test t_live_swap -- --nocapture
+
+      - name: T-LIVE swap negative controls
+        run: |
+          set -eu
+          red() {
+            name="$1"
+            mut="$2"
+            shift 2
+            if RILL_MUTATE="$mut" cargo test -p rill-host --features mutate --test t_live_swap "$@" -- --nocapture; then
+              echo "BROKEN INSTRUMENT: $name stayed green under $mut" >&2
+              exit 1
+            fi
+            echo "ok: $name went red under $mut"
+          }
+          red T-LIVE-MODE skip_mode_poll t_live_swap_mode_state_tracks_decckm
+          red T-LIVE-REPLY skip_reply_drain t_live_swap_outbound_data_includes_dsr
+
       # M1 T-GRAPH (ADR 0014 D1). Mutations must go red (ADR 0002 D3).
       # rilld named-id / flood stay in validate-spike0.sh (Chip 0 toolchain).
       - name: T-GRAPH kernel negative controls

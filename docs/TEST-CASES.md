@@ -1311,6 +1311,36 @@ Authority: [ADR 0036](adr/0036-chip1-mode-state-channel.md),
 
 **Required mutation.** `RILL_MUTATE=ignore_mode_updates` — modes do not change.
 
+### T-LIVE-REPLY — DSR drains onto attach DATA
+
+Authority: [ADR 0037](adr/0037-chip1-live-swap.md) D2,
+[SPEC-VT-LIVE-SWAP](spec/SPEC-VT-LIVE-SWAP.md) §6.
+
+**Oracle.** After `feed` of `CSI 5 ; 3 H` + `CSI 6 n`, `take_replies()` yields
+`CSI 5 ; 3 R`; the attach client sends that as outbound `DATA`.
+
+**Required mutation.** `RILL_MUTATE=skip_reply_drain`.
+
+### T-LIVE-MODE — host reads `mode_state()` after feed
+
+Authority: [ADR 0037](adr/0037-chip1-live-swap.md) D5,
+[SPEC-VT-LIVE-SWAP](spec/SPEC-VT-LIVE-SWAP.md) §6.
+
+**Oracle.** After `CSI ? 1 h`, `Client::mode_state().application_cursor_keys`
+is true (`t_live_swap_mode_state_tracks_decckm`).
+
+**Required mutation.** `RILL_MUTATE=skip_mode_poll`.
+
+### T-LIVE-WIDE — presenter skips wide-tail cells
+
+Authority: [ADR 0037](adr/0037-chip1-live-swap.md) D6,
+[SPEC-VT-LIVE-SWAP](spec/SPEC-VT-LIVE-SWAP.md) §4.
+
+**Oracle.** Wide CJK: one glyph instance on the lead column; tail skipped
+(`TerminalView.m`, `attrs` bit4).
+
+**Required mutation.** `RILL_MUTATE=draw_wide_tail` (packaged when wired).
+
 ### T-CHIP1-DIFF — an independent parser agrees over the corpus
 
 Authority: [ADR 0020](adr/0020-chip1-parser-in-tree.md) D2,

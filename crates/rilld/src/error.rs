@@ -1,11 +1,12 @@
 use std::fmt;
+use rill_vt_types::Error as VtError;
 
 #[derive(Debug)]
 pub enum Error {
     Io(std::io::Error),
     Kernel(rill_kernel::Error),
     Attach(rill_attach::Error),
-    Chip(rill_chip0::Error),
+    Chip(VtError),
     AlreadyRunning,
     NestedLaunch,
 }
@@ -30,8 +31,7 @@ impl std::error::Error for Error {
             Self::Kernel(e) => Some(e),
             Self::Attach(e) => Some(e),
             Self::Chip(e) => Some(e),
-            Self::AlreadyRunning => None,
-            Self::NestedLaunch => None,
+            Self::AlreadyRunning | Self::NestedLaunch => None,
         }
     }
 }
@@ -54,8 +54,8 @@ impl From<rill_attach::Error> for Error {
     }
 }
 
-impl From<rill_chip0::Error> for Error {
-    fn from(value: rill_chip0::Error) -> Self {
+impl From<VtError> for Error {
+    fn from(value: VtError) -> Self {
         Self::Chip(value)
     }
 }

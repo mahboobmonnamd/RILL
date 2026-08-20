@@ -6,7 +6,8 @@
 //! close T-KILL, T-SPAWN, or T-NFR — socket-only tests never do (AGENTS.md §8).
 
 use rill_attach::{Decoder, Frame, RefuseReason};
-use rill_chip0::{Chip0, PodGrid, TerminalEmulation};
+use rill_vt_types::{PodGrid, TerminalEmulation};
+use vt_engine::VtEngine;
 use rill_kernel::Winsize;
 use rilld::{pump, Daemon};
 use std::io::{Read, Write};
@@ -52,7 +53,7 @@ fn grid_from(frames: &[Frame]) -> PodGrid {
             bytes.extend_from_slice(b);
         }
     }
-    let mut chip = Chip0::new(80, 24).expect("chip");
+    let mut chip = VtEngine::new(80, 24).expect("chip");
     chip.feed(&bytes).expect("feed");
     chip.snapshot().expect("snapshot")
 }

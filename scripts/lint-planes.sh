@@ -277,8 +277,8 @@ if [ -n "$hits" ]; then
   fi
 fi
 
-# --- no-host-dep-on-vt-engine -----------------------------------------------
-# ADR 0012 D1, SPEC-VT-CONFORMANCE §5. Isolation until M7.
+# --- no-chip0-on-warm-path (ADR 0037 D7) ------------------------------------
+# After M7 live swap, rill-host and rilld use vt-engine, not rill-chip0.
 hits="$(python3 - <<'PY'
 import re
 for path in (
@@ -290,12 +290,12 @@ for path in (
     except OSError:
         continue
     src = re.sub(r"#.*$", "", src, flags=re.M)
-    if re.search(r'(?m)^vt-engine(?:\.workspace|\s*=)', src):
-        print(f"{path}: depends on vt-engine")
+    if re.search(r'(?m)^rill-chip0(?:\.workspace|\s*=)', src):
+        print(f"{path}: depends on rill-chip0")
 PY
 )"
 if [ -n "$hits" ]; then
-  fail no-host-dep-on-vt-engine "rill-host / rilld must not depend on vt-engine until M7"
+  fail no-chip0-on-warm-path "rill-host / rilld must not depend on rill-chip0 after M7 swap"
   printf '%s\n' "$hits" | sed 's/^/    /' >&2
 fi
 

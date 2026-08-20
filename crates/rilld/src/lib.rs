@@ -3,7 +3,7 @@
 mod error;
 
 use rill_attach::{cold_identity_socket_path, Decoder, Frame, PROTOCOL_VERSION};
-use rill_chip0::Chip0;
+use vt_engine::VtEngine;
 use rill_kernel::{Kernel, Session, SessionId, Winsize};
 use std::collections::VecDeque;
 use std::fs::File;
@@ -27,7 +27,7 @@ pub struct Daemon {
     /// One connection per attach claim. A second connection MAY attach a
     /// different id (ADR 0011 D3). FR-ONE is per leaf, not per daemon.
     clients: Vec<Client>,
-    chip: Chip0,
+    chip: VtEngine,
 }
 
 struct Client {
@@ -118,7 +118,7 @@ impl Daemon {
                 std::fs::write(path, format!("{pid}\n"))?;
             }
         }
-        let chip = Chip0::new(size.cols, size.rows)?;
+        let chip = VtEngine::new(size.cols, size.rows)?;
         Ok(Self {
             listener,
             socket_path,

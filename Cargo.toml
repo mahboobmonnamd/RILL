@@ -4,6 +4,7 @@ members = [
     "crates/rill-attach",
     "crates/rill-kernel",
     "crates/rill-chip0",
+    "crates/rill-look",
     "crates/rilld",
     "crates/rill-host",
     "crates/rill-orchestrate",
@@ -21,7 +22,9 @@ rust-version = "1.85"
 rill-attach = { path = "crates/rill-attach" }
 rill-kernel = { path = "crates/rill-kernel" }
 rill-chip0 = { path = "crates/rill-chip0" }
+rill-look = { path = "crates/rill-look" }
 rill-vt-types = { path = "crates/rill-vt-types" }
+vt-engine = { path = "crates/vt-engine" }
 libc = "0.2"
 toml = "0.8"
 serde = { version = "1", features = ["derive"] }

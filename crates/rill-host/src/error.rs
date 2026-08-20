@@ -1,10 +1,11 @@
 use std::fmt;
+use rill_vt_types::Error as VtError;
 
 #[derive(Debug)]
 pub enum Error {
     Io(std::io::Error),
     Attach(rill_attach::Error),
-    Chip(rill_chip0::Error),
+    Chip(VtError),
     Dead,
     Refused,
     InvalidHostIdentity,
@@ -46,8 +47,8 @@ impl From<rill_attach::Error> for Error {
     }
 }
 
-impl From<rill_chip0::Error> for Error {
-    fn from(value: rill_chip0::Error) -> Self {
+impl From<VtError> for Error {
+    fn from(value: VtError) -> Self {
         Self::Chip(value)
     }
 }

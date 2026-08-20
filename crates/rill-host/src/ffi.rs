@@ -5,7 +5,7 @@
 //! oracle primitives — cursor cell, cell contents, warm-path frame accounting.
 
 use crate::{load_surface, Client};
-use rill_chip0::PodCell;
+use rill_vt_types::PodCell;
 use std::ffi::{c_char, CStr, CString};
 use std::ptr;
 use std::sync::Mutex;
@@ -262,7 +262,7 @@ pub unsafe extern "C" fn rill_client_background_rgba(client: *const Client) -> u
 
 #[no_mangle]
 pub extern "C" fn rill_chrome_surface_rgba(background: u32) -> u32 {
-    rill_chip0::chrome_surface_rgba(background)
+    rill_look::chrome_surface_rgba(background)
 }
 
 /// # Safety

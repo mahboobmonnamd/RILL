@@ -138,7 +138,7 @@ the gate red, fail closed before bumping the pin (ADR 0002 D7).
 | `no-vte-at-runtime` | `vte` MUST NOT appear outside `[dev-dependencies]` |
 | `no-unicode-width-at-runtime` | `unicode-width` MUST NOT appear outside `[dev-dependencies]` (ADR 0035 D3) |
 | `no-theme-rgb-in-rust` | No theme's hex values in `vt-engine` / `rill-vt-types`, including test constants (ADR 0021 D3). Derivation and exemption below. |
-| `no-host-dep-on-vt-engine` | `rill-host` / `rilld` MUST NOT depend on `vt-engine` until M7 (ADR 0012 D1) |
+| `no-chip0-on-warm-path` | `rill-host` / `rilld` MUST NOT depend on `rill-chip0` after M7 ([ADR 0037](../adr/0037-chip1-live-swap.md) D7) |
 | `generated-east-asian-width` | `scripts/gen-east-asian-width.py --check` MUST match `crates/vt-engine/src/east_asian_width.rs`; Python `unicodedata.unidata_version` MUST equal `third_party/unicode.pin`. Mismatch or a skip is a failure (ADR 0035 D2, ADR 0002 D5). |
 
 The last two are new. `no-host-dep-on-vt-engine` is the executable form of the

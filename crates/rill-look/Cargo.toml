@@ -1,0 +1,14 @@
+[package]
+name = "rill-look"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Ghostty-grammar look files and host surface config (lane:host)"
+
+[features]
+mutate = []
+
+[dependencies]
+rill-vt-types.workspace = true
+serde.workspace = true
+toml.workspace = true

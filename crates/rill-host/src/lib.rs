@@ -1,23 +1,15 @@
 //! GUI attach client. Does not spawn the user shell. Does not own a PTY.
 //!
-//! SPEC-DISPLAY §3, SPEC-ATTACH §5, §8.
-//!
-//! The T-NFR *measurement* is not here. It cannot be: the segment being timed
-//! starts at an `NSEvent` and ends at a `CAMetalDrawable` presentation
-//! (ADR 0003 D5), neither of which exists in Rust. This module exposes the
-//! oracle primitives the host needs — cursor cell, cell contents, warm-path
-//! frame accounting — and the host does the timing. The old `nfr_key` here
-//! measured to a POD snapshot and never left the client, which is why it
-//! reported 32 microseconds (docs/SPIKE-0-AUDIT.md S1-2).
+//! SPEC-DISPLAY §3, SPEC-ATTACH §5, §8, SPEC-VT-LIVE-SWAP §2.
 
 use rill_attach::{cold_identity_socket_path, Decoder, Frame};
-use rill_chip0::{
-    apply_theme, load_resolved_surface, Chip0, HostSurface, PodGrid, TerminalEmulation,
-};
+use rill_look::{load_resolved_surface, palette_from_theme, HostSurface};
+use rill_vt_types::{Error as VtError, PodGrid, TerminalEmulation, TerminalModeState};
 use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
+use vt_engine::VtEngine;
 
 mod error;
 pub use error::Error;
@@ -29,11 +21,13 @@ const CREDIT_WINDOW: u32 = 256 * 1024;
 pub struct Client {
     stream: UnixStream,
     decoder: Decoder,
-    chip: Chip0,
+    chip: VtEngine,
     surface: HostSurface,
     host_identity: String,
     alive: bool,
     exit_status: Option<i32>,
+    /// Host encoder flags polled after each feed (ADR 0036, SPEC-VT-LIVE-SWAP §2).
+    modes: TerminalModeState,
     /// Bytes written but not yet accepted by the socket. Keeps `send` from
     /// blocking the UI thread (audit S3-8d).
     outbox: VecDeque<u8>,
@@ -54,9 +48,9 @@ impl Client {
         let host_identity = cold_host_identity(socket.as_ref())?;
         let stream = UnixStream::connect(socket.as_ref())?;
         stream.set_nonblocking(true)?;
-        let mut chip = Chip0::new(surface.cols, surface.rows)?;
+        let mut chip = VtEngine::new(surface.cols, surface.rows)?;
         if let Some(ref colors) = surface.colors {
-            chip.apply_look(colors)?;
+            chip.set_palette(palette_from_theme(colors))?;
         }
         let mut client = Self {
             stream,
@@ -66,6 +60,7 @@ impl Client {
             host_identity,
             alive: true,
             exit_status: None,
+            modes: TerminalModeState::fresh(),
             outbox: VecDeque::new(),
             outstanding_credit: 0,
             warm_path_violations: 0,
@@ -203,7 +198,7 @@ impl Client {
                             Frame::Data(bytes) => {
                                 fed += bytes.len();
                                 self.chip.feed(&bytes)?;
-                                self.cached = None;
+                                self.after_feed()?;
                             }
                             Frame::Exit { status } => {
                                 self.alive = false;
@@ -243,15 +238,54 @@ impl Client {
         self.send(Frame::Credit(n))
     }
 
-    pub fn snapshot(&mut self) -> Result<&PodGrid, rill_chip0::Error> {
+    pub fn snapshot(&mut self) -> Result<&PodGrid, VtError> {
         if self.cached.is_none() {
-            let mut grid = self.chip.snapshot()?;
-            apply_theme(&mut grid, &self.surface);
-            self.cached = Some(grid);
+            self.cached = Some(self.chip.snapshot()?);
         }
         self.cached
             .as_ref()
-            .ok_or(rill_chip0::Error::Vt("snapshot cache"))
+            .ok_or(VtError::Vt("snapshot cache"))
+    }
+
+    pub fn mode_state(&self) -> TerminalModeState {
+        self.modes
+    }
+
+    fn after_feed(&mut self) -> Result<(), Error> {
+        self.drain_replies()?;
+        if !Self::skip_mode_poll() {
+            self.modes = self.chip.mode_state();
+        }
+        self.cached = None;
+        Ok(())
+    }
+
+    fn drain_replies(&mut self) -> Result<(), Error> {
+        if Self::skip_reply_drain() {
+            loop {
+                let reply = self.chip.take_replies()?;
+                if reply.is_empty() {
+                    break;
+                }
+            }
+            return Ok(());
+        }
+        loop {
+            let reply = self.chip.take_replies()?;
+            if reply.is_empty() {
+                break;
+            }
+            self.send(Frame::Data(reply))?;
+        }
+        Ok(())
+    }
+
+    fn skip_reply_drain() -> bool {
+        skip_reply_drain_mutate()
+    }
+
+    fn skip_mode_poll() -> bool {
+        skip_mode_poll_mutate()
     }
 
     pub fn cell_codepoint(&mut self, col: u16, row: u16) -> u32 {
@@ -261,7 +295,7 @@ impl Client {
             .unwrap_or(0)
     }
 
-    pub fn cursor_cell(&mut self) -> Result<(u16, u16), rill_chip0::Error> {
+    pub fn cursor_cell(&mut self) -> Result<(u16, u16), VtError> {
         let g = self.snapshot()?;
         Ok((g.cursor_col, g.cursor_row))
     }
@@ -318,7 +352,7 @@ fn cold_host_identity(attach_socket: &Path) -> Result<String, Error> {
     }
 }
 
-pub fn load_surface() -> Result<HostSurface, rill_chip0::Error> {
+pub fn load_surface() -> Result<HostSurface, VtError> {
     let mut paths = vec![PathBuf::from("host-surface.toml")];
     if let Ok(configured) = std::env::var("RILL_HOST_SURFACE") {
         if !configured.is_empty() {
@@ -355,6 +389,26 @@ pub fn percentile(sorted: &[f64], q: f64) -> f64 {
         let frac = rank - lo as f64;
         sorted[lo] * (1.0 - frac) + sorted[hi] * frac
     }
+}
+
+#[doc(hidden)]
+pub fn skip_reply_drain_mutate() -> bool {
+    #[cfg(feature = "mutate")]
+    {
+        return std::env::var("RILL_MUTATE").as_deref() == Ok("skip_reply_drain");
+    }
+    #[cfg(not(feature = "mutate"))]
+    false
+}
+
+#[doc(hidden)]
+pub fn skip_mode_poll_mutate() -> bool {
+    #[cfg(feature = "mutate")]
+    {
+        return std::env::var("RILL_MUTATE").as_deref() == Ok("skip_mode_poll");
+    }
+    #[cfg(not(feature = "mutate"))]
+    false
 }
 
 mod ffi;

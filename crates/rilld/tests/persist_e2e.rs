@@ -6,7 +6,8 @@
 //! `POSIX_SPAWN_SETSID` in `main.m`. Socket-only tests do not close T-KILL.
 
 use rill_attach::{Decoder, Frame};
-use rill_chip0::{Chip0, TerminalEmulation};
+use rill_vt_types::TerminalEmulation;
+use vt_engine::VtEngine;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
@@ -180,7 +181,7 @@ fn t_kill_gui_process_group_child_pid_survives_and_reattach_shows_prior_output()
             Err(_) => thread::sleep(Duration::from_millis(10)),
         }
     }
-    let mut chip = Chip0::new(80, 24).expect("chip");
+    let mut chip = VtEngine::new(80, 24).expect("chip");
     chip.feed(&raw).ok();
     let text: String = chip
         .snapshot()

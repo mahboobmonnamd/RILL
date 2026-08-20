@@ -813,6 +813,9 @@ static unsigned rill_view_bg_rgb(NSView *v) {
                 continue;
             }
             RillPodCell cell = grid.cells[i];
+            if (cell.attrs & (1u << 4)) {
+                continue;
+            }
             BOOL bold = (cell.attrs & 1u) != 0;
             BOOL inverse = (cell.attrs & 4u) != 0;
 

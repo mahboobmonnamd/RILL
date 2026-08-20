@@ -209,13 +209,12 @@ corpus and table are [SPEC-VT-CONFORMANCE](SPEC-VT-CONFORMANCE.md) §2–§3.
 `fast.yml` MUST `clippy` and `test` `-p rill-vt-types -p vt-engine` on Linux,
 and MUST run the `vte` differential there. It MUST NOT gain `rill-chip0`.
 `lint-planes.sh` MUST cover Chip 1 snapshot types and unwraps, plus
-`no-vte-at-runtime`, `no-theme-rgb-in-rust` and `no-host-dep-on-vt-engine`
+`no-vte-at-runtime`, `no-theme-rgb-in-rust` and `no-chip0-on-warm-path`
 ([SPEC-VT-CONFORMANCE](SPEC-VT-CONFORMANCE.md) §5–§6).
 
 ## 6. Out of scope (isolated crate)
 
-Live swap **wiring** ([#24](https://github.com/mahboobmonnamd/RILL/issues/24)) —
-[ADR 0037](../adr/0037-chip1-live-swap.md) is Accepted; host/`rilld` dependency
-lifts only in the swap PR after spec and named tests. Blocks, live TUI-in-block,
-cwd tap (M6). Chrome, conversations, Metal, fonts. Changing the Ghostty pin. A
-second VT in `rilld`.
+Live swap **wiring** is [SPEC-VT-LIVE-SWAP](spec/SPEC-VT-LIVE-SWAP.md)
+([#24](https://github.com/mahboobmonnamd/RILL/issues/24)). Blocks, live
+TUI-in-block, cwd tap (M6). Chrome, conversations, Metal, fonts. Changing the
+Ghostty pin. A second VT in `rilld`.
