@@ -1,11 +1,13 @@
 //! Chip 1 isolated VT engine. Bytes in, POD snapshots out.
 //!
 //! Not the live chip ([ADR 0012] D1). Parser is in-tree ([ADR 0020] D1);
-//! `vte` must not appear in `[dependencies]`. Cites S-VT #21.
+//! `vte` and `unicode-width` must not appear in `[dependencies]`. Cites S-VT #21
+//! and SPIKE-WIDTH / ADR 0035.
 
 #![forbid(unsafe_code)]
 
 mod color;
+mod east_asian_width;
 mod parser;
 mod screen;
 

@@ -106,9 +106,11 @@ mutation and is forbidden.
 | # | Divergence | Reason |
 |---|---|---|
 | 1 | `vte` dispatches `0x80..=0x9f` to `execute()` as an 8-bit control; we produce one U+FFFD for an invalid byte and paint a decoded U+0080..=U+009F scalar | ADR 0020 D3. v0 is a UTF-8 stream with no 8-bit introducers. `vte`'s behaviour makes T-CHIP1-BYTES fail and its mutation blind on three fixtures. |
+| 2 | Devanagari `क्ष` (KA + virama + SSA) MAY occupy 1+1 columns, not 2 | Named miss: not full UAX #29 / Indic conjuncts ([ADR 0035](../adr/0035-chip1-character-width.md) D1). `unicode-width` reports 2; Chip 1 applies East Asian Width to the opening scalar of each cluster. |
 
 The differential harness MUST apply divergence 1 as an explicit remap when
 comparing, rather than silently excluding the fixtures that expose it.
+Divergence 2 is a named miss, not a remap; `क्ष` is not in the corpus.
 
 ### Chip 0 differential
 
@@ -131,8 +133,10 @@ MUST be confirmed before M7.
 | `no-unwrap` | No `unwrap` / `expect` on reachable library paths in either crate |
 | `no-ghostty-in-domain` | Already scans all crates; `ghostty_` MUST NOT appear in Chip 1 |
 | `no-vte-at-runtime` | `vte` MUST NOT appear outside `[dev-dependencies]` |
+| `no-unicode-width-at-runtime` | `unicode-width` MUST NOT appear outside `[dev-dependencies]` (ADR 0035 D3) |
 | `no-theme-rgb-in-rust` | No theme's hex values in `vt-engine` / `rill-vt-types`, including test constants (ADR 0021 D3). Derivation and exemption below. |
 | `no-host-dep-on-vt-engine` | `rill-host` / `rilld` MUST NOT depend on `vt-engine` until M7 (ADR 0012 D1) |
+| `generated-east-asian-width` | `scripts/gen-east-asian-width.py --check` MUST match `crates/vt-engine/src/east_asian_width.rs`; Python `unicodedata.unidata_version` MUST equal `third_party/unicode.pin`. Mismatch or a skip is a failure (ADR 0035 D2, ADR 0002 D5). |
 
 The last two are new. `no-host-dep-on-vt-engine` is the executable form of the
 isolation promise: an accidental dependency is exactly the mistake ADR 0012 D1
@@ -161,7 +165,7 @@ theme-file value is still a hit, even if it collides with a default slot.
   `empty_resync`, `sgr_rgb_at_parse`,
   `skip_file_palette`, `eager_wrap`, `ignore_decstbm`, `always_full_damage`,
   `no_reply`, `unbounded_replies`, `unbounded_osc`, `single_buffer`,
-  `fixed_grapheme_buf`, `wide_advances_two`.
+  `fixed_grapheme_buf`, `narrow_cjk`, `orphan_wide_tail`, `emit_wide_tails`.
 - A gate that has never run in CI is not evidence, whatever a laptop printed
   (ADR 0002 D8). The S-VT numbers in [SPIKE-VT](../SPIKE-VT.md) are research and
   MUST NOT be cited as gate evidence.
@@ -179,5 +183,5 @@ panic, no allocation growth attributable to `feed`, `cells.len()` stays
 ## 8. Out of scope
 
 Packaged gates, T-NFR, the live swap (M7), Chip 0's own gates, host chrome
-gates, width gates beyond the deferral marker
-([ADR 0023](../adr/0023-chip1-v0-defers-character-width.md) D3).
+gates. Width is specified in [SPEC-VT-SCREEN](SPEC-VT-SCREEN.md) §9
+([ADR 0035](../adr/0035-chip1-character-width.md)).

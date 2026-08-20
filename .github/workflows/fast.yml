@@ -147,7 +147,8 @@ jobs:
             echo "ok: $name went red under $mut"
           }
           red T-CHIP1-GRAPHEME fixed_grapheme_buf t_chip1_grapheme_long_cluster_does_not_overrun
-          red T-CHIP1-WIDTH-DEFERRED wide_advances_two t_chip1_width_deferred_one_column_per_scalar
+          red T-CHIP1-WIDTH narrow_cjk t_chip1_width_nihon_x_advances_five_columns
+          red T-CHIP1-WIDTH-SMASH orphan_wide_tail t_chip1_width_ech_of_wide_lead_clears_both_halves
 
       - name: T-CHIP1 slice 8 negative controls
         run: |
@@ -180,6 +181,7 @@ jobs:
             echo "ok: $name went red under $mut"
           }
           red T-CHIP1-RESYNC empty_resync t_chip1_resync_emit_bytes_reconstruct_the_grid
+          red T-CHIP1-RESYNC emit_wide_tails t_chip1_resync_wide_cjk_does_not_double
 
       # M1 T-GRAPH (ADR 0014 D1). Mutations must go red (ADR 0002 D3).
       # rilld named-id / flood stay in validate-spike0.sh (Chip 0 toolchain).

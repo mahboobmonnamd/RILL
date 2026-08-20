@@ -6,8 +6,9 @@
   [0021](../adr/0021-chip1-colour-identity.md),
   [0022](../adr/0022-chip1-reply-channel.md),
   [0023](../adr/0023-chip1-v0-defers-character-width.md) after
-  [S-VT #21](https://github.com/mahboobmonnamd/RILL/issues/21) closed. Named
-  tests are **Red**.
+  [S-VT #21](https://github.com/mahboobmonnamd/RILL/issues/21) closed.
+  **Amended 2026-08-19** by [ADR 0035](../adr/0035-chip1-character-width.md)
+  (width; amends 0023 D1/D3/D4/D5). Named tests are **Red**.
 - **Authority:** [ADR 0001](../adr/0001-session-operating-system.md) §1,
   [ADR 0012](../adr/0012-chip1-isolated-vt.md)
 - **Issue:** [#6](https://github.com/mahboobmonnamd/RILL/issues/6)
@@ -88,7 +89,7 @@ pub trait TerminalEmulation {
 | `codepoint` | `u32` | Base scalar. Empty cell is space `32`. |
 | `fg` | `u32` | RGBA8888, R in the high byte: `(r<<24)\|(g<<16)\|(b<<8)\|0xff` |
 | `bg` | `u32` | Same |
-| `attrs` | `u16` | bit0 bold, bit1 underline, bit2 inverse |
+| `attrs` | `u16` | bit0 bold, bit1 underline, bit2 inverse, bit3 wide-lead, bit4 wide-tail |
 | `_pad` | `u16` | zero |
 
 **Superseded — the colour ADR now exists.** The v0 default is still fg
@@ -107,17 +108,22 @@ Normative: [ADR 0021](../adr/0021-chip1-colour-identity.md),
 T-CHIP1-LOOK-ANSI is now specified (SPEC-VT-COLOR §6). Compositor opacity and
 blur remain out (ADR 0021 D5).
 
-Italic, strikethrough, wide-lead/tail exist on the presenter (ADR 0003 D1) but
-**not** on Chip 0 `attrs` today. v0 MUST NOT add extra attr bits without an ADR.
+Italic and strikethrough exist on the presenter (ADR 0003 D1) but **not** on
+Chip 0 `attrs` today. Wide-lead/tail bits 3–4 are authorized for Chip 1 by
+[ADR 0035](../adr/0035-chip1-character-width.md) D5; `PodCell` stays 16 bytes.
+Adding further bits needs an ADR.
 
 `RILL_GRAPHEME_MAX` is 32. Longer clusters: render the base codepoint, increment
 `grapheme_truncated`, never silent drop, never a fixed stack buffer of 8.
 
-**Character width is deferred in v0.** Every printable scalar advances exactly
-one column, so CJK and emoji render narrow and misaligned. That is a named miss
-and a **precondition of M7**, not a defect to file later:
-[ADR 0023](../adr/0023-chip1-v0-defers-character-width.md),
-[SPEC-VT-SCREEN](SPEC-VT-SCREEN.md) §9.
+**Character width.** Cluster, then width: East Asian Width W/F → 2 columns,
+Ambiguous → 1. Generated in-tree table; `unicode-width` is a
+`[dev-dependencies]` secondary oracle only. T-CHIP1-WIDTH (`日本X` →
+`cursor_col == 5`) replaces T-CHIP1-WIDTH-DEFERRED. M7 must still cite
+T-CHIP1-WIDTH as Proven before a live swap
+([ADR 0035](../adr/0035-chip1-character-width.md),
+[SPEC-VT-SCREEN](SPEC-VT-SCREEN.md) §9). This spec does **not** link Chip 1
+as the live chip.
 
 ### PodGrid
 

@@ -4,7 +4,7 @@
 //! not the `\x1b[2J\x1b[H` prefix the emit path prepends (ADR 0002 D4). Chip 0
 //! stays live.
 
-use rill_vt_types::{PodGrid, TerminalEmulation};
+use rill_vt_types::{PodGrid, TerminalEmulation, ATTR_WIDE_LEAD, ATTR_WIDE_TAIL};
 use vt_engine::VtEngine;
 
 fn engine() -> VtEngine {
@@ -68,4 +68,27 @@ fn t_chip1_resync_discards_replies_from_history() {
         replay.take_replies().expect("take").is_empty(),
         "resync emit must not include DA/DSR answers"
     );
+}
+
+/// T-CHIP1-RESYNC — wide tails are not emitted, so replay does not double-width.
+///
+/// Required mutation: `RILL_MUTATE=emit_wide_tails`.
+#[test]
+fn t_chip1_resync_wide_cjk_does_not_double() {
+    let mut source = engine();
+    source.feed("日本X".as_bytes()).expect("feed CJK");
+    let before = source.snapshot().expect("before");
+    assert_eq!(before.cursor_col, 5, "source layout is T-CHIP1-WIDTH");
+
+    let emit = source.repaint_bytes().expect("repaint");
+    let mut replay = engine();
+    replay.feed(&emit).expect("replay emit");
+    let after = replay.snapshot().expect("after");
+    assert_eq!(
+        after.cursor_col, 5,
+        "skipping tails on emit must re-expand to 5, not 7"
+    );
+    assert_ne!(after.cell(0, 0).expect("lead").attrs & ATTR_WIDE_LEAD, 0);
+    assert_ne!(after.cell(1, 0).expect("tail").attrs & ATTR_WIDE_TAIL, 0);
+    assert_eq!(after.cell(4, 0).expect("X").codepoint, u32::from(b'X'));
 }

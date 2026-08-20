@@ -9,9 +9,10 @@ are the files in `docs/`. Spike 0 is Proven
 [M4-PLAN](M4-PLAN.md), [#6](https://github.com/mahboobmonnamd/RILL/issues/6));
 its parser, colour, reply and width decisions are ADRs
 [0020](adr/0020-chip1-parser-in-tree.md)–[0023](adr/0023-chip1-v0-defers-character-width.md)
-after [SPIKE-VT](SPIKE-VT.md). Merge of chrome must
+after [SPIKE-VT](SPIKE-VT.md), width source [ADR 0035](adr/0035-chip1-character-width.md)
+after [SPIKE-WIDTH](SPIKE-WIDTH.md). Merge of chrome must
 not hide a later NFR miss. Chrome is M2. Chip 1 is not the live chip until M7,
-and width (ADR 0023 D4) is one of M7's preconditions.
+and width (ADR 0035 D7) is one of M7's preconditions.
 
 Lanes are named after the plane they own. The GitHub label is the first column.
 

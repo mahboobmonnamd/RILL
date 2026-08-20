@@ -70,7 +70,7 @@ Installs or checks Rust (`rustc` ≥ 1.85), Zig (≥ 0.16, for Chip 0 / `libghos
 10. [ADR 0011](docs/adr/0011-session-graph.md) / [ADR 0014](docs/adr/0014-m1-first-slice-closes.md) / [ADR 0015](docs/adr/0015-m1-persist-remainder.md) — Milestone 1
 11. [ADR 0018](docs/adr/0018-three-pane-host-chrome.md) — M2 three-pane chrome (one leaf)
 12. [ADR 0012](docs/adr/0012-chip1-isolated-vt.md) / [M4-HANDOFF](docs/M4-HANDOFF.md) — isolated Chip 1 (not live)
-13. [M4-PLAN](docs/M4-PLAN.md) — Chip 1 slice plan. [ADR 0020](docs/adr/0020-chip1-parser-in-tree.md) parser (in-tree; `vte` dev-only), [ADR 0021](docs/adr/0021-chip1-colour-identity.md) colour identity, [ADR 0022](docs/adr/0022-chip1-reply-channel.md) DA/DSR replies, [ADR 0023](docs/adr/0023-chip1-v0-defers-character-width.md) width deferred (blocks M7). Spike: [SPIKE-VT](docs/SPIKE-VT.md)
+13. [M4-PLAN](docs/M4-PLAN.md) — Chip 1 slice plan. [ADR 0020](docs/adr/0020-chip1-parser-in-tree.md) parser (in-tree; `vte` dev-only), [ADR 0021](docs/adr/0021-chip1-colour-identity.md) colour identity, [ADR 0022](docs/adr/0022-chip1-reply-channel.md) DA/DSR replies, [ADR 0023](docs/adr/0023-chip1-v0-defers-character-width.md) width deferred, [ADR 0035](docs/adr/0035-chip1-character-width.md) width (T-CHIP1-WIDTH; blocks M7). Spikes: [SPIKE-VT](docs/SPIKE-VT.md), [SPIKE-WIDTH](docs/SPIKE-WIDTH.md)
 14. [Lanes](docs/LANES.md) — how 3–5 people work in parallel
 15. [CONTRIBUTING](CONTRIBUTING.md) — issues, PRs, TDD
 

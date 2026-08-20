@@ -237,15 +237,15 @@ if [ -f crates/rilld/src/lib.rs ]; then
   fi
 fi
 
-# --- no-vte-at-runtime ------------------------------------------------------
-# ADR 0020 D2, SPEC-VT-CONFORMANCE §5. vte is a test oracle only.
+# --- no-vte-at-runtime / no-unicode-width-at-runtime ------------------------
+# ADR 0020 D2, ADR 0035 D3, SPEC-VT-CONFORMANCE §5. Test oracles only.
 hits="$(python3 - <<'PY'
 import re, subprocess
 files = subprocess.check_output(
     ["git", "ls-files", "**/Cargo.toml"], text=True
 ).splitlines()
 section_re = re.compile(r'^\[([^]]+)\]\s*$')
-dep_re = re.compile(r'^vte(?:\.workspace|\s*=)')
+dep_re = re.compile(r'^(vte|unicode-width)(?:\.workspace|\s*=)')
 for path in files:
     section = None
     for i, raw in enumerate(open(path, encoding="utf-8"), 1):
@@ -256,16 +256,25 @@ for path in files:
             continue
         if not line.strip():
             continue
-        if not dep_re.match(line.strip()):
+        hit = dep_re.match(line.strip())
+        if not hit:
             continue
         if section in ("dev-dependencies", "workspace.dev-dependencies"):
             continue
-        print(f"{path}:{i}: vte under [{section}]")
+        print(f"{path}:{i}: {hit.group(1)} under [{section}]")
 PY
 )"
 if [ -n "$hits" ]; then
-  fail no-vte-at-runtime "vte must live only in [dev-dependencies] (ADR 0020 D2)"
-  printf '%s\n' "$hits" | sed 's/^/    /' >&2
+  vte_hits="$(printf '%s\n' "$hits" | grep ' vte ' || true)"
+  uw_hits="$(printf '%s\n' "$hits" | grep ' unicode-width ' || true)"
+  if [ -n "$vte_hits" ]; then
+    fail no-vte-at-runtime "vte must live only in [dev-dependencies] (ADR 0020 D2)"
+    printf '%s\n' "$vte_hits" | sed 's/^/    /' >&2
+  fi
+  if [ -n "$uw_hits" ]; then
+    fail no-unicode-width-at-runtime "unicode-width must live only in [dev-dependencies] (ADR 0035 D3)"
+    printf '%s\n' "$uw_hits" | sed 's/^/    /' >&2
+  fi
 fi
 
 # --- no-host-dep-on-vt-engine -----------------------------------------------
@@ -373,6 +382,14 @@ PY
 if [ -n "$hits" ]; then
   fail no-theme-rgb-in-rust "theme RGB belongs in the look file, not Rust (ADR 0021 D3)"
   printf '%s\n' "$hits" | sed 's/^/    /' >&2
+fi
+
+# --- generated-east-asian-width ---------------------------------------------
+# ADR 0035 D2. --check uses east_asian_width_sha256 when host unicodedata ≠ pin.
+# Skip is a failure (ADR 0002 D5).
+if ! python3 scripts/gen-east-asian-width.py --check; then
+  fail generated-east-asian-width \
+    "east_asian_width.rs must match the generator; unicodedata must match third_party/unicode.pin (ADR 0035 D2)"
 fi
 
 if [ "$FAILED" -ne 0 ]; then

@@ -10,8 +10,8 @@
 [0020](adr/0020-chip1-parser-in-tree.md) parser and C1 policy,
 [0021](adr/0021-chip1-colour-identity.md) colour identity,
 [0022](adr/0022-chip1-reply-channel.md) DA/DSR replies,
-[0023](adr/0023-chip1-v0-defers-character-width.md) width deferred and M7
-blocked on it — plus six slice specs under
+[0023](adr/0023-chip1-v0-defers-character-width.md) width deferred (amended by
+[0035](adr/0035-chip1-character-width.md)) — plus six slice specs under
 [SPEC-CHIP1](spec/SPEC-CHIP1.md) §0.
 
 Do **not** write `vt-engine` until the T-CHIP1 tests for that slice exist and
@@ -102,7 +102,8 @@ Trait: `feed`, `resize`, `snapshot`. Also `reset` / `repaint_bytes` /
 `take_replies` / `has_replies`.
 
 `PodCell` 16 bytes: codepoint, fg/bg RGBA8888 `(r<<24)|(g<<16)|(b<<8)|0xff`,
-attrs bit0 bold / bit1 underline / bit2 inverse. Grapheme bound 32; truncate to
+attrs bit0 bold / bit1 underline / bit2 inverse / bit3 wide-lead / bit4 wide-tail.
+Grapheme bound 32; truncate to
 base and count.
 
 Colour: cells hold `Default | Indexed(u8) | Rgb` and materialise at `snapshot()`
@@ -113,8 +114,9 @@ against a `Palette` the host loaded from the theme **file**.
 C1: an invalid `0x80..=0x9f` byte is one U+FFFD; a decoded U+0080..=U+009F scalar
 paints; `0x9b` does not open a CSI (ADR 0020 D3).
 
-Width: **one column per scalar in v0.** CJK and emoji misalign. Named miss,
-M7 precondition (ADR 0023).
+Width: **cluster then East Asian Width W/F → 2; Ambiguous → 1** (ADR 0035).
+`PodCell` 16 bytes; attrs bit3 wide-lead, bit4 wide-tail. T-CHIP1-WIDTH
+(`日本X` → column 5) is an M7 precondition. Not live.
 
 v0 sequences: SPEC-CHIP1 §3 as amended, detail in the six slice specs. Not
 sixel/images/full xterm.
