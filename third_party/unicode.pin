@@ -8,3 +8,4 @@
 # scripts/gen-east-asian-width.py refuses to emit if unidata_version mismatches.
 source = python3 unicodedata
 unidata_version = 16.0.0
+east_asian_width_sha256 = b78ba7abfe465c087e6bb2b7d0e3618c33a59a3f323ee6e7576f822be65d1c95

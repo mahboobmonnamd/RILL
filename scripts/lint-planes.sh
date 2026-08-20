@@ -385,8 +385,8 @@ if [ -n "$hits" ]; then
 fi
 
 # --- generated-east-asian-width ---------------------------------------------
-# ADR 0035 D2. Regenerating to a temp via --check; skip is a failure (ADR 0002 D5).
-# Python unicodedata must match third_party/unicode.pin — mismatch fails closed.
+# ADR 0035 D2. --check uses east_asian_width_sha256 when host unicodedata ≠ pin.
+# Skip is a failure (ADR 0002 D5).
 if ! python3 scripts/gen-east-asian-width.py --check; then
   fail generated-east-asian-width \
     "east_asian_width.rs must match the generator; unicodedata must match third_party/unicode.pin (ADR 0035 D2)"

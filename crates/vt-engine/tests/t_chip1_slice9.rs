@@ -88,13 +88,7 @@ fn t_chip1_resync_wide_cjk_does_not_double() {
         after.cursor_col, 5,
         "skipping tails on emit must re-expand to 5, not 7"
     );
-    assert_ne!(
-        after.cell(0, 0).expect("lead").attrs & ATTR_WIDE_LEAD,
-        0
-    );
-    assert_ne!(
-        after.cell(1, 0).expect("tail").attrs & ATTR_WIDE_TAIL,
-        0
-    );
+    assert_ne!(after.cell(0, 0).expect("lead").attrs & ATTR_WIDE_LEAD, 0);
+    assert_ne!(after.cell(1, 0).expect("tail").attrs & ATTR_WIDE_TAIL, 0);
     assert_eq!(after.cell(4, 0).expect("X").codepoint, u32::from(b'X'));
 }

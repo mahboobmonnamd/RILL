@@ -4,11 +4,14 @@
 Humans do not edit crates/vt-engine/src/east_asian_width.rs. Run this script
 and commit the output. The Unicode version must match third_party/unicode.pin.
 
-`--check` generates to memory and exits 1 if the committed file differs, or
-if unicodedata.unidata_version does not match the pin. A skip is a failure.
+`--check` verifies the committed file against the pin. When the host Python's
+unicodedata matches the pin, it also regenerates and compares byte-for-byte.
+When it does not (e.g. ubuntu-latest ships Unicode 15.0.0), the pin's
+east_asian_width_sha256 and the file header must still match — skip is a failure.
 """
 from __future__ import annotations
 
+import hashlib
 import pathlib
 import sys
 import unicodedata
@@ -18,11 +21,42 @@ PIN_PATH = ROOT / "third_party" / "unicode.pin"
 OUT_PATH = ROOT / "crates" / "vt-engine" / "src" / "east_asian_width.rs"
 
 
-def pin_version() -> str:
+def pin_fields() -> dict[str, str]:
+    out: dict[str, str] = {}
     for line in PIN_PATH.read_text(encoding="utf-8").splitlines():
-        if line.startswith("unidata_version"):
-            return line.split("=", 1)[1].strip()
-    raise SystemExit(f"{PIN_PATH}: missing unidata_version")
+        if "=" in line and not line.lstrip().startswith("#"):
+            key, val = line.split("=", 1)
+            out[key.strip()] = val.strip()
+    if "unidata_version" not in out:
+        raise SystemExit(f"{PIN_PATH}: missing unidata_version")
+    return out
+
+
+def write_pin_sha256(digest: str) -> None:
+    lines = PIN_PATH.read_text(encoding="utf-8").splitlines()
+    key = "east_asian_width_sha256"
+    replaced = False
+    out: list[str] = []
+    for line in lines:
+        if line.startswith(f"{key} "):
+            out.append(f"{key} = {digest}")
+            replaced = True
+        else:
+            out.append(line)
+    if not replaced:
+        out.append(f"{key} = {digest}")
+    PIN_PATH.write_text("\n".join(out) + "\n", encoding="utf-8")
+
+
+def file_sha256(path: pathlib.Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def header_version(body: str) -> str | None:
+    for line in body.splitlines()[:4]:
+        if line.startswith("// Unicode ") and " via Python" in line:
+            return line.removeprefix("// Unicode ").split(" via Python", 1)[0].strip()
+    return None
 
 
 def ranges_of(predicate) -> list[tuple[int, int]]:
@@ -105,29 +139,61 @@ pub(crate) fn is_mark(cp: u32) -> bool {{
 """
 
 
-def main() -> int:
-    check = "--check" in sys.argv
-    pin = pin_version()
-    got = unicodedata.unidata_version
-    if got != pin:
+def check_committed(pin: str, expected_sha: str | None) -> int:
+    if not OUT_PATH.is_file():
         print(
-            f"unicodedata.unidata_version is {got}, pin is {pin} "
-            f"({PIN_PATH}). Bump the pin in its own PR or use a Python "
-            "whose UCD matches. Skip is a failure (ADR 0002 D5).",
+            f"missing {OUT_PATH.relative_to(ROOT)} (ADR 0035 D2)",
             file=sys.stderr,
         )
         return 1
+    existing = OUT_PATH.read_text(encoding="utf-8")
+    hdr = header_version(existing)
+    if hdr != pin:
+        print(
+            f"{OUT_PATH.relative_to(ROOT)} header is Unicode {hdr!r}, "
+            f"pin is {pin!r} ({PIN_PATH.relative_to(ROOT)})",
+            file=sys.stderr,
+        )
+        return 1
+    if not expected_sha:
+        print(
+            f"{PIN_PATH.relative_to(ROOT)}: missing east_asian_width_sha256 "
+            "(required when host unicodedata may differ from pin)",
+            file=sys.stderr,
+        )
+        return 1
+    got_sha = file_sha256(OUT_PATH)
+    if got_sha != expected_sha:
+        print(
+            f"{OUT_PATH.relative_to(ROOT)} sha256 is {got_sha}, "
+            f"pin is {expected_sha}. Re-run scripts/gen-east-asian-width.py "
+            "with a matching Python and commit the output + pin.",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
 
-    wide = ranges_of(is_wide)
-    marks = ranges_of(is_mark)
-    body = generated_source(pin, wide, marks)
+
+def main() -> int:
+    check = "--check" in sys.argv
+    fields = pin_fields()
+    pin = fields["unidata_version"]
+    expected_sha = fields.get("east_asian_width_sha256")
+    got_ucd = unicodedata.unidata_version
+
     if check:
-        if not OUT_PATH.is_file():
+        rc = check_committed(pin, expected_sha)
+        if rc != 0:
+            return rc
+        if got_ucd != pin:
             print(
-                f"missing {OUT_PATH.relative_to(ROOT)} (ADR 0035 D2)",
-                file=sys.stderr,
+                f"ok: {OUT_PATH.relative_to(ROOT)} matches pin sha256 "
+                f"(host unicodedata {got_ucd}, pin {pin})"
             )
-            return 1
+            return 0
+        wide = ranges_of(is_wide)
+        marks = ranges_of(is_mark)
+        body = generated_source(pin, wide, marks)
         existing = OUT_PATH.read_text(encoding="utf-8")
         if existing != body:
             print(
@@ -139,9 +205,24 @@ def main() -> int:
         print(f"ok: {OUT_PATH.relative_to(ROOT)} matches Unicode {pin}")
         return 0
 
+    if got_ucd != pin:
+        print(
+            f"unicodedata.unidata_version is {got_ucd}, pin is {pin} "
+            f"({PIN_PATH}). Bump the pin in its own PR or use a Python "
+            "whose UCD matches. Skip is a failure (ADR 0002 D5).",
+            file=sys.stderr,
+        )
+        return 1
+
+    wide = ranges_of(is_wide)
+    marks = ranges_of(is_mark)
+    body = generated_source(pin, wide, marks)
     OUT_PATH.write_text(body, encoding="utf-8")
+    digest = hashlib.sha256(body.encode()).hexdigest()
+    write_pin_sha256(digest)
     print(f"wrote {OUT_PATH.relative_to(ROOT)} Unicode {pin}")
     print(f"  WIDE_RANGES {len(wide)}  MARK_RANGES {len(marks)}")
+    print(f"  east_asian_width_sha256 {digest}")
     return 0
 
 
