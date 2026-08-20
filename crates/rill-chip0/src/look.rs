@@ -119,7 +119,6 @@ mod tests {
             before, expected,
             "precondition: Chip0 default is not already the theme file background"
         );
-        chip.apply_look(&colors).expect("apply_look");
         chip.feed(b" ").expect("feed");
         let mut grid = chip.snapshot().expect("snap");
         let mut surface = load_host_surface("../../host-surface.toml").expect("host-surface");

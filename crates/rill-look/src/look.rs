@@ -323,9 +323,9 @@ pub fn resolve_theme(name: &str, directory: Option<&Path>) -> Option<ThemeColors
     #[cfg(feature = "mutate")]
     if std::env::var("RILL_MUTATE").as_deref() == Ok("invent_theme_rgb") {
         return Some(ThemeColors {
-            background: 0xeff1_f5ff,
-            foreground: 0x4c4f_69ff,
-            cursor: 0xdc8a_78ff,
+            background: 0x0102_03ff,
+            foreground: 0x0405_06ff,
+            cursor: 0x0708_09ff,
             ansi: None,
             split_divider: None,
         });
