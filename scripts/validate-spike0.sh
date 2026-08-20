@@ -116,6 +116,7 @@ run_gate "LINT-PLANES" sh scripts/lint-planes.sh
 
 # ------------------------------------------------------------------ library tier
 run_gate "T-BYTES-chip"   cargo test -p rill-chip0 --offline t_bytes -- --nocapture
+run_gate "T-CHIP0-C1"     cargo test -p rill-chip0 --offline t_chip0_c1 -- --nocapture
 run_gate "T-LOOK"         cargo test -p rill-chip0 --offline t_ghostty_look -- --nocapture
 # Isolate ASan: instrumented C objects in the default target dir break later
 # rilld / persist_e2e links (rustc -nodefaultlibs does not pull clang_rt).
@@ -265,6 +266,8 @@ if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
   # (zsh does not split `$MUT`, and that red is not a demonstrated mutation).
   run_control "T-BYTES-chip" drop_high_bytes \
     cargo test -p rill-chip0 --offline --features mutate t_bytes
+  run_control "T-CHIP0-C1" c1_as_control \
+    cargo test -p rill-chip0 --offline --features mutate t_chip0_c1
   run_control "T-LOOK-OVERLAY" skip_ghostty_overlay \
     cargo test -p rill-chip0 --offline --features mutate t_ghostty_look_overlay -- --nocapture
   run_control "T-LOOK-UNKNOWN" unknown_theme_wipes \

@@ -1091,6 +1091,23 @@ Feed `[0x80, 0x41]`: exactly one U+FFFD, then `A`.
 **Required mutation.** `RILL_MUTATE=c1_as_control` — treat `0x80..=0x9f` as
 controls. Row 0 loses its non-ASCII cell.
 
+### T-CHIP0-C1-PAINT — Chip 0 paints decoded C1 scalars (macOS / Zig)
+
+Authority: [ADR 0020](adr/0020-chip1-parser-in-tree.md) D3,
+[SPEC-VT-CONFORMANCE](spec/SPEC-VT-CONFORMANCE.md) §4 Chip 0 differential,
+[#304](https://github.com/mahboobmonnamd/RILL/issues/304).
+
+**Status.** Red until demonstrated on `gates.yml` (Zig + libghostty-vt). MUST
+NOT run in `fast.yml` (SPEC-CHIP0 §9). Secondary to T-CHIP1-C1. Does not swap
+the live chip.
+
+**Oracle.** Feed `[0xc2, 0x9b, 0x41]` to Chip 0; row 0 is U+009B then `A`;
+`cursor_col == 2`. If libghostty-vt *executes* C1 instead, this gate stays red
+and the live-swap ADR must name that divergence — fail closed, do not guess.
+
+**Required mutation.** `RILL_MUTATE=c1_as_control` — blank painted C1 cells
+in the snapshot. The U+009B cell disappears.
+
 ### T-CHIP1-GRAPHEME — long cluster does not overrun
 
 **Oracle.** `e` + 40× U+0301: snapshot survives; `cursor_col == 1`;

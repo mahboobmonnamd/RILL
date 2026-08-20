@@ -104,7 +104,18 @@ impl TerminalEmulation for Chip0 {
     }
 
     fn snapshot(&mut self) -> Result<PodGrid, Error> {
-        self.vt.snapshot()
+        let mut grid = self.vt.snapshot()?;
+        // T-CHIP0-C1-PAINT (ADR 0020 D3). Blank painted C1 so the gate observes
+        // the cell, not a constant. Compiled only under `mutate`.
+        #[cfg(feature = "mutate")]
+        if std::env::var("RILL_MUTATE").as_deref() == Ok("c1_as_control") {
+            for cell in &mut grid.cells {
+                if (0x80..=0x9f).contains(&cell.codepoint) {
+                    cell.codepoint = 32;
+                }
+            }
+        }
+        Ok(grid)
     }
 }
 
@@ -164,6 +175,31 @@ mod tests {
         let grid = chip.snapshot().expect("snapshot");
         assert_eq!(grid.cols, 80, "snapshot survived a long cluster");
         let _ = grid.grapheme_truncated; // counted, whatever the value
+    }
+
+    /// T-CHIP0-C1-PAINT — decoded UTF-8 C1 paints and does not open a CSI.
+    ///
+    /// Measures ADR 0020 D3's inference that libghostty-vt paints U+0080..=U+009F
+    /// rather than executing them as 8-bit controls. MUST NOT run in `fast.yml`
+    /// (SPEC-CHIP0 §9). Secondary to T-CHIP1-C1.
+    ///
+    /// Required mutation: `RILL_MUTATE=c1_as_control`.
+    #[test]
+    fn t_chip0_c1_decoded_scalar_paints() {
+        let mut chip = Chip0::new(80, 24).expect("chip0");
+        chip.feed(&[0xc2, 0x9b, 0x41]).expect("feed utf8 c1");
+        let grid = chip.snapshot().expect("snapshot");
+        assert_eq!(
+            grid.cell(0, 0).expect("c1").codepoint,
+            0x9b,
+            "decoded U+009B must paint (ADR 0020 D3); execute-instead is a live-swap divergence"
+        );
+        assert_eq!(
+            grid.cell(1, 0).expect("A").codepoint,
+            u32::from(b'A'),
+            "0x9b must not open CSI that consumes A"
+        );
+        assert_eq!(grid.cursor_col, 2, "two cells: C1 then A");
     }
 
     #[test]

@@ -217,20 +217,17 @@ of:
 3. **T-CHIP1-LOOK-ANSI Proven**, and packaged T-LOOK-ANSI / T-LOOK-CELL /
    T-SPLIT-LOOK still green after the swap
    ([#272](https://github.com/mahboobmonnamd/RILL/issues/272)).
-4. The Chip 0 differential run on macOS with Zig, **confirming ADR 0020 D3's
-   inference** that libghostty-vt paints rather than executes decoded C1
-   scalars. That inference is currently unmeasured.
+4. **T-CHIP0-C1-PAINT** on macOS with Zig, confirming ADR 0020 D3's inference
+   that libghostty-vt paints rather than executes decoded C1 scalars
+   ([#304](https://github.com/mahboobmonnamd/RILL/issues/304)). Not `fast.yml`.
 5. An Accepted live-swap ADR saying how the host drains `take_replies` onto
    ordinary `DATA` frames, and packaged T-NFR hid re-proven on battery without
    recutting the instrument.
 6. A channel for terminal **mode state** (DECCKM, DECKPAM, bracketed paste,
-   mouse modes) to reach the host key/mouse encoder. Chip 1 will know those
-   modes; the host encodes keys and mouse. Without the channel, application
-   cursor keys, keypad, paste bracketing and mouse tracking cannot be produced
-   correctly after the swap. The live-swap ADR MUST name this channel. v0 does
-   not implement it. Proposed (not Accepted; does not authorize code or
-   [#24](https://github.com/mahboobmonnamd/RILL/issues/24)):
-   [ADR 0036](adr/0036-chip1-mode-state-channel.md).
+   mouse modes) to reach the host key/mouse encoder. Chip 1 tracks those modes
+   ([ADR 0036](adr/0036-chip1-mode-state-channel.md) Accepted, T-CHIP1-MODE);
+   the host encodes keys and mouse. The live-swap ADR MUST name this channel
+   and MUST NOT start host wiring before T-CHIP1-MODE is Proven.
 
 ## Risks
 
