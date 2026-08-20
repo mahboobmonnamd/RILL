@@ -120,8 +120,10 @@ A Chip 0 differential MAY exist as a **macOS-only, dev-only** secondary check
 `[dev-dependencies]`.
 
 It is the only way to confirm ADR 0020 D3's **inference** that libghostty-vt
-paints rather than executes decoded C1 scalars. That inference is unmeasured and
-MUST be confirmed before M7.
+paints rather than executes decoded C1 scalars. Gate: **T-CHIP0-C1-PAINT**
+(`t_chip0_c1_decoded_scalar_paints` in `rill-chip0`, `gates.yml` / `validate-spike0.sh`).
+MUST NOT run in `fast.yml`. If the gate is red because Chip 0 executes C1, that
+is a named live-swap divergence — fail closed.
 
 ## 5. Lints
 

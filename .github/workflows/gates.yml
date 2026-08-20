@@ -70,7 +70,7 @@ jobs:
         env:
           RILL_ASAN: "1"
           CARGO_TARGET_DIR: ${{ runner.temp }}/asan-target
-        run: cargo test -p rill-chip0 t_bytes -- --nocapture
+        run: cargo test -p rill-chip0 t_bytes t_chip0_c1 -- --nocapture
 
       - uses: actions/upload-artifact@v4
         if: always()
