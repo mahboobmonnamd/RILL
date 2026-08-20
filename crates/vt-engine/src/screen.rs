@@ -1,7 +1,9 @@
 //! Visible grid, cursor, damage. Does not parse bytes (SPEC-VT-SCREEN §1).
 
 use crate::parser::Actions;
-use rill_vt_types::{Color, Error, Palette, PodCell, PodGrid, Rgb, ATTR_WIDE_LEAD, ATTR_WIDE_TAIL};
+use rill_vt_types::{
+    Color, Error, Palette, PodCell, PodGrid, Rgb, TerminalModeState, ATTR_WIDE_LEAD, ATTR_WIDE_TAIL,
+};
 
 #[derive(Clone, Copy)]
 struct Cell {
@@ -59,6 +61,14 @@ pub(crate) struct Screen {
     discard_replies: bool,
     open_cluster: Option<OpenCluster>,
     grapheme_truncated: u32,
+    application_cursor_keys: bool,
+    application_keypad: bool,
+    bracketed_paste: bool,
+    mouse_x10: bool,
+    mouse_button: bool,
+    mouse_any: bool,
+    mouse_sgr: bool,
+    focus_events: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -106,7 +116,30 @@ impl Screen {
             discard_replies: false,
             open_cluster: None,
             grapheme_truncated: 0,
+            application_cursor_keys: false,
+            application_keypad: false,
+            bracketed_paste: false,
+            mouse_x10: false,
+            mouse_button: false,
+            mouse_any: false,
+            mouse_sgr: false,
+            focus_events: false,
         })
+    }
+
+    pub(crate) fn mode_state(&self) -> TerminalModeState {
+        TerminalModeState {
+            application_cursor_keys: self.application_cursor_keys,
+            application_keypad: self.application_keypad,
+            bracketed_paste: self.bracketed_paste,
+            mouse_x10: self.mouse_x10,
+            mouse_button: self.mouse_button,
+            mouse_any: self.mouse_any,
+            mouse_sgr: self.mouse_sgr,
+            focus_events: self.focus_events,
+            alternate_screen: self.in_alt,
+            cursor_visible: self.cursor_visible,
+        }
     }
 
     pub(crate) fn resize(&mut self, cols: u16, rows: u16) -> Result<(), Error> {
@@ -584,10 +617,20 @@ impl Screen {
     }
 
     fn private_mode(&mut self, params: &[u16], set: bool) {
+        if crate::mutate("ignore_mode_updates") {
+            return;
+        }
         for p in params {
             match *p {
+                1 => self.application_cursor_keys = set,
                 7 => self.autowrap = set,
                 25 => self.cursor_visible = set,
+                2004 => self.bracketed_paste = set,
+                1000 => self.mouse_x10 = set,
+                1002 => self.mouse_button = set,
+                1003 => self.mouse_any = set,
+                1004 => self.focus_events = set,
+                1006 => self.mouse_sgr = set,
                 1047 => {
                     if set {
                         self.enter_alt(false, true);
@@ -1230,6 +1273,12 @@ impl Actions for Screen {
             b'M' => {
                 self.clear_pending_wrap();
                 self.reverse_index();
+            }
+            b'=' if _intermediates.is_empty() && !crate::mutate("ignore_mode_updates") => {
+                self.application_keypad = true;
+            }
+            b'>' if _intermediates.is_empty() && !crate::mutate("ignore_mode_updates") => {
+                self.application_keypad = false;
             }
             _ => {}
         }

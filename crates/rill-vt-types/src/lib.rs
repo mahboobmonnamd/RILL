@@ -148,6 +148,39 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+/// Host encoder flags polled after `feed` ([ADR 0036], SPEC-VT-MODE §2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct TerminalModeState {
+    pub application_cursor_keys: bool,
+    pub application_keypad: bool,
+    pub bracketed_paste: bool,
+    pub mouse_x10: bool,
+    pub mouse_button: bool,
+    pub mouse_any: bool,
+    pub mouse_sgr: bool,
+    pub focus_events: bool,
+    pub alternate_screen: bool,
+    pub cursor_visible: bool,
+}
+
+impl TerminalModeState {
+    /// Fresh grid defaults (DECTCEM on, everything else off).
+    pub const fn fresh() -> Self {
+        Self {
+            application_cursor_keys: false,
+            application_keypad: false,
+            bracketed_paste: false,
+            mouse_x10: false,
+            mouse_button: false,
+            mouse_any: false,
+            mouse_sgr: false,
+            focus_events: false,
+            alternate_screen: false,
+            cursor_visible: true,
+        }
+    }
+}
+
 impl From<std::io::Error> for Error {
     fn from(value: std::io::Error) -> Self {
         Self::Io(value)

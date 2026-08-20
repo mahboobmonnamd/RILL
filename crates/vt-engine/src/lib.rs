@@ -14,7 +14,9 @@ mod screen;
 #[cfg(test)]
 mod diff;
 
-pub use rill_vt_types::{Color, Error, Palette, PodCell, PodGrid, Rgb, TerminalEmulation};
+pub use rill_vt_types::{
+    Color, Error, Palette, PodCell, PodGrid, Rgb, TerminalEmulation, TerminalModeState,
+};
 
 use crate::parser::Parser;
 use crate::screen::Screen;
@@ -50,6 +52,11 @@ impl VtEngine {
 
     pub fn has_replies(&self) -> bool {
         self.screen.has_replies()
+    }
+
+    /// Mode flags for the host key/mouse encoder (ADR 0036 D2).
+    pub fn mode_state(&self) -> TerminalModeState {
+        self.screen.mode_state()
     }
 
     /// Clear parser and grid. Size is unchanged.

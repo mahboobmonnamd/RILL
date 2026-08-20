@@ -1283,6 +1283,17 @@ first `feed()` of `日` already shows width 2 (ADR 0035 D8).
 scalar (v0). That must turn this gate red. Smash mutation
 `RILL_MUTATE=orphan_wide_tail` must turn the ECH-of-lead assertion red.
 
+### T-CHIP1-MODE — host encoder flags tracked and polled
+
+Authority: [ADR 0036](adr/0036-chip1-mode-state-channel.md),
+[SPEC-VT-MODE](spec/SPEC-VT-MODE.md).
+
+**Oracle.** After `CSI ? 1 h/l`, `ESC =` / `ESC >`, `?2004`, mouse `?1000/1002/1003/1006`,
+`?1004`, `?1049`, and `?25`, `mode_state()` matches the expected booleans.
+`reset()` restores `TerminalModeState::fresh()`.
+
+**Required mutation.** `RILL_MUTATE=ignore_mode_updates` — modes do not change.
+
 ### T-CHIP1-DIFF — an independent parser agrees over the corpus
 
 Authority: [ADR 0020](adr/0020-chip1-parser-in-tree.md) D2,
