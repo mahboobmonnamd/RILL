@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 pub const MAX_FRAME: usize = 4 * 1024 * 1024;
 /// Attach protocol this tree speaks (ADR 0015 D1). 8- and 16-byte payloads imply 1.
 pub const PROTOCOL_VERSION: u8 = 1;
+/// Independent client credit, checkpoints and deltas (SPEC-ATTACH §5, SPEC-CLIENT-AUTHORITY §2).
+pub const PROTOCOL_2: u8 = 2;
 /// `flags` bit 0: observe (ADR 0015 D7). Not a second writer.
 pub const ATTACH_FLAG_OBSERVE: u8 = 1;
 
@@ -19,6 +21,20 @@ pub fn cold_identity_socket_path(attach_socket: impl AsRef<Path>) -> PathBuf {
     let mut path = attach_socket.as_ref().as_os_str().to_os_string();
     path.push(".identity");
     PathBuf::from(path)
+}
+
+/// Internal worker listener. Sibling of the public attach socket, never under
+/// shared `/tmp` as the production parent (SPEC-RUNTIME-SUPERVISION §2).
+pub fn worker_socket_path(attach_socket: impl AsRef<Path>) -> PathBuf {
+    let attach = attach_socket.as_ref();
+    match attach.file_name() {
+        Some(name) => {
+            let mut n = name.to_os_string();
+            n.push(".worker");
+            attach.with_file_name(n)
+        }
+        None => attach.with_extension("worker"),
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -135,6 +151,10 @@ impl Frame {
     /// T-NFR now asserts this at the client's single `send` chokepoint.
     pub fn is_warm_path(&self) -> bool {
         matches!(self, Self::Data(_) | Self::Credit(_))
+    }
+
+    pub fn protocol_supported(protocol: u8) -> bool {
+        protocol == PROTOCOL_VERSION || protocol == PROTOCOL_2
     }
 
     /// Spike 0 / named-id writer attach (protocol 1, not observe).
@@ -578,6 +598,9 @@ mod tests {
         assert_eq!(a, PathBuf::from("/tmp/rill-a.sock.identity"));
         assert_eq!(b, PathBuf::from("/tmp/rill-a.other.identity"));
         assert_ne!(a, b, "distinct attach sockets need distinct cold sockets");
+        let w = worker_socket_path("/tmp/rill-a.sock");
+        assert_eq!(w, PathBuf::from("/tmp/rill-a.sock.worker"));
+        assert_ne!(w, a);
     }
 
     #[test]

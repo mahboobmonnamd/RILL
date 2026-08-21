@@ -8,6 +8,9 @@ pub enum Error {
     Chip(rill_chip0::Error),
     AlreadyRunning,
     NestedLaunch,
+    UnprotectedEndpoint,
+    PeerRefused,
+    WorkerMissing,
 }
 
 impl fmt::Display for Error {
@@ -19,6 +22,9 @@ impl fmt::Display for Error {
             Self::Chip(e) => write!(f, "{e}"),
             Self::AlreadyRunning => write!(f, "already running"),
             Self::NestedLaunch => write!(f, "nested rilld refused (set RILL_ALLOW_NESTED=1)"),
+            Self::UnprotectedEndpoint => write!(f, "runtime endpoint parent is not protected"),
+            Self::PeerRefused => write!(f, "peer credentials refused"),
+            Self::WorkerMissing => write!(f, "worker did not appear"),
         }
     }
 }
@@ -32,6 +38,9 @@ impl std::error::Error for Error {
             Self::Chip(e) => Some(e),
             Self::AlreadyRunning => None,
             Self::NestedLaunch => None,
+            Self::UnprotectedEndpoint => None,
+            Self::PeerRefused => None,
+            Self::WorkerMissing => None,
         }
     }
 }

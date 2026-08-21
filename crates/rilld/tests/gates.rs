@@ -15,11 +15,19 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 fn temp_sock(tag: &str) -> PathBuf {
-    let n = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("clock")
-        .as_nanos();
-    PathBuf::from(format!("/tmp/rill-{tag}-{n}.sock"))
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static N: AtomicU64 = AtomicU64::new(0);
+    let n = N.fetch_add(1, Ordering::Relaxed);
+    let dir = PathBuf::from(format!(
+        "/tmp/r{}{}{}",
+        std::process::id() % 10000,
+        tag.chars().next().unwrap_or('x'),
+        n
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("runtime dir");
+    std::fs::set_permissions(&dir, std::os::unix::fs::PermissionsExt::from_mode(0o700)).ok();
+    dir.join("a")
 }
 
 fn send(stream: &mut UnixStream, frame: Frame) {
