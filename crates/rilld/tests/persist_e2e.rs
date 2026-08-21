@@ -8,6 +8,7 @@
 use rill_attach::{Decoder, Frame};
 use rill_chip0::{Chip0, TerminalEmulation};
 use std::io::{Read, Write};
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
@@ -20,9 +21,10 @@ fn unique_sock() -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .expect("time")
         .as_nanos();
-    let dir = std::env::temp_dir().join(format!("rill-persist-{n}"));
+    let dir = PathBuf::from(format!("/tmp/rp{n:x}"));
     std::fs::create_dir_all(&dir).expect("dir");
-    dir.join("attach.sock")
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).ok();
+    dir.join("a")
 }
 
 fn wait_sock(path: &PathBuf, timeout: Duration) -> bool {

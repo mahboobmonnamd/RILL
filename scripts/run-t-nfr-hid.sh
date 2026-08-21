@@ -14,7 +14,8 @@ require() { echo "PRECONDITION FAILED: $1" >&2; exit 1; }
 [ -x "$RILLD" ] || require "packaged rilld at $RILLD"
 [ -x "$APP/Contents/MacOS/Rill" ] || require "packaged GUI at $APP"
 
-SOCK="/tmp/rill-nfr-user.sock"
+mkdir -m 700 -p /tmp/rnfru
+SOCK="/tmp/rnfru/a"
 OUT="/tmp/rill-nfr-hid.out"
 ERR="/tmp/rill-nfr-hid.err"
 : > "$OUT"
