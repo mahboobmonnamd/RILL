@@ -61,6 +61,15 @@ pub fn run_control(attach_sock: &Path) -> Result<(), Error> {
     ensure_protected_parent(&worker_sock)?;
 
     if !worker_alive(&worker_sock) {
+        let marker = attach_sock.with_file_name("shutdown");
+        let recorded = std::env::var("RILL_TEST_PIDFILE")
+            .ok()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .and_then(|s| s.trim().parse().ok());
+        let outcome = rill_kernel::reconcile_execution(recorded, false, marker.exists());
+        if let Some(parent) = attach_sock.parent() {
+            let _ = std::fs::write(parent.join("outcome"), format!("{outcome:?}\n"));
+        }
         let child = spawn_worker(attach_sock, &worker_sock)?;
         std::mem::forget(child);
     }

@@ -465,6 +465,7 @@ impl Kernel {
     /// is observed dead (ADR 0015 D4).
     pub fn reap(&mut self, id: SessionId) -> Result<(), Error> {
         let session = self.leaves.get_mut(&id).ok_or(Error::UnknownSession)?;
+        session.expire_input_lease_if_due();
         if session.poll_child()? {
             self.record(id, GraphEventKind::Exit);
         }
