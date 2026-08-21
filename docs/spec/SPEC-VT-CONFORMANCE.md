@@ -169,7 +169,8 @@ theme-file value is still a hit, even if it collides with a default slot.
   `skip_file_palette`, `eager_wrap`, `ignore_decstbm`, `always_full_damage`,
   `no_reply`, `unbounded_replies`, `unbounded_osc`, `single_buffer`,
   `fixed_grapheme_buf`, `narrow_cjk`, `orphan_wide_tail`, `emit_wide_tails`,
-  `ignore_mode_updates`.
+  `ignore_mode_updates`, `empty_checkpoint`, `constant_hash`,
+  `accept_unknown_version`, `import_is_resync_bytes`.
 - A gate that has never run in CI is not evidence, whatever a laptop printed
   (ADR 0002 D8). The S-VT numbers in [SPIKE-VT](../SPIKE-VT.md) are research and
   MUST NOT be cited as gate evidence.

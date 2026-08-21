@@ -28,7 +28,7 @@ sequencing: [M4-PLAN](../M4-PLAN.md).
 ## 0. This page is the umbrella
 
 This spec states the **boundary** and the shape of the crate. The normative
-detail lives in six specs, one per slice:
+detail lives in the slice specs:
 
 | Spec | Owns |
 |---|---|
@@ -37,6 +37,7 @@ detail lives in six specs, one per slice:
 | [SPEC-VT-SCREEN](SPEC-VT-SCREEN.md) | Grid, cursor, wrap, scroll region, alt screen, erasure, damage, resize, clusters |
 | [SPEC-VT-COLOR](SPEC-VT-COLOR.md) | SGR → colour identity, materialisation against the theme palette |
 | [SPEC-VT-REPLY](SPEC-VT-REPLY.md) | DA / DSR answers and the bounded reply buffer |
+| [SPEC-VT-CHECKPOINT](SPEC-VT-CHECKPOINT.md) | Versioned compact import/export and state hash ([#312](https://github.com/mahboobmonnamd/RILL/issues/312)) |
 | [SPEC-VT-CONFORMANCE](SPEC-VT-CONFORMANCE.md) | Oracles, fixtures, per-fixture mutations, the `vte` differential, lints, CI |
 
 Where this page and a slice spec disagree, the slice spec is newer and wins.
@@ -75,10 +76,9 @@ pub trait TerminalEmulation {
   `resync_from_history`. Tests MUST NOT assert on a `\x1b[2J\x1b[H` prefix the
   emit path itself prepends (ADR 0002 D4). Assert a second instance’s grid.
 - `repaint_bytes` and `resync_from_history` are not the product checkpoint
-  contract. Live eligibility additionally requires a deterministic versioned
-  checkpoint codec, import/export at a monotonic execution offset, and a state
-  hash that detects divergence after delta application. Checkpoints are compact
-  cold binary state, not per-frame cells or per-cell Strings.
+  contract. Normative codec: [SPEC-VT-CHECKPOINT](SPEC-VT-CHECKPOINT.md)
+  ([#312](https://github.com/mahboobmonnamd/RILL/issues/312)). Checkpoints are
+  compact cold binary state, not per-frame cells or per-cell Strings.
 - Inherent, **Chip 1 only**: `take_replies` / `has_replies`
   ([ADR 0022](../adr/0022-chip1-reply-channel.md),
   [SPEC-VT-REPLY](SPEC-VT-REPLY.md)) and `set_palette`

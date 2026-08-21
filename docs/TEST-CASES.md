@@ -1172,6 +1172,42 @@ row 0 matches. MUST NOT assert on `\x1b[2J`.
 
 **Required mutation.** `RILL_MUTATE=empty_resync` — emit empty or emit only the prefix.
 
+### T-CHIP1-CHECKPOINT-ROUNDTRIP — import restores grid and modes
+
+Authority: [SPEC-VT-CHECKPOINT](spec/SPEC-VT-CHECKPOINT.md),
+[#312](https://github.com/mahboobmonnamd/RILL/issues/312).
+
+**Oracle.** Feed a marker, SGR, alt-screen text, and a private mode. Export at
+a caller-supplied offset. A **new** `VtEngine` imports only the blob. The
+second instance’s `snapshot()` cells/cursor and `mode_state()` match the
+source. MUST NOT assert on a copy of the export buffer.
+
+**Required mutation.** `RILL_MUTATE=empty_checkpoint` — export is empty.
+
+### T-CHIP1-CHECKPOINT-HASH — a cell or mode flip changes the hash
+
+**Oracle.** Two exports of the same state share the stored FNV-1a hash. After
+one additional printable or mode change, a new export’s hash differs. Oracle
+is the encoded hash field compared across blobs, not a constant in the test.
+
+**Required mutation.** `RILL_MUTATE=constant_hash`.
+
+### T-CHIP1-CHECKPOINT-VERSION — unknown version fails closed
+
+**Oracle.** A well-formed blob with `version != 1` returns `Err` on import.
+The destination grid MUST remain the pre-import state (independent snapshot).
+
+**Required mutation.** `RILL_MUTATE=accept_unknown_version`.
+
+### T-CHIP1-CHECKPOINT-NOT-RESYNC — import is not VT replay
+
+**Oracle.** Importing a checkpoint blob MUST NOT be implemented as
+`feed` of those bytes. After a valid import, row 0 holds the source marker;
+feeding the same blob into a fresh engine as VT bytes MUST NOT produce that
+grid (the magic is not printable state).
+
+**Required mutation.** `RILL_MUTATE=import_is_resync_bytes`.
+
 ### T-CHIP1-WRAP — the last column defers its wrap
 
 Authority: [SPEC-VT-SCREEN](spec/SPEC-VT-SCREEN.md) §2.
