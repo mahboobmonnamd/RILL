@@ -1,4 +1,4 @@
-/* Chip 0 presenter: glyph atlas + one instanced Metal draw. Socket readiness
+/* Chip 1 presenter: glyph atlas + one instanced Metal draw. Socket readiness
  * feeds the VT (ADR 0003 D2). Surface is a titled window (windowed by default,
  * ADR 0017). T-NFR still uses toggleFullScreen + opaque CAMetalLayer
  * (direct-to-display). Present is echo-only, one in flight. A CADisplayLink
@@ -223,6 +223,7 @@ typedef struct {
     vector_float4 _themeBg;
     vector_float4 _themeCursor;
     BOOL _optionAsAlt;
+    BOOL _ignoreWideBits;
 }
 
 // ---------------------------------------------------------------- lifecycle
@@ -249,6 +250,10 @@ typedef struct {
     _themeBg = rgba(rill_client_background_rgba(client));
     _themeCursor = rgba(rill_client_cursor_rgba(client));
     _optionAsAlt = rill_client_macos_option_as_alt(client) != 0;
+    {
+        const char *mut = getenv("RILL_MUTATE");
+        _ignoreWideBits = mut && strcmp(mut, "ignore_wide_bits") == 0;
+    }
 
     if (![self setupFont]) {
         return nil;
@@ -813,11 +818,8 @@ static unsigned rill_view_bg_rgb(NSView *v) {
                 continue;
             }
             RillPodCell cell = grid.cells[i];
-            if ((cell.attrs & (1u << 4)) != 0) {
-                const char *wmut = getenv("RILL_MUTATE");
-                if (!(wmut && strcmp(wmut, "ignore_wide_bits") == 0)) {
-                    continue;
-                }
+            if ((cell.attrs & (1u << 4)) != 0 && !_ignoreWideBits) {
+                continue;
             }
             BOOL bold = (cell.attrs & 1u) != 0;
             BOOL inverse = (cell.attrs & 4u) != 0;

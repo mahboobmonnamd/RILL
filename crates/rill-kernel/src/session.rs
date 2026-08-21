@@ -578,13 +578,26 @@ impl Session {
         Ok(())
     }
 
-    /// Worker drain: read the master into the ring without client credit.
-    /// Live attach delivery is per-ClientId (SPEC-ATTACH §5 protocol 2).
+    pub fn note_stalled_read(&mut self) {
+        self.stalled_reads = self.stalled_reads.saturating_add(1);
+    }
+
+    /// Worker drain: read the master into the ring. `max` is the protocol-1
+    /// delivery window when the GUI is still protocol 1 ([#335](https://github.com/mahboobmonnamd/RILL/issues/335)).
     pub fn drain_pty(&mut self) -> Result<Option<Vec<u8>>, Error> {
+        self.drain_pty_at_most(None)
+    }
+
+    pub fn drain_pty_at_most(&mut self, max: Option<usize>) -> Result<Option<Vec<u8>>, Error> {
         if self.child_exit.is_some() {
             return Ok(None);
         }
-        let mut buf = vec![0u8; READ_BUF];
+        let cap = max.unwrap_or(READ_BUF).min(READ_BUF);
+        if cap == 0 {
+            self.note_stalled_read();
+            return Ok(None);
+        }
+        let mut buf = vec![0u8; cap];
         let got = self.pty.read(&mut buf)?;
         if got == 0 {
             return Ok(None);

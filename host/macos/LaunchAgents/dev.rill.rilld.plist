@@ -8,5 +8,7 @@
   <string>MacOS/rilld</string>
   <key>RunAtLoad</key>
   <true/>
+  <key>KeepAlive</key>
+  <true/>
 </dict>
 </plist>

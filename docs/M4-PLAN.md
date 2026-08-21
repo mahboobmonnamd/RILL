@@ -4,10 +4,9 @@
 Epic [#6](https://github.com/mahboobmonnamd/RILL/issues/6). Handoff context:
 [M4-HANDOFF](M4-HANDOFF.md).
 
-This page is the *order of work*. It authorizes nothing on its own: each slice
-still needs its named tests written first and observed red
-([ADR 0002](adr/0002-falsifiable-evidence.md) D2). Chip 0 stays the live chip
-until **M7** ([ADR 0012](adr/0012-chip1-isolated-vt.md) D1).
+**Status: historical plan. 2026-08-18.** Chip 1 is the live chip
+([ADR 0054](adr/0054-chip0-retired.md)). This page records slice order; it does
+not restore Chip 0. Remaining checkpoint/mirror work is [DEFERRED](DEFERRED.md).
 
 ## Where we are
 

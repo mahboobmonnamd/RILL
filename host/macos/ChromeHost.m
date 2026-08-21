@@ -1,4 +1,4 @@
-/* M2 chrome: nav | Chip 0 | inspector. AppKit only. The center subview is
+/* M2 chrome: nav | Chip 1 | inspector. AppKit only. The center subview is
  * TerminalView (Metal). Sidebars do not paint PTY bytes (ADR 0018). */
 
 #import "ChromeHost.h"

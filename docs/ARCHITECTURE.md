@@ -16,6 +16,11 @@ Current umbrella authority:
   [ADR 0053](adr/0053-runtime-domain-content-and-client-authority.md); and
 - ADR identity/history mapping: [ADR registry](adr/README.md).
 
+**Shipped vs specified.** The running GUI feeds Chip 1 in-process over protocol
+1. The diagrams in this file describe the product contract. Work that is
+specified and not in the binary is listed in [DEFERRED](DEFERRED.md)
+([#338](https://github.com/mahboobmonnamd/RILL/issues/338)).
+
 ## Ownership graph
 
 ```mermaid

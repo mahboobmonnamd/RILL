@@ -83,6 +83,22 @@ struct OpenCluster {
 
 const RILL_GRAPHEME_MAX: u8 = 32;
 
+fn resize_cells(old: &[Cell], old_cols: u16, old_rows: u16, cols: u16, rows: u16) -> Vec<Cell> {
+    let mut next = vec![Cell::blank(Color::Default); usize::from(cols) * usize::from(rows)];
+    let copy_cols = old_cols.min(cols);
+    let copy_rows = old_rows.min(rows);
+    for r in 0..copy_rows {
+        for c in 0..copy_cols {
+            let src = usize::from(r) * usize::from(old_cols) + usize::from(c);
+            let dst = usize::from(r) * usize::from(cols) + usize::from(c);
+            if src < old.len() {
+                next[dst] = old[src];
+            }
+        }
+    }
+    next
+}
+
 impl Screen {
     pub(crate) fn new(cols: u16, rows: u16) -> Result<Self, Error> {
         if cols == 0 || rows == 0 {
@@ -146,14 +162,30 @@ impl Screen {
         if cols == 0 || rows == 0 {
             return Err(Error::Vt("empty grid"));
         }
-        let mut next = vec![Cell::blank(Color::Default); usize::from(cols) * usize::from(rows)];
-        let copy_cols = self.cols.min(cols);
-        let copy_rows = self.rows.min(rows);
-        for r in 0..copy_rows {
-            for c in 0..copy_cols {
-                next[usize::from(r) * usize::from(cols) + usize::from(c)] =
-                    self.cells[self.idx(c, r)];
-            }
+        #[cfg(feature = "mutate")]
+        if std::env::var("RILL_MUTATE").as_deref() == Ok("resize_clears_alt") {
+            let next = resize_cells(&self.cells, self.cols, self.rows, cols, rows);
+            self.cols = cols;
+            self.rows = rows;
+            self.cells = next;
+            self.cursor_col = self.cursor_col.min(cols.saturating_sub(1));
+            self.cursor_row = self.cursor_row.min(rows.saturating_sub(1));
+            self.scroll_top = 0;
+            self.scroll_bottom = rows.saturating_sub(1);
+            self.pending_wrap = false;
+            self.full_damage = true;
+            self.saved_grid = None;
+            self.saved_cursor = None;
+            self.alt_cursor = None;
+            self.in_alt = false;
+            self.open_cluster = None;
+            return Ok(());
+        }
+        let old_cols = self.cols;
+        let old_rows = self.rows;
+        let next = resize_cells(&self.cells, old_cols, old_rows, cols, rows);
+        if let Some(saved) = self.saved_grid.take() {
+            self.saved_grid = Some(resize_cells(&saved, old_cols, old_rows, cols, rows));
         }
         self.cols = cols;
         self.rows = rows;
@@ -164,10 +196,14 @@ impl Screen {
         self.scroll_bottom = rows.saturating_sub(1);
         self.pending_wrap = false;
         self.full_damage = true;
-        self.saved_grid = None;
-        self.saved_cursor = None;
-        self.alt_cursor = None;
-        self.in_alt = false;
+        if let Some(c) = &mut self.saved_cursor {
+            c.col = c.col.min(cols.saturating_sub(1));
+            c.row = c.row.min(rows.saturating_sub(1));
+        }
+        if let Some(c) = &mut self.alt_cursor {
+            c.col = c.col.min(cols.saturating_sub(1));
+            c.row = c.row.min(rows.saturating_sub(1));
+        }
         self.open_cluster = None;
         Ok(())
     }

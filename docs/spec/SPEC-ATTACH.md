@@ -21,6 +21,11 @@
 - Darwin has no `SOCK_SEQPACKET` (errno 43). The transport is a framed
   `SOCK_STREAM` over `AF_UNIX`.
 - `SOCK_SEQPACKET` MUST NOT appear in the tree.
+- A control-plane splice (public attach socket → worker) MUST keep unread
+  bytes in a per-direction outbox. It MUST NOT discard a successful `read`
+  because `write` returned `WouldBlock` or short
+  ([#334](https://github.com/mahboobmonnamd/RILL/issues/334), T-PROXY-SPLICE).
+  `POLLOUT` is requested only when that outbox is non-empty.
 - The socket MUST be created with mode `0600` in a protected runtime directory
   the invoking user owns. A predictable endpoint directly under shared `/tmp`
   does not satisfy this requirement. Local peer credentials MUST match before

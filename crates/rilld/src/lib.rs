@@ -33,6 +33,8 @@ pub struct Daemon {
     /// different id (ADR 0011 D3). FR-ONE is per leaf, not per daemon.
     clients: Vec<Client>,
     chip: VtEngine,
+    /// Cached at bind. The drain loop must not `getenv` per PTY read.
+    is_worker: bool,
 }
 
 struct Client {
@@ -136,6 +138,7 @@ impl Daemon {
             default_id,
             clients: Vec::new(),
             chip,
+            is_worker: std::env::var("RILL_WORKER").as_deref() == Ok("1"),
         })
     }
 
@@ -205,22 +208,23 @@ impl Daemon {
 
     /// Timeout passed to `poll` by `run`.
     ///
-    /// A live attach with credit must use `0`. Q5 applied a 50 ms sleep to
-    /// that path; packaged hid p95 went from 7.011 ms to 12–13 ms because a
-    /// sleeping daemon on battery misses vsync (cadence p95 16.67 ms). Idle
-    /// (no client or no credit) still waits — that is the busy-loop fix.
+    /// Timeout `0` is only for a non-empty outbox that needs another write
+    /// attempt. An attached client with credit and an empty outbox MUST block
+    /// in `poll` (PTY/socket POLLIN wakes the echo). Q5's always-50 sleep
+    /// missed vsync when `poll` did not wait on the PTY; spinning at `0`
+    /// with credit burned a core at idle ([#335](https://github.com/mahboobmonnamd/RILL/issues/335)).
     pub fn step_timeout_ms(&self) -> i32 {
         #[cfg(feature = "mutate")]
-        if std::env::var("RILL_MUTATE").as_deref() == Ok("idle_poll_while_attached") {
-            return 50;
+        if std::env::var("RILL_MUTATE").as_deref() == Ok("spin_poll_while_attached") {
+            let live = self.clients.iter().any(|c| {
+                c.credit > 0
+                    && c.leaf
+                        .and_then(|id| self.kernel.session(id))
+                        .is_some_and(|s| s.child_alive())
+            });
+            return if live { 0 } else { 50 };
         }
-        let live = self.clients.iter().any(|c| {
-            c.credit > 0
-                && c.leaf
-                    .and_then(|id| self.kernel.session(id))
-                    .is_some_and(|s| s.child_alive())
-        });
-        if live {
+        if self.clients.iter().any(|c| !c.outbox.is_empty()) {
             0
         } else {
             50
@@ -328,13 +332,20 @@ impl Daemon {
                     .clients
                     .iter()
                     .any(|c| c.leaf == Some(id) && c.protocol == PROTOCOL_2);
-                let worker = std::env::var("RILL_WORKER").as_deref() == Ok("1");
-                if proto2 || worker {
+                let p1_cap = protocol1_writer_credit(&self.clients, id);
+                if proto2 || self.is_worker {
+                    if let Some(0) = p1_cap {
+                        if let Some(s) = self.kernel.session_mut(id) {
+                            s.note_stalled_read();
+                        }
+                        break;
+                    }
+                    let max = p1_cap.map(|c| c as usize);
                     let drained = {
                         let Some(s) = self.kernel.session_mut(id) else {
                             break;
                         };
-                        s.drain_pty()?
+                        s.drain_pty_at_most(max)?
                     };
                     match drained {
                         Some(bytes) => {
@@ -680,7 +691,7 @@ impl Daemon {
         self.clients.remove(idx);
         #[cfg(feature = "mutate")]
         if std::env::var("RILL_MUTATE").as_deref() == Ok("worker_exits_on_daemon_close")
-            && std::env::var("RILL_WORKER").as_deref() == Ok("1")
+            && self.is_worker
             && self.clients.is_empty()
         {
             std::process::exit(0);
@@ -704,10 +715,9 @@ impl Daemon {
             if c.leaf != Some(id) {
                 continue;
             }
-            if c.credit == 0 {
+            let Some(n) = live_chunk(c.credit, bytes.len()) else {
                 continue;
-            }
-            let n = bytes.len().min(c.credit as usize);
+            };
             c.credit -= n as u64;
             let chunk = bytes[..n].to_vec();
             let frame = if c.protocol == PROTOCOL_2 {
@@ -876,8 +886,37 @@ fn pod_hash(grid: &PodGrid) -> u64 {
     h
 }
 
+/// How many bytes of a drained PTY chunk may go to one client.
+///
+/// A short credit MUST skip the client, not send a prefix ([#335](https://github.com/mahboobmonnamd/RILL/issues/335)).
+pub(crate) fn live_chunk(credit: u64, n: usize) -> Option<usize> {
+    #[cfg(feature = "mutate")]
+    if std::env::var("RILL_MUTATE").as_deref() == Ok("truncate_fanout") {
+        return Some(n.min(credit as usize));
+    }
+    if n == 0 {
+        return Some(0);
+    }
+    if credit < n as u64 {
+        None
+    } else {
+        Some(n)
+    }
+}
+
+fn protocol1_writer_credit(clients: &[Client], id: SessionId) -> Option<u64> {
+    let mut min_c: Option<u64> = None;
+    for c in clients {
+        if c.leaf != Some(id) || c.observe || c.protocol == PROTOCOL_2 {
+            continue;
+        }
+        min_c = Some(min_c.map_or(c.credit, |m| m.min(c.credit)));
+    }
+    min_c
+}
+
 /// Non-blocking drain of `outbox`. Partial progress stays queued (Q1).
-fn write_outbox(stream: &mut UnixStream, outbox: &mut VecDeque<u8>) -> Result<(), Error> {
+pub(crate) fn write_outbox(stream: &mut UnixStream, outbox: &mut VecDeque<u8>) -> Result<(), Error> {
     while !outbox.is_empty() {
         let n = {
             let (front, back) = outbox.as_slices();
@@ -983,6 +1022,20 @@ mod write_outbox_q1 {
             }
         }
         assert_eq!(got, src, "outbox replayed or dropped bytes");
+    }
+
+    /// T-WORKER-CREDIT — short credit must not emit a truncated chunk.
+    ///
+    /// Required mutation: `RILL_MUTATE=truncate_fanout`.
+    #[test]
+    fn t_worker_fanout_does_not_truncate_when_credit_is_short() {
+        assert_eq!(
+            live_chunk(2, 5),
+            None,
+            "short credit truncated a live DATA chunk"
+        );
+        assert_eq!(live_chunk(5, 5), Some(5));
+        assert_eq!(live_chunk(0, 5), None);
     }
 
     #[test]

@@ -87,19 +87,38 @@ header) or a duplicated `-END` token.
 `RILL_TEST_TINY_SNDBUF` so the accepted socket actually short-writes;
 integration tests do not compile the lib with `cfg(test)`.
 
-### T-ATTACHED-POLL — live attach must not sleep in `poll`
+### T-ATTACHED-POLL — live attach must not busy-loop in `poll`
 
-**Oracle.** After ATTACH+CREDIT, `Daemon::step_timeout_ms()` is `0`. Before
-attach it is `50` (idle must not busy-loop). Packaged T-NFR hid is the vsync
-oracle this lock exists to protect.
+**Oracle.** After ATTACH+CREDIT with an empty outbox, `Daemon::step_timeout_ms()`
+is `> 0` (typically 50). PTY/socket readiness still wakes `poll`. Timeout `0`
+is reserved for a non-empty outbox. Idle before attach is also `> 0`.
 
 **Procedure.** In-process `Daemon`. Bind, assert idle timeout > 0, connect,
-ATTACH+CREDIT, step until credit is applied, assert timeout is 0.
+ATTACH+CREDIT, step until attached, assert timeout > 0.
 
-**Required mutation.** Always return 50 (`RILL_MUTATE=idle_poll_while_attached`,
-feature `mutate`). That is the Q5 regression: hid p95 12–13 ms vs closer 7.011 ms.
+**Required mutation.** Return `0` while attached with credit
+(`RILL_MUTATE=spin_poll_while_attached`, feature `mutate`). That is the idle
+core-spin defect ([#335](https://github.com/mahboobmonnamd/RILL/issues/335)).
 
-**Negative control.** `idle_poll_while_attached` — automated.
+**Negative control.** `spin_poll_while_attached` — automated.
+
+### T-PROXY-SPLICE — control proxy must not drop bytes on `WouldBlock`
+
+**Issue.** [#334](https://github.com/mahboobmonnamd/RILL/issues/334).
+
+**Oracle.** A non-blocking destination with a tiny send buffer still delivers
+the same payload the source wrote. The destination contents are compared to
+the source, not to an intermediate copy the splice claimed to hold.
+
+**Required mutation.** `RILL_MUTATE=lossy_splice` — drop the read chunk.
+
+### T-WORKER-CREDIT — short credit must not truncate a drained chunk
+
+**Issue.** [#335](https://github.com/mahboobmonnamd/RILL/issues/335).
+
+**Oracle.** `live_chunk(2, 5)` is `None` (skip), not `Some(2)` (prefix).
+
+**Required mutation.** `RILL_MUTATE=truncate_fanout`.
 
 ---
 
@@ -621,7 +640,7 @@ shows `fullscreen=1`.
 
 ---
 
-## T-SPLIT — window is three panes around Chip 0
+## T-SPLIT — window is three panes around Chip 1
 
 Authority: [ADR 0018](adr/0018-three-pane-host-chrome.md),
 [SPEC-CHROME](spec/SPEC-CHROME.md),
@@ -1152,6 +1171,15 @@ columns after width (ADR 0035 D1), not 1.
 **Oracle.** Feed A, `?1049h`, feed B, `?1049l` → A visible, B gone.
 
 **Required mutation.** Single buffer.
+
+### T-CHIP1-RESIZE-ALT — resize must not leave the alternate screen
+
+**Issue.** [#336](https://github.com/mahboobmonnamd/RILL/issues/336).
+
+**Oracle.** Feed `P`, `?1049h`, `A`, resize. `mode_state().alternate_screen` stays
+true and cell (0,0) is `A`. After `?1049l`, cell (0,0) is `P`.
+
+**Required mutation.** `RILL_MUTATE=resize_clears_alt`.
 
 ### T-CHIP1-SIZE — snapshot is exactly cols×rows
 

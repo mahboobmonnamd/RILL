@@ -1,6 +1,7 @@
 # ADR 0018: Three-pane host chrome (one leaf)
 
-- **Status:** Accepted — 2026-08-17
+- **Status:** Accepted — 2026-08-17. **Amended by** [ADR 0054](0054-chip0-retired.md):
+  the center pane is Chip 1. D1's "Chip 0" is the then-live name.
 - **Tree:** this repository only
 - **Issue:** [#260](https://github.com/mahboobmonnamd/RILL/issues/260),
   look-file chrome: [#269](https://github.com/mahboobmonnamd/RILL/issues/269),
