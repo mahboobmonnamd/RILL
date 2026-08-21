@@ -236,6 +236,9 @@ jobs:
           red T-GRAPH-ATTACH single_session t_graph_attach_to_a_second_id_is_accepted
           red T-GRAPH-TERMINATE terminate_all_leaves t_graph_terminate_one_leaf_leaves_the_other_alive
           red T-GRAPH-DELIVERY always_pending t_graph_input_write_is_dispatched
+          red T-GRAPH-EVENTS duplicate_event_ids t_graph_event_ids_are_unique_and_terminate_is_idempotent
+          red T-GRAPH-LAYOUT omit_second_leaf t_graph_layout_snapshot_names_every_live_leaf
+          red T-GRAPH-EPHEMERAL ignore_ephemeral t_graph_ephemeral_drop_terminates_the_child
 
       - name: T-RUNTIME checkpoint negative controls
         run: |
@@ -269,9 +272,6 @@ jobs:
           red T-CLIENT-MIRROR-DISPOSABLE skip_host_checkpoint t_client_mirror_disposable_rebuilds_from_host
           red T-CLIENT-MIRROR-RECONCILE mismatch_keeps_presenting t_client_mirror_reconcile_requests_checkpoint
           red T-CLIENT-RING-EVICTION-RESYNC replay_from_ring_base t_client_ring_eviction_resync_uses_checkpoint
-          red T-GRAPH-EVENTS duplicate_event_ids t_graph_event_ids_are_unique_and_terminate_is_idempotent
-          red T-GRAPH-LAYOUT omit_second_leaf t_graph_layout_snapshot_names_every_live_leaf
-          red T-GRAPH-EPHEMERAL ignore_ephemeral t_graph_ephemeral_drop_terminates_the_child
 
   fuzz-codec:
     runs-on: ubuntu-latest
