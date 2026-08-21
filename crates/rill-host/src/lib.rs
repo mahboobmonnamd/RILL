@@ -10,7 +10,7 @@
 //! measured to a POD snapshot and never left the client, which is why it
 //! reported 32 microseconds (docs/SPIKE-0-AUDIT.md S1-2).
 
-use rill_attach::{cold_identity_socket_path, Decoder, Frame};
+use rill_attach::{cold_identity_socket_path, cold_nav_socket_path, Decoder, Frame};
 use rill_look::{load_resolved_surface, HostSurface, ThemeColors};
 use rill_vt_types::{PodGrid, Rgb, TerminalEmulation, TerminalModeState, ATTR_WIDE_TAIL};
 use std::collections::VecDeque;
@@ -20,8 +20,13 @@ use std::path::{Path, PathBuf};
 use vt_engine::{Palette, VtEngine};
 
 mod error;
+mod scroll;
 pub use error::Error;
 pub use rill_look::chrome_surface_rgba;
+use scroll::{
+    clamp_offset, compose_viewport, follow_live_after_input, ingest_scrolled,
+    mark_full_if_viewport_jumped,
+};
 
 /// Initial credit window. Not `u32::MAX`: the client replenishes as it feeds,
 /// so the kernel can actually apply backpressure (SPEC-ATTACH §5, audit S3-5).
@@ -48,12 +53,19 @@ pub struct Client {
     /// Last VT extract. `cell_codepoint` / `cursor` must not calloc a new grid
     /// on every probe (quality audit Q4).
     cached: Option<PodGrid>,
+    live_cached: Option<PodGrid>,
+    history_rows: Vec<Vec<rill_vt_types::PodCell>>,
+    scroll_offset: u32,
+    viewport_jumped: bool,
+    workspace_id: Option<u64>,
     modes: TerminalModeState,
+    bytes_sent: u64,
 }
 
 impl Client {
     pub fn connect(socket: impl AsRef<Path>, surface: HostSurface) -> Result<Self, Error> {
         let host_identity = cold_host_identity(socket.as_ref())?;
+        let workspace_id = cold_workspace_id(socket.as_ref());
         let stream = UnixStream::connect(socket.as_ref())?;
         stream.set_nonblocking(true)?;
         let mut chip = VtEngine::new(surface.cols, surface.rows)?;
@@ -73,7 +85,13 @@ impl Client {
             warm_path_violations: 0,
             auditing: false,
             cached: None,
+            live_cached: None,
+            history_rows: Vec::new(),
+            scroll_offset: 0,
+            viewport_jumped: true,
+            workspace_id,
             modes: TerminalModeState::default(),
+            bytes_sent: 0,
         };
         client.send(Frame::attach(1, None))?;
         client.grant_credit(CREDIT_WINDOW)?;
@@ -174,11 +192,61 @@ impl Client {
         if !self.alive {
             return Err(Error::Dead);
         }
+        self.follow_live();
+        self.bytes_sent = self.bytes_sent.saturating_add(bytes.len() as u64);
         self.send(Frame::Data(bytes.to_vec()))
+    }
+
+    pub fn follow_live(&mut self) {
+        self.scroll_offset = follow_live_after_input(self.scroll_offset);
+        self.viewport_jumped = true;
+        self.cached = None;
+        self.live_cached = None;
+    }
+
+    pub fn bytes_sent(&self) -> u64 {
+        self.bytes_sent
+    }
+
+    pub fn workspace_id(&self) -> Option<u64> {
+        self.workspace_id
+    }
+
+    pub fn scroll_offset(&self) -> u32 {
+        self.scroll_offset
+    }
+
+    pub fn history_row_count(&self) -> u32 {
+        u32::try_from(self.history_rows.len()).unwrap_or(u32::MAX)
+    }
+
+    pub fn scroll_lines(&mut self, delta: i32) {
+        if std::env::var("RILL_MUTATE").as_deref() == Ok("ignore_wheel") {
+            return;
+        }
+        let max = self.history_rows.len() as i64;
+        let next = (self.scroll_offset as i64 + i64::from(delta)).clamp(0, max);
+        self.scroll_offset = next as u32;
+        self.viewport_jumped = true;
+        self.cached = None;
+        self.live_cached = None;
+    }
+
+    pub fn live_codepoint(&mut self, col: u16, row: u16) -> u32 {
+        self.ensure_snapshots()
+            .ok()
+            .and_then(|_| {
+                self.live_cached
+                    .as_ref()
+                    .and_then(|g| g.cell(col, row).map(|x| x.codepoint))
+            })
+            .unwrap_or(0)
     }
 
     pub fn resize(&mut self, cols: u16, rows: u16, px_w: u16, px_h: u16) -> Result<(), Error> {
         self.cached = None;
+        self.live_cached = None;
+        self.viewport_jumped = true;
         let cell_w = u32::from(px_w) / u32::from(cols.max(1));
         let cell_h = u32::from(px_h) / u32::from(rows.max(1));
         self.chip.resize(cols, rows, cell_w, cell_h)?;
@@ -206,12 +274,22 @@ impl Client {
                             Frame::Data(bytes) => {
                                 fed += bytes.len();
                                 self.chip.feed(&bytes)?;
+                                ingest_scrolled(
+                                    &mut self.history_rows,
+                                    self.chip.take_scrolled_off(),
+                                );
+                                self.scroll_offset = clamp_offset(
+                                    self.history_rows.len(),
+                                    self.surface.rows,
+                                    self.scroll_offset,
+                                );
                                 let replies = self.chip.take_replies()?;
                                 if !replies.is_empty() {
                                     self.send(Frame::Data(replies))?;
                                 }
                                 self.modes = self.chip.mode_state();
                                 self.cached = None;
+                                self.live_cached = None;
                             }
                             Frame::Exit { status } => {
                                 self.alive = false;
@@ -251,13 +329,22 @@ impl Client {
         self.send(Frame::Credit(n))
     }
 
-    pub fn snapshot(&mut self) -> Result<&PodGrid, rill_vt_types::Error> {
-        if self.cached.is_none() {
-            // Chip 1 materialises the look-file palette in snapshot().
-            // apply_theme is a second full-grid walk and is not needed.
-            let grid = self.chip.snapshot()?;
-            self.cached = Some(grid);
+    fn ensure_snapshots(&mut self) -> Result<(), rill_vt_types::Error> {
+        if self.cached.is_some() && self.live_cached.is_some() {
+            return Ok(());
         }
+        ingest_scrolled(&mut self.history_rows, self.chip.take_scrolled_off());
+        let live = self.chip.snapshot()?;
+        let mut view = compose_viewport(&self.history_rows, &live, self.scroll_offset);
+        mark_full_if_viewport_jumped(&mut view, self.viewport_jumped);
+        self.viewport_jumped = false;
+        self.live_cached = Some(live);
+        self.cached = Some(view);
+        Ok(())
+    }
+
+    pub fn snapshot(&mut self) -> Result<&PodGrid, rill_vt_types::Error> {
+        self.ensure_snapshots()?;
         self.cached
             .as_ref()
             .ok_or(rill_vt_types::Error::Vt("snapshot cache"))
@@ -286,6 +373,11 @@ impl Client {
 
     pub fn wrap_paste(&self, body: &[u8]) -> Vec<u8> {
         wrap_paste(self.modes.bracketed_paste, body)
+    }
+
+    pub fn paste(&mut self, body: &[u8]) -> Result<(), Error> {
+        let wrapped = self.wrap_paste(body);
+        self.send_input(&wrapped)
     }
 
     /// Non-blocking. A partial write is queued and completed on the next pump;
@@ -343,6 +435,22 @@ fn rill_attach_default_runtime() -> PathBuf {
         }
         PathBuf::from(home).join(".local/share/rill/run/attach.sock")
     }
+}
+
+fn cold_workspace_id(attach_socket: &Path) -> Option<u64> {
+    #[cfg(feature = "mutate")]
+    if std::env::var("RILL_MUTATE").as_deref() == Ok("chrome_invents_workspace_row") {
+        return None;
+    }
+    let mut stream = UnixStream::connect(cold_nav_socket_path(attach_socket)).ok()?;
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(1)))
+        .ok()?;
+    let mut buf = [0_u8; 64];
+    let n = stream.read(&mut buf).ok()?;
+    let text = std::str::from_utf8(&buf[..n]).ok()?;
+    let line = text.lines().next()?;
+    line.strip_prefix("ws=")?.parse().ok()
 }
 
 fn cold_host_identity(attach_socket: &Path) -> Result<String, Error> {
@@ -435,6 +543,36 @@ pub fn wrap_paste(bracketed: bool, body: &[u8]) -> Vec<u8> {
     out
 }
 
+/// Host translation of macOS edit chords into bytes the shell line editor
+/// already understands. Not a second editor (ADR 0051 D1).
+pub const EDIT_LINE_START: u8 = 1;
+pub const EDIT_LINE_END: u8 = 2;
+pub const EDIT_WORD_LEFT: u8 = 3;
+pub const EDIT_WORD_RIGHT: u8 = 4;
+pub const EDIT_DELETE_WORD: u8 = 5;
+pub const EDIT_DELETE_TO_START: u8 = 6;
+pub const EDIT_DELETE_TO_END: u8 = 7;
+pub const EDIT_HOME: u8 = 8;
+pub const EDIT_END: u8 = 9;
+
+pub fn encode_edit(op: u8) -> &'static [u8] {
+    if std::env::var("RILL_MUTATE").as_deref() == Ok("skip_host_edit_keys") {
+        return &[];
+    }
+    match op {
+        EDIT_LINE_START => &[0x01],
+        EDIT_LINE_END => &[0x05],
+        EDIT_WORD_LEFT => b"\x1bb",
+        EDIT_WORD_RIGHT => b"\x1bf",
+        EDIT_DELETE_WORD => &[0x17],
+        EDIT_DELETE_TO_START => &[0x15],
+        EDIT_DELETE_TO_END => &[0x0b],
+        EDIT_HOME => b"\x1b[H",
+        EDIT_END => b"\x1b[F",
+        _ => &[],
+    }
+}
+
 /// Percentile over an already-sorted slice, 0-indexed and without the
 /// off-by-one the previous `ceil()` introduced (audit S3-8e).
 pub fn percentile(sorted: &[f64], q: f64) -> f64 {
@@ -483,5 +621,21 @@ mod tests {
     fn t_host_wraps_bracketed_paste_from_mode() {
         assert_eq!(wrap_paste(false, b"hi"), b"hi");
         assert_eq!(wrap_paste(true, b"hi"), b"\x1b[200~hi\x1b[201~".to_vec());
+    }
+
+    /// Bug: ⌘/⌥ line and word motions never became PTY bytes, so zsh/readline
+    /// editing felt dead. Required mutation: `skip_host_edit_keys`.
+    #[test]
+    fn t_cmd_option_edit_keys_encode_readline_bytes() {
+        assert_eq!(encode_edit(EDIT_LINE_START), [0x01]);
+        assert_eq!(encode_edit(EDIT_LINE_END), [0x05]);
+        assert_eq!(encode_edit(EDIT_WORD_LEFT), b"\x1bb");
+        assert_eq!(encode_edit(EDIT_WORD_RIGHT), b"\x1bf");
+        assert_eq!(encode_edit(EDIT_DELETE_WORD), [0x17]);
+        assert_eq!(encode_edit(EDIT_DELETE_TO_START), [0x15]);
+        assert_eq!(encode_edit(EDIT_DELETE_TO_END), [0x0b]);
+        assert_eq!(encode_edit(EDIT_HOME), b"\x1b[H");
+        assert_eq!(encode_edit(EDIT_END), b"\x1b[F");
+        assert!(encode_edit(255).is_empty());
     }
 }

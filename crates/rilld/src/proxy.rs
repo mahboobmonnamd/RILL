@@ -2,7 +2,7 @@
 
 use crate::endpoint::{authorize_peer, ensure_protected_parent};
 use crate::error::Error;
-use rill_attach::{cold_identity_socket_path, worker_socket_path};
+use rill_attach::{cold_identity_socket_path, cold_nav_socket_path, worker_socket_path};
 use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
@@ -100,6 +100,15 @@ pub fn run_control(attach_sock: &Path) -> Result<(), Error> {
     std::fs::set_permissions(&identity_path, std::fs::Permissions::from_mode(0o600))?;
     let worker_identity = cold_identity_socket_path(&worker_sock);
 
+    let nav_path = cold_nav_socket_path(attach_sock);
+    if nav_path.exists() {
+        let _ = std::fs::remove_file(&nav_path);
+    }
+    let nav = UnixListener::bind(&nav_path)?;
+    nav.set_nonblocking(true)?;
+    std::fs::set_permissions(&nav_path, std::fs::Permissions::from_mode(0o600))?;
+    let worker_nav = cold_nav_socket_path(&worker_sock);
+
     let mut pipes: Vec<Pipe> = Vec::new();
     loop {
         match listener.accept() {
@@ -134,6 +143,20 @@ pub fn run_control(attach_sock: &Path) -> Result<(), Error> {
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
             Err(e) => return Err(e.into()),
         }
+        match nav.accept() {
+            Ok((mut stream, _)) => {
+                if authorize_peer(&stream).is_ok() {
+                    if let Ok(mut w) = UnixStream::connect(&worker_nav) {
+                        let mut buf = [0u8; 64];
+                        if let Ok(n) = w.read(&mut buf) {
+                            let _ = stream.write_all(&buf[..n]);
+                        }
+                    }
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(e) => return Err(e.into()),
+        }
 
         let mut i = 0;
         while i < pipes.len() {
@@ -152,6 +175,11 @@ pub fn run_control(attach_sock: &Path) -> Result<(), Error> {
             },
             libc::pollfd {
                 fd: identity.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            },
+            libc::pollfd {
+                fd: nav.as_raw_fd(),
                 events: libc::POLLIN,
                 revents: 0,
             },

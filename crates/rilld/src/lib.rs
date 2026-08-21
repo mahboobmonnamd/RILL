@@ -4,8 +4,8 @@ mod endpoint;
 mod error;
 mod proxy;
 
-use rill_attach::{cold_identity_socket_path, Decoder, Frame, PROTOCOL_2, PROTOCOL_VERSION};
-use rill_kernel::{Kernel, Session, SessionId, Winsize};
+use rill_attach::{cold_identity_socket_path, cold_nav_socket_path, Decoder, Frame, PROTOCOL_2, PROTOCOL_VERSION};
+use rill_kernel::{Kernel, NodeKind, Session, SessionId, Winsize};
 use rill_vt_types::{PodGrid, TerminalEmulation};
 use std::collections::VecDeque;
 use std::fs::File;
@@ -26,6 +26,9 @@ pub struct Daemon {
     socket_path: PathBuf,
     identity_listener: UnixListener,
     identity_socket_path: PathBuf,
+    nav_listener: UnixListener,
+    nav_socket_path: PathBuf,
+    workspace_id: rill_kernel::NodeId,
     _lock: File,
     kernel: Kernel,
     default_id: SessionId,
@@ -103,8 +106,18 @@ impl Daemon {
             &identity_socket_path,
             std::fs::Permissions::from_mode(0o600),
         )?;
+        let nav_socket_path = cold_nav_socket_path(&socket_path);
+        if nav_socket_path.exists() {
+            std::fs::remove_file(&nav_socket_path)?;
+        }
+        let nav_listener = UnixListener::bind(&nav_socket_path)?;
+        nav_listener.set_nonblocking(true)?;
+        std::fs::set_permissions(&nav_socket_path, std::fs::Permissions::from_mode(0o600))?;
         let mut kernel = Kernel::new();
         let default_id = kernel.spawn_leaf(shell, args, size)?;
+        let workspace_id = kernel.create_node(NodeKind::Workspace, None)?;
+        let tab = kernel.create_node(NodeKind::Tab, Some(workspace_id))?;
+        kernel.attach_leaf(tab, default_id)?;
         let child_pid = kernel
             .session(default_id)
             .ok_or(rill_kernel::Error::UnknownSession)?
@@ -133,6 +146,9 @@ impl Daemon {
             socket_path,
             identity_listener,
             identity_socket_path,
+            nav_listener,
+            nav_socket_path,
+            workspace_id,
             _lock: lock,
             kernel,
             default_id,
@@ -274,6 +290,11 @@ impl Daemon {
             events: libc::POLLIN,
             revents: 0,
         });
+        fds.push(libc::pollfd {
+            fd: self.nav_listener.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        });
         for c in &self.clients {
             let mut events = libc::POLLIN;
             if !c.outbox.is_empty() {
@@ -293,9 +314,12 @@ impl Daemon {
         if fds[1].revents & libc::POLLIN != 0 {
             self.serve_cold_identity()?;
         }
+        if fds[2].revents & libc::POLLIN != 0 {
+            self.serve_cold_nav()?;
+        }
         let mut i = 0;
         while i < self.clients.len() && i < n_clients {
-            let idx = 2 + i;
+            let idx = 3 + i;
             if idx < fds.len()
                 && fds[idx].revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR) != 0
             {
@@ -379,6 +403,26 @@ impl Daemon {
             Ok((mut stream, _)) => {
                 let identity = self.kernel.host_identity(self.default_id)?;
                 match stream.write_all(identity.as_wire()) {
+                    Ok(()) => {}
+                    Err(e)
+                        if matches!(
+                            e.kind(),
+                            std::io::ErrorKind::BrokenPipe | std::io::ErrorKind::ConnectionReset
+                        ) => {}
+                    Err(e) => return Err(e.into()),
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(e) => return Err(e.into()),
+        }
+        Ok(())
+    }
+
+    fn serve_cold_nav(&mut self) -> Result<(), Error> {
+        match self.nav_listener.accept() {
+            Ok((mut stream, _)) => {
+                let line = format!("ws={}\n", self.workspace_id.as_u64());
+                match stream.write_all(line.as_bytes()) {
                     Ok(()) => {}
                     Err(e)
                         if matches!(
@@ -937,6 +981,7 @@ impl Drop for Daemon {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.socket_path);
         let _ = std::fs::remove_file(&self.identity_socket_path);
+        let _ = std::fs::remove_file(&self.nav_socket_path);
     }
 }
 

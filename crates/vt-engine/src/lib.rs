@@ -50,6 +50,12 @@ impl VtEngine {
         self.screen.take_replies()
     }
 
+    /// Primary-screen rows that scrolled off since the last drain. Empty after
+    /// take. The chip does not retain them (SPEC-VT-SCREEN §5).
+    pub fn take_scrolled_off(&mut self) -> Vec<Vec<PodCell>> {
+        self.screen.take_scrolled_off()
+    }
+
     pub fn has_replies(&self) -> bool {
         self.screen.has_replies()
     }

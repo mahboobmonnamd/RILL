@@ -46,6 +46,8 @@ int rill_client_socket_fd(const RillClient *client);
 
 int rill_client_send_input(RillClient *client, const uint8_t *bytes, size_t len);
 int rill_client_encode_arrow(const RillClient *client, uint8_t letter, uint8_t *out);
+int rill_encode_edit(uint8_t op, uint8_t *out);
+int rill_client_paste(RillClient *client, const uint8_t *bytes, size_t len);
 int rill_client_resize(RillClient *client, uint16_t cols, uint16_t rows,
                        uint16_t px_w, uint16_t px_h);
 
@@ -81,6 +83,14 @@ int rill_client_cursor(RillClient *client, uint16_t *col, uint16_t *row);
 
 void rill_client_begin_warm_path_audit(RillClient *client);
 uint32_t rill_client_end_warm_path_audit(RillClient *client);
+
+void rill_client_scroll_lines(RillClient *client, int32_t delta);
+void rill_client_follow_live(RillClient *client);
+uint32_t rill_client_scroll_offset(const RillClient *client);
+uint32_t rill_client_history_rows(const RillClient *client);
+uint32_t rill_client_live_codepoint(RillClient *client, uint16_t col, uint16_t row);
+uint64_t rill_client_workspace_id(const RillClient *client);
+uint64_t rill_client_bytes_sent(const RillClient *client);
 
 #ifdef __cplusplus
 }

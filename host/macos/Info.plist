@@ -20,5 +20,10 @@
   <string>13.0</string>
   <key>NSHighResolutionCapable</key>
   <true/>
+  <key>LSEnvironment</key>
+  <dict>
+    <key>RILL_DEV_DIRECT_RILLD</key>
+    <string>1</string>
+  </dict>
 </dict>
 </plist>

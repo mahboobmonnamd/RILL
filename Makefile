@@ -41,4 +41,6 @@ package:
 # "host io: No such file or directory". Direct spawn is the bounded
 # development path (SPEC-RUNTIME-SUPERVISION §1).
 run: package
+	@echo "Foreground GUI (no extra terminal output). Interrupt (Ctrl+C) stops the window."
+	@echo "Or: open dist/Rill.app  (dev.rill.spike0 sets RILL_DEV_DIRECT_RILLD in Info.plist)"
 	RILL_DEV_DIRECT_RILLD=1 dist/Rill.app/Contents/MacOS/Rill

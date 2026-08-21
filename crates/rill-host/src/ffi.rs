@@ -117,6 +117,53 @@ pub unsafe extern "C" fn rill_client_encode_arrow(
     3
 }
 
+/// Readline-shaped bytes for macOS edit chords. Writes up to 3 bytes.
+///
+/// # Safety
+/// `out` has at least 3 bytes.
+#[no_mangle]
+pub unsafe extern "C" fn rill_encode_edit(op: u8, out: *mut u8) -> i32 {
+    if out.is_null() {
+        return -1;
+    }
+    let seq = crate::encode_edit(op);
+    if seq.is_empty() {
+        return 0;
+    }
+    unsafe {
+        std::ptr::copy_nonoverlapping(seq.as_ptr(), out, seq.len());
+    }
+    seq.len() as i32
+}
+
+/// # Safety
+/// `bytes` points to `len` readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_paste(
+    client: *mut Client,
+    bytes: *const u8,
+    len: usize,
+) -> i32 {
+    if client.is_null() {
+        return -1;
+    }
+    if len > 0 && bytes.is_null() {
+        return -1;
+    }
+    let body = if len == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(bytes, len) }
+    };
+    match unsafe { (*client).paste(body) } {
+        Ok(()) => 0,
+        Err(e) => {
+            set_err(e);
+            -1
+        }
+    }
+}
+
 /// # Safety
 /// `client` is a live handle.
 #[no_mangle]
@@ -467,4 +514,82 @@ pub unsafe extern "C" fn rill_client_end_warm_path_audit(client: *mut Client) ->
         return u32::MAX;
     }
     unsafe { (*client).end_warm_path_audit() }
+}
+
+/// # Safety
+/// `client` is a live handle.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_scroll_lines(client: *mut Client, delta: i32) {
+    if !client.is_null() {
+        unsafe { (*client).scroll_lines(delta) };
+    }
+}
+
+/// # Safety
+/// `client` is a live handle.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_follow_live(client: *mut Client) {
+    if !client.is_null() {
+        unsafe { (*client).follow_live() };
+    }
+}
+
+/// # Safety
+/// `client` is a live handle.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_scroll_offset(client: *const Client) -> u32 {
+    if client.is_null() {
+        return 0;
+    }
+    unsafe { (*client).scroll_offset() }
+}
+
+/// # Safety
+/// `client` is a live handle.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_history_rows(client: *const Client) -> u32 {
+    if client.is_null() {
+        return 0;
+    }
+    unsafe { (*client).history_row_count() }
+}
+
+/// Live grid (not scrolled viewport). `0` if out of range.
+///
+/// # Safety
+/// `client` is a live handle.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_live_codepoint(
+    client: *mut Client,
+    col: u16,
+    row: u16,
+) -> u32 {
+    if client.is_null() {
+        return 0;
+    }
+    unsafe { (*client).live_codepoint(col, row) }
+}
+
+/// Kernel Workspace `NodeId`, or 0 if chrome must not invent a row.
+///
+/// # Safety
+/// `client` is a live handle.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_workspace_id(client: *const Client) -> u64 {
+    if client.is_null() {
+        return 0;
+    }
+    unsafe { (*client).workspace_id() }.unwrap_or(0)
+}
+
+/// Bytes this client wrote toward the PTY (host chords must not increment).
+///
+/// # Safety
+/// `client` is a live handle.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_bytes_sent(client: *const Client) -> u64 {
+    if client.is_null() {
+        return 0;
+    }
+    unsafe { (*client).bytes_sent() }
 }

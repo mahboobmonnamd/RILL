@@ -79,6 +79,10 @@ static const CGFloat kRillCenterMin = 320.0;
 @property (nonatomic, assign) CGFloat topInset;
 @property (nonatomic, assign) BOOL freezeY;
 @property (nonatomic, copy) NSString *hostIdentity;
+@property (nonatomic, assign) uint64_t workspaceId;
+@property (nonatomic, assign) BOOL navHidden;
+@property (nonatomic, assign) BOOL inspectorHidden;
+@property (nonatomic, assign) BOOL hideDetaches;
 @end
 
 @implementation RillChromeController
@@ -87,14 +91,20 @@ static const CGFloat kRillCenterMin = 320.0;
                       background:(uint32_t)bg
                       foreground:(uint32_t)fg
                             host:(NSString *)host
+                      workspaceId:(uint64_t)workspaceId
                         topInset:(CGFloat)topInset {
     self = [super initWithNibName:nil bundle:nil];
     if (self) {
         _terminal = terminal;
         _topInset = topInset;
         _hostIdentity = [host copy];
+        _workspaceId = workspaceId;
         const char *mut = getenv("RILL_MUTATE");
         _freezeY = mut && strcmp(mut, "hardcoded_chrome_y") == 0;
+        _hideDetaches = mut && strcmp(mut, "hide_sidebar_detaches") == 0;
+        if (mut && strcmp(mut, "chrome_invents_workspace_row") == 0) {
+            _workspaceId = 0;
+        }
         if (mut && strcmp(mut, "hardcoded_chrome_gray") == 0) {
             _bgRgba = 0x1e1e1eff;
             _fgRgba = 0xdbdbdbff;
@@ -135,6 +145,35 @@ static const CGFloat kRillCenterMin = 320.0;
     [split setHoldingPriority:NSLayoutPriorityDefaultLow forSubviewAtIndex:1];
     [split setHoldingPriority:NSLayoutPriorityDefaultHigh forSubviewAtIndex:2];
     self.view = split;
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(toggleNav)
+                                                 name:@"RillToggleNav"
+                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(toggleInspector)
+                                                 name:@"RillToggleInspector"
+                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(toggleNav)
+                                                 name:@"RillToggleSidebars"
+                                               object:nil];
+}
+
+- (void)applySplitPositions {
+    NSSplitView *split = (NSSplitView *)self.view;
+    if (![split isKindOfClass:[NSSplitView class]] || split.subviews.count < 3) {
+        return;
+    }
+    NSView *left = split.subviews[0];
+    NSView *right = split.subviews[2];
+    left.hidden = _navHidden;
+    right.hidden = _inspectorHidden;
+    CGFloat w = split.bounds.size.width;
+    CGFloat leftW = _navHidden ? 0 : kRillNavWidth;
+    CGFloat rightW = _inspectorHidden ? 0 : kRillInspectorWidth;
+    [split setPosition:leftW ofDividerAtIndex:0];
+    [split setPosition:(w - rightW) ofDividerAtIndex:1];
+    [split layoutSubtreeIfNeeded];
 }
 
 - (void)viewDidLayout {
@@ -144,23 +183,25 @@ static const CGFloat kRillCenterMin = 320.0;
     }
     NSSplitView *split = (NSSplitView *)self.view;
     CGFloat w = split.bounds.size.width;
-    if (w < kRillNavMin + kRillCenterMin + kRillInspectorMin) {
+    if (w < kRillCenterMin) {
         return;
     }
-    [split setPosition:kRillNavWidth ofDividerAtIndex:0];
-    [split setPosition:(w - kRillInspectorWidth) ofDividerAtIndex:1];
+    [self applySplitPositions];
     self.positioned = YES;
-    [split layoutSubtreeIfNeeded];
 }
 
 - (CGFloat)splitView:(NSSplitView *)splitView
     constrainMinCoordinate:(CGFloat)proposed
               ofSubviewAt:(NSInteger)dividerIndex {
-    (void)splitView;
+    CGFloat w = splitView.bounds.size.width;
     if (dividerIndex == 0) {
-        return MAX(proposed, kRillNavMin);
+        return _navHidden ? 0 : MAX(proposed, kRillNavMin);
     }
-    return MAX(proposed, kRillNavMin + kRillCenterMin);
+    CGFloat leftW = _navHidden ? 0 : kRillNavMin;
+    if (_inspectorHidden) {
+        return w;
+    }
+    return MAX(proposed, leftW + kRillCenterMin);
 }
 
 - (CGFloat)splitView:(NSSplitView *)splitView
@@ -168,15 +209,70 @@ static const CGFloat kRillCenterMin = 320.0;
               ofSubviewAt:(NSInteger)dividerIndex {
     CGFloat w = splitView.bounds.size.width;
     if (dividerIndex == 0) {
-        return MIN(proposed, w - kRillInspectorMin - kRillCenterMin);
+        if (_navHidden) {
+            return 0;
+        }
+        CGFloat rightW = _inspectorHidden ? 0 : kRillInspectorMin;
+        return MIN(proposed, w - rightW - kRillCenterMin);
+    }
+    if (_inspectorHidden) {
+        return w;
     }
     return MIN(proposed, w - kRillInspectorMin);
 }
 
 - (BOOL)splitView:(NSSplitView *)splitView canCollapseSubview:(NSView *)subview {
     (void)splitView;
-    (void)subview;
-    return NO;
+    if (subview == self.terminal) {
+        return NO;
+    }
+    return YES;
+}
+
+- (void)viewDidAppear {
+    [super viewDidAppear];
+    if (!getenv("RILL_TEST_HIDE_CHROME")) {
+        return;
+    }
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!self->_navHidden) {
+            [self toggleNav];
+        }
+    });
+}
+
+- (BOOL)sidebarsHidden {
+    return _navHidden;
+}
+
+- (void)toggleNav {
+    [self togglePaneNav:YES];
+}
+
+- (void)toggleInspector {
+    [self togglePaneNav:NO];
+}
+
+- (void)togglePaneNav:(BOOL)nav {
+    NSSplitView *split = (NSSplitView *)self.view;
+    if (![split isKindOfClass:[NSSplitView class]] || split.subviews.count < 3) {
+        return;
+    }
+    if (self.hideDetaches && self.terminal) {
+        [self.terminal.window close];
+        return;
+    }
+    if (nav) {
+        _navHidden = !_navHidden;
+    } else {
+        _inspectorHidden = !_inspectorHidden;
+    }
+    [self applySplitPositions];
+    if (self.terminal) {
+        [self.view.window makeFirstResponder:self.terminal];
+        [self.terminal returnToLiveViewport];
+        [self.terminal writeTestHeartbeat];
+    }
 }
 
 - (void)finishPane:(RillChromePane *)pane width:(CGFloat)width {
@@ -200,6 +296,7 @@ static const CGFloat kRillCenterMin = 320.0;
 }
 
 - (RillChromePane *)navPaneNamed:(NSString *)name {
+    (void)name;
     RillChromePane *pane = [[RillChromePane alloc] initWithFrame:NSMakeRect(0, 0, kRillNavWidth, 680)];
     pane.rows = [NSMutableArray array];
     pane.topInset = self.topInset;
@@ -210,7 +307,15 @@ static const CGFloat kRillCenterMin = 320.0;
     pane.heading = heading;
     [pane addSubview:heading];
 
-    NSView *row = [self iconRow:name symbol:@"folder" ident:@"workspace-row-0"];
+    NSString *rowName = nil;
+    NSString *ident = @"workspace-row-0";
+    if (self.workspaceId != 0) {
+        rowName = [NSString stringWithFormat:@"%llu", (unsigned long long)self.workspaceId];
+        ident = [NSString stringWithFormat:@"workspace-id-%llu", (unsigned long long)self.workspaceId];
+    } else {
+        rowName = NSHomeDirectory().lastPathComponent ?: @"Rill";
+    }
+    NSView *row = [self iconRow:rowName symbol:@"folder" ident:ident];
     [pane.rows addObject:row];
     [pane addSubview:row];
     [self finishPane:pane width:kRillNavWidth];
@@ -235,6 +340,17 @@ static const CGFloat kRillCenterMin = 320.0;
     NSView *files = [self iconRow:@"Files" symbol:@"folder" ident:@"inspector-files"];
     [pane.rows addObject:files];
     [pane addSubview:files];
+
+    NSTextField *agentsHead = [self sectionLabel:@"Agents"];
+    agentsHead.accessibilityIdentifier = @"chrome-agents-heading";
+    [pane.rows addObject:agentsHead];
+    [pane addSubview:agentsHead];
+    const char *mut = getenv("RILL_MUTATE");
+    if (mut && strcmp(mut, "fabricate_agent_row") == 0) {
+        NSView *fake = [self iconRow:@"Review agent" symbol:@"cpu" ident:@"agent-row-fake"];
+        [pane.rows addObject:fake];
+        [pane addSubview:fake];
+    }
     [self finishPane:pane width:kRillInspectorWidth];
     return pane;
 }

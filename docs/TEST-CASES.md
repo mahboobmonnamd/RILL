@@ -765,6 +765,9 @@ and `TerminalView` had no `scrollWheel:`.
 
 **Required mutation.** `RILL_MUTATE=ignore_wheel`.
 
+A later keystroke MUST return the viewport to the live tail (`follow_live_after_input`).
+Mutation `keep_scroll_on_input` keeps the wheel offset.
+
 ---
 
 ## T-NAV-VIEWSTATE / host chords — hide chrome without PTY writes
@@ -773,10 +776,36 @@ Authority: [SPEC-NAV](spec/SPEC-NAV.md) §5, [#340](https://github.com/mahboobmo
 
 **Bug.** Keys all went to the PTY; sidebars could not hide.
 
-**Oracle.** ⌥⌘1 / `RILL_TEST_HIDE_CHROME` sets heartbeat `hidden=1` `left=0`
-`sent=0` while the GUI pid stays alive.
+**Oracle.** ⌥⌘1 / `RILL_TEST_HIDE_CHROME` sets `hidden=1` `left=0` with
+`insp=0` and inspector width kept (`host=local`). ⌃⌘1 sets `insp=1` without
+hiding Workspaces. `sent=0`. GUI pid stays alive.
 
 **Required mutations.** `hide_sidebar_detaches`, `always_forward_chord`.
+
+---
+
+## T-HOST-EDIT-KEYS — macOS line/word chords become readline bytes
+
+Authority: [SPEC-DISPLAY](spec/SPEC-DISPLAY.md) §6, [ADR 0051](adr/0051-input-editor-history-and-completion.md) D1 (raw mode still goes to the PTY).
+
+**Bug.** ⌘/⌥ motions and ⌘V never reached the attach stream.
+
+**Oracle.** `encode_edit` emits Ctrl+A/E, ESC-b/f, Ctrl+W/U/K, CSI Home/End.
+Packaged `RILL_TEST_INJECT_EDIT` / `RILL_TEST_INJECT_PASTE` increase `sent`.
+
+**Required mutation.** `skip_host_edit_keys`.
+
+---
+
+## T-APP-QUIT-CLOSE — ⌘Q and ⌘W exist; close hides the window not the PTY
+
+Authority: [SPEC-NAV](spec/SPEC-NAV.md) §3, T-KILL (GUI death must not reap the kernel).
+
+**Bug.** Building a custom `mainMenu` omitted Quit/Close.
+
+**Oracle.** Heartbeat `quit=1` `close=1`. `RILL_TEST_CLOSE_WINDOW` → `visible=0` while the GUI pid stays alive.
+
+**Required mutation.** `skip_app_quit_menu`.
 
 ---
 

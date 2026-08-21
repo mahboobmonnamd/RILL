@@ -69,6 +69,9 @@ pub(crate) struct Screen {
     mouse_any: bool,
     mouse_sgr: bool,
     focus_events: bool,
+    /// Primary-screen rows that left the visible grid once. Drained by
+    /// `take_scrolled_off`. Not chip-owned scrollback (SPEC-VT-SCREEN §5).
+    scrolled_off: Vec<Vec<Cell>>,
 }
 
 #[derive(Clone, Copy)]
@@ -140,6 +143,7 @@ impl Screen {
             mouse_any: false,
             mouse_sgr: false,
             focus_events: false,
+            scrolled_off: Vec::new(),
         })
     }
 
@@ -274,6 +278,23 @@ impl Screen {
 
     pub(crate) fn take_replies(&mut self) -> Result<Vec<u8>, Error> {
         Ok(std::mem::take(&mut self.replies))
+    }
+
+    pub(crate) fn take_scrolled_off(&mut self) -> Vec<Vec<PodCell>> {
+        let rows = std::mem::take(&mut self.scrolled_off);
+        rows.into_iter()
+            .map(|row| row.into_iter().map(|c| self.pod_cell(c)).collect())
+            .collect()
+    }
+
+    fn pod_cell(&self, c: Cell) -> PodCell {
+        PodCell {
+            codepoint: c.codepoint,
+            fg: pack(self.resolve(c.fg, true)),
+            bg: pack(self.resolve(c.bg, false)),
+            attrs: c.attrs,
+            _pad: 0,
+        }
     }
 
     pub(crate) fn has_replies(&self) -> bool {
@@ -521,6 +542,10 @@ impl Screen {
         let top = usize::from(self.scroll_top);
         let bot = usize::from(self.scroll_bottom);
         let cols = usize::from(self.cols);
+        if !self.in_alt && self.scroll_top == 0 && cols > 0 {
+            self.scrolled_off
+                .push(self.cells[top * cols..top * cols + cols].to_vec());
+        }
         for r in top..bot {
             let (src, dst) = {
                 let d = r * cols;

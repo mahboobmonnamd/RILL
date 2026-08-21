@@ -37,8 +37,27 @@ extern char **environ;
 
 @interface RillAppDelegate : NSObject <NSApplicationDelegate>
 @property (nonatomic, strong) NSWindow *window;
+- (void)toggleNavFromMenu:(id)sender;
+- (void)toggleInspectorFromMenu:(id)sender;
 @end
 @implementation RillAppDelegate
+- (void)toggleNavFromMenu:(id)sender {
+    (void)sender;
+    const char *mut = getenv("RILL_MUTATE");
+    if (mut && strcmp(mut, "always_forward_chord") == 0) {
+        return;
+    }
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"RillToggleNav" object:self];
+}
+- (void)toggleInspectorFromMenu:(id)sender {
+    (void)sender;
+    const char *mut = getenv("RILL_MUTATE");
+    if (mut && strcmp(mut, "always_forward_chord") == 0) {
+        return;
+    }
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"RillToggleInspector"
+                                                        object:self];
+}
 - (void)restoreWindowForDockReopen {
     const char *mut = getenv("RILL_MUTATE");
     if (mut && strcmp(mut, "skip_dock_reopen") == 0) {
@@ -79,7 +98,67 @@ extern char **environ;
     (void)sender;
     return NO;
 }
+
+- (IBAction)closeMainWindow:(id)sender {
+    (void)sender;
+    [self.window performClose:sender];
+}
 @end
+
+static void rill_install_menus(id appDelegate) {
+    NSMenu *menubar = [[NSMenu alloc] init];
+
+    NSMenuItem *appItem = [[NSMenuItem alloc] init];
+    NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"Rill"];
+    NSMenuItem *quit = [[NSMenuItem alloc] initWithTitle:@"Quit Rill"
+                                                  action:@selector(terminate:)
+                                           keyEquivalent:@"q"];
+    quit.target = NSApp;
+    const char *mut = getenv("RILL_MUTATE");
+    if (!(mut && strcmp(mut, "skip_app_quit_menu") == 0)) {
+        [appMenu addItem:quit];
+    }
+    appItem.submenu = appMenu;
+    [menubar addItem:appItem];
+
+    NSMenuItem *fileItem = [[NSMenuItem alloc] init];
+    NSMenu *file = [[NSMenu alloc] initWithTitle:@"File"];
+    NSMenuItem *close = [[NSMenuItem alloc] initWithTitle:@"Close"
+                                                   action:@selector(closeMainWindow:)
+                                            keyEquivalent:@"w"];
+    close.target = appDelegate;
+    [file addItem:close];
+    fileItem.submenu = file;
+    [menubar addItem:fileItem];
+
+    NSMenuItem *editItem = [[NSMenuItem alloc] init];
+    NSMenu *edit = [[NSMenu alloc] initWithTitle:@"Edit"];
+    NSMenuItem *pasteItem = [[NSMenuItem alloc] initWithTitle:@"Paste"
+                                                       action:@selector(paste:)
+                                                keyEquivalent:@"v"];
+    [edit addItem:pasteItem];
+    editItem.submenu = edit;
+    [menubar addItem:editItem];
+
+    NSMenuItem *viewItem = [[NSMenuItem alloc] init];
+    NSMenu *view = [[NSMenu alloc] initWithTitle:@"View"];
+    NSMenuItem *optCmd = [[NSMenuItem alloc] initWithTitle:@"Toggle Workspaces"
+                                                    action:@selector(toggleNavFromMenu:)
+                                             keyEquivalent:@"1"];
+    optCmd.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagOption;
+    optCmd.target = appDelegate;
+    [view addItem:optCmd];
+    NSMenuItem *ctrlCmd = [[NSMenuItem alloc] initWithTitle:@"Toggle Inspector"
+                                                     action:@selector(toggleInspectorFromMenu:)
+                                              keyEquivalent:@"1"];
+    ctrlCmd.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagControl;
+    ctrlCmd.target = appDelegate;
+    [view addItem:ctrlCmd];
+    viewItem.submenu = view;
+    [menubar addItem:viewItem];
+
+    NSApp.mainMenu = menubar;
+}
 
 /* Apple: direct-to-display needs toggleFullScreen: on a titled window, not a
  * borderless cover of screen.frame. Default launch is windowed (ADR 0017).
@@ -221,6 +300,7 @@ int main(int argc, const char *argv[]) {
         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
         RillAppDelegate *appDelegate = [RillAppDelegate new];
         [NSApp setDelegate:appDelegate];
+        rill_install_menus(appDelegate);
 
         NSRect frame = NSMakeRect(80, 80, 1100, 680);
         RillWindow *window = [[RillWindow alloc]
@@ -278,6 +358,7 @@ int main(int argc, const char *argv[]) {
                                                     background:rill_client_background_rgba(client)
                                                     foreground:rill_client_foreground_rgba(client)
                                                           host:host
+                                                    workspaceId:rill_client_workspace_id(client)
                                                       topInset:rill_client_padding_y(client)];
             window.contentViewController = chrome;
         }
@@ -285,6 +366,14 @@ int main(int argc, const char *argv[]) {
         [window makeKeyAndOrderFront:nil];
         [window makeFirstResponder:view];
         [NSApp activateIgnoringOtherApps:YES];
+
+        if (getenv("RILL_TEST_CLOSE_WINDOW")) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{
+                             [window performClose:nil];
+                             [view writeTestHeartbeat];
+                           });
+        }
 
         const char *mut = getenv("RILL_MUTATE");
         BOOL always_fs = mut && strcmp(mut, "always_toggle_fullscreen") == 0;
