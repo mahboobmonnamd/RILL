@@ -13,9 +13,12 @@
 #import "ChromeHost.h"
 #import "TerminalView.h"
 #include <ApplicationServices/ApplicationServices.h>
+#include <signal.h>
 #include <spawn.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -306,6 +309,27 @@ int main(int argc, const char *argv[]) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)),
                            dispatch_get_main_queue(), ^{
                                [window toggleFullScreen:nil];
+                           });
+        }
+        if (getenv("RILL_TEST_MOBILE_BACKGROUND")) {
+            int attach_fd = rill_client_socket_fd(client);
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{
+                               const char *bg_mut = getenv("RILL_MUTATE");
+                               if (bg_mut && strcmp(bg_mut, "background_terminates") == 0) {
+                                   const char *pf = getenv("RILL_TEST_PIDFILE");
+                                   FILE *f = pf ? fopen(pf, "r") : NULL;
+                                   unsigned child = 0;
+                                   if (f && fscanf(f, "%u", &child) == 1 && child > 1) {
+                                       kill((pid_t)child, SIGKILL);
+                                   }
+                                   if (f) {
+                                       fclose(f);
+                                   }
+                               }
+                               if (attach_fd >= 0) {
+                                   shutdown(attach_fd, SHUT_RDWR);
+                               }
                            });
         }
         if (getenv("RILL_TEST_DOCK_REOPEN")) {

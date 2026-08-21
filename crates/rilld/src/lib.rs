@@ -608,12 +608,37 @@ impl Daemon {
                 if observe && matches!(other, Frame::Resize { .. }) {
                     #[cfg(feature = "mutate")]
                     if std::env::var("RILL_MUTATE").as_deref() == Ok("allow_observer_resize") {
-                    } else {
+                        // fall through — T-CLIENT-OBSERVER-ISOLATION
+                    } else if let Frame::Resize {
+                        cols,
+                        rows,
+                        px_w,
+                        px_h,
+                    } = other
+                    {
+                        if let Some(id) = attached {
+                            if let Some(s) = self.kernel.session_mut(id) {
+                                s.apply_observer_viewport(cols, rows, px_w, px_h)?;
+                            }
+                        }
                         return Ok(());
                     }
                     #[cfg(not(feature = "mutate"))]
                     {
-                        return Ok(());
+                        if let Frame::Resize {
+                            cols,
+                            rows,
+                            px_w,
+                            px_h,
+                        } = other
+                        {
+                            if let Some(id) = attached {
+                                if let Some(s) = self.kernel.session_mut(id) {
+                                    s.apply_observer_viewport(cols, rows, px_w, px_h)?;
+                                }
+                            }
+                            return Ok(());
+                        }
                     }
                 }
                 if let Frame::Credit(n) = other {

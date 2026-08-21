@@ -6,6 +6,7 @@
 //! Required mutation: `RILL_MUTATE=no_chrome`.
 
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -30,7 +31,10 @@ fn unique_sock() -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .expect("time")
         .as_nanos();
-    PathBuf::from(format!("/tmp/rill-split-{n}.sock"))
+    let dir = PathBuf::from(format!("/tmp/rs{n:x}"));
+    let _ = fs::create_dir_all(&dir);
+    let _ = fs::set_permissions(&dir, fs::Permissions::from_mode(0o700));
+    dir.join("a")
 }
 
 struct Heartbeat {

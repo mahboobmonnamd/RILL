@@ -287,6 +287,21 @@ jobs:
           red T-CLIENT-LEASE-ATOMIC both_leases_valid t_client_lease_atomic_one_generation_one_nonce
           red T-CLIENT-LEASE-EXPIRY-DETACH expiry_terminates t_client_lease_expiry_detaches_input_not_the_process
 
+      - name: T-CLIENT viewport negative controls
+        run: |
+          set -eu
+          red() {
+            name="$1"
+            mut="$2"
+            shift 2
+            if RILL_MUTATE="$mut" cargo test -p rill-kernel --features mutate --test t_client_viewport "$@" -- --test-threads=1 --nocapture; then
+              echo "BROKEN INSTRUMENT: $name stayed green under $mut" >&2
+              exit 1
+            fi
+            echo "ok: $name went red under $mut"
+          }
+          red T-CLIENT-VIEWPORT-AUTHORITY largest_observer_wins t_client_viewport_authority_observer_does_not_set_child_winsize
+
       - name: T-CLIENT mirror negative controls
         run: |
           set -eu

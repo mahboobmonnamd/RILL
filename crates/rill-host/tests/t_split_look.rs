@@ -14,6 +14,7 @@
 //! `tiny_chrome_font`.
 
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -71,7 +72,10 @@ fn unique_sock(tag: &str) -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .expect("time")
         .as_nanos();
-    PathBuf::from(format!("/tmp/rill-split-look-{tag}-{n}.sock"))
+    let dir = PathBuf::from(format!("/tmp/rl{tag}{n:x}"));
+    let _ = fs::create_dir_all(&dir);
+    let _ = fs::set_permissions(&dir, fs::Permissions::from_mode(0o700));
+    dir.join("a")
 }
 
 struct Heartbeat {
