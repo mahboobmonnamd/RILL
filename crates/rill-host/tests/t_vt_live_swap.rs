@@ -3,8 +3,8 @@
 //! Required mutation: `RILL_MUTATE=ignore_wide_bits`.
 
 use rill_attach::{cold_identity_socket_path, Decoder, Frame};
-use rill_chip0::HostSurface;
 use rill_host::{should_paint_cell, Client};
+use rill_look::HostSurface;
 use rill_vt_types::ATTR_WIDE_TAIL;
 use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;

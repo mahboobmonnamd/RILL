@@ -11,13 +11,9 @@
 ## 1. One live type
 
 `rill-host::Client` and `rilld::Daemon` MUST use `vt_engine::VtEngine` as
-`TerminalEmulation`. `rilld` MUST NOT depend on `rill-chip0`. `rill-chip0`
-remains for `gates.yml` measurement (T-BYTES, T-CHIP0-C1-PAINT, Chip 0 look
-baselines) until a retirement ADR.
-
-`rill-host` MAY keep `rill-chip0` solely for look-file load (`HostSurface`,
-`apply_theme`, `chrome_surface_rgba`) until those modules move; it MUST NOT
-construct `Chip0` or call `libghostty-vt`.
+`TerminalEmulation`. Neither crate MUST depend on `rill-chip0`. Look-file load
+lives in `rill-look` (no libghostty-vt). `rill-chip0` remains for `gates.yml`
+measurement until a retirement ADR.
 
 ## 2. Replies
 

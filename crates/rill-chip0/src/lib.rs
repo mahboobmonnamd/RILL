@@ -5,15 +5,13 @@
 //! `rill-vt-types` and are re-exported here (SPEC-VT-TYPES §5).
 
 mod adapter;
-mod look;
-mod surface;
 
-pub use look::{
-    apply_theme, chrome_surface_rgba, load_look_overlay, overlay_look, parse_look_keys,
-    TerminalLook, ThemeColors,
+pub use rill_look::{
+    apply_theme, chrome_surface_rgba, discover_host_surface, load_host_surface, load_look_overlay,
+    load_resolved_surface, look_file_candidates_for, overlay_look, parse_hex, parse_look_keys,
+    resolve_theme, HostSurface, TerminalLook, ThemeColors,
 };
 pub use rill_vt_types::{Color, Error, Palette, PodCell, PodGrid, Rgb, TerminalEmulation};
-pub use surface::{discover_host_surface, load_host_surface, load_resolved_surface, HostSurface};
 
 pub struct Chip0 {
     vt: adapter::Vt,
@@ -118,6 +116,9 @@ impl TerminalEmulation for Chip0 {
         Ok(grid)
     }
 }
+
+#[cfg(test)]
+mod look_paint_tests;
 
 #[cfg(test)]
 mod tests {

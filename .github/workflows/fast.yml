@@ -35,7 +35,7 @@ jobs:
       # Only the crates that do not link libghostty-vt. If this list ever needs
       # rill-chip0, SPEC-CHIP0 §9 has been violated.
       - name: Clippy (fast tier)
-        run: cargo clippy -p rill-attach -p rill-kernel -p rill-vt-types -p vt-engine --all-targets -- -D warnings
+        run: cargo clippy -p rill-attach -p rill-kernel -p rill-vt-types -p vt-engine -p rill-look --all-targets -- -D warnings
 
       - name: Attach codec tests
         run: cargo test -p rill-attach -- --nocapture
@@ -48,7 +48,7 @@ jobs:
 
       # Chip 1 library only. MUST NOT add rill-chip0 (SPEC-CHIP0 §9).
       - name: Chip 1 types and engine
-        run: cargo test -p rill-vt-types -p vt-engine -- --nocapture
+        run: cargo test -p rill-vt-types -p vt-engine -p rill-look -- --nocapture
 
       - name: T-CHIP1 slice 2 negative controls
         run: |

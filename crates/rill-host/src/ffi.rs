@@ -95,6 +95,28 @@ pub unsafe extern "C" fn rill_client_send_input(
     }
 }
 
+/// DECCKM from Chip 1. `letter` is A/B/C/D. Writes three bytes to `out`.
+///
+/// # Safety
+/// `out` has at least 3 bytes.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_encode_arrow(
+    client: *const Client,
+    letter: u8,
+    out: *mut u8,
+) -> i32 {
+    if client.is_null() || out.is_null() {
+        return -1;
+    }
+    let seq = unsafe { (*client).encode_arrow(letter) };
+    unsafe {
+        *out = seq[0];
+        *out.add(1) = seq[1];
+        *out.add(2) = seq[2];
+    }
+    3
+}
+
 /// # Safety
 /// `client` is a live handle.
 #[no_mangle]
@@ -262,7 +284,7 @@ pub unsafe extern "C" fn rill_client_background_rgba(client: *const Client) -> u
 
 #[no_mangle]
 pub extern "C" fn rill_chrome_surface_rgba(background: u32) -> u32 {
-    rill_chip0::chrome_surface_rgba(background)
+    crate::chrome_surface_rgba(background)
 }
 
 /// # Safety

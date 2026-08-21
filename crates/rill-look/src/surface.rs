@@ -1,5 +1,5 @@
 use crate::look::{resolve_theme, ThemeColors};
-use crate::Error;
+use rill_vt_types::Error;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 

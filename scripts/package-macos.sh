@@ -3,7 +3,6 @@
 set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-sh scripts/fetch-libghostty-vt.sh
 cargo build --release -p rill-host
 if [ "${RILL_MUTATE:-}" = "drop_POSIX_SPAWN_SETSID" ]; then
   cargo build --release -p rilld --features mutate
@@ -28,8 +27,6 @@ cp host/macos/LaunchAgents/dev.rill.rilld.plist "$APP/Contents/Library/LaunchAge
 cp "$TARGET_DIR/release/rilld" "$MACOS/rilld"
 
 HOST_LIB="$TARGET_DIR/release/librill_host.a"
-CHIP0_VT=$(ls -1 "$TARGET_DIR"/release/build/rill-chip0-*/out/librill_chip0_vt.a | head -1)
-GHOSTTY_VT="${RILL_GHOSTTY_DIR:-$ROOT/third_party/ghostty}/zig-out/lib/libghostty-vt.a"
 
 EXTRA_SRC=""
 EXTRA_LIBS=""
@@ -45,8 +42,6 @@ clang -fobjc-arc -O2 -fmodules \
   host/macos/main.m host/macos/TerminalView.m host/macos/ChromeHost.m \
   $EXTRA_SRC \
   "$HOST_LIB" \
-  "$CHIP0_VT" \
-  "$GHOSTTY_VT" \
   -I host/macos \
   -framework Cocoa -framework Metal -framework MetalKit -framework QuartzCore -framework CoreText \
   -framework CoreGraphics -framework ApplicationServices -framework ServiceManagement \

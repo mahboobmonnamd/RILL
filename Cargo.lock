@@ -89,9 +89,8 @@ version = "0.1.0"
 dependencies = [
  "cc",
  "libc",
+ "rill-look",
  "rill-vt-types",
- "serde",
- "toml",
 ]
 
 [[package]]
@@ -100,7 +99,7 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "rill-attach",
- "rill-chip0",
+ "rill-look",
  "rill-vt-types",
  "vt-engine",
 ]
@@ -112,6 +111,15 @@ dependencies = [
  "libc",
  "rill-attach",
  "vt-engine",
+]
+
+[[package]]
+name = "rill-look"
+version = "0.1.0"
+dependencies = [
+ "rill-vt-types",
+ "serde",
+ "toml",
 ]
 
 [[package]]

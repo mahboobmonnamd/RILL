@@ -288,12 +288,14 @@ if not re.search(r'(?m)^vt-engine(?:\.workspace|\s*=)', src):
     print("crates/rilld/Cargo.toml: missing vt-engine")
 src = open("crates/rill-host/Cargo.toml", encoding="utf-8").read()
 src = re.sub(r"#.*$", "", src, flags=re.M)
+if re.search(r'(?m)^rill-chip0(?:\.workspace|\s*=)', src):
+    print("crates/rill-host/Cargo.toml: depends on rill-chip0")
 if not re.search(r'(?m)^vt-engine(?:\.workspace|\s*=)', src):
     print("crates/rill-host/Cargo.toml: missing vt-engine")
 PY
 )"
 if [ -n "$hits" ]; then
-  fail no-chip0-on-rilld-warm-path "rilld must use vt-engine, not rill-chip0 (ADR 0037 D1)"
+  fail no-chip0-on-warm-path "rill-host / rilld must use vt-engine, not rill-chip0 (ADR 0037 D1)"
   printf '%s\n' "$hits" | sed 's/^/    /' >&2
 fi
 

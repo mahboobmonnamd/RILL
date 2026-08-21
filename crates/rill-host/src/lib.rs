@@ -11,8 +11,8 @@
 //! reported 32 microseconds (docs/SPIKE-0-AUDIT.md S1-2).
 
 use rill_attach::{cold_identity_socket_path, Decoder, Frame};
-use rill_chip0::{load_resolved_surface, HostSurface, PodGrid, ThemeColors};
-use rill_vt_types::{Rgb, TerminalEmulation, ATTR_WIDE_TAIL};
+use rill_look::{load_resolved_surface, HostSurface, ThemeColors};
+use rill_vt_types::{PodGrid, Rgb, TerminalEmulation, TerminalModeState, ATTR_WIDE_TAIL};
 use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
@@ -21,7 +21,7 @@ use vt_engine::{Palette, VtEngine};
 
 mod error;
 pub use error::Error;
-pub use rill_chip0::chrome_surface_rgba;
+pub use rill_look::chrome_surface_rgba;
 
 /// Initial credit window. Not `u32::MAX`: the client replenishes as it feeds,
 /// so the kernel can actually apply backpressure (SPEC-ATTACH §5, audit S3-5).
@@ -48,6 +48,7 @@ pub struct Client {
     /// Last VT extract. `cell_codepoint` / `cursor` must not calloc a new grid
     /// on every probe (quality audit Q4).
     cached: Option<PodGrid>,
+    modes: TerminalModeState,
 }
 
 impl Client {
@@ -72,6 +73,7 @@ impl Client {
             warm_path_violations: 0,
             auditing: false,
             cached: None,
+            modes: TerminalModeState::default(),
         };
         client.send(Frame::attach(1, None))?;
         client.grant_credit(CREDIT_WINDOW)?;
@@ -208,7 +210,7 @@ impl Client {
                                 if !replies.is_empty() {
                                     self.send(Frame::Data(replies))?;
                                 }
-                                let _ = self.chip.mode_state();
+                                self.modes = self.chip.mode_state();
                                 self.cached = None;
                             }
                             Frame::Exit { status } => {
@@ -271,6 +273,19 @@ impl Client {
     pub fn cursor_cell(&mut self) -> Result<(u16, u16), rill_vt_types::Error> {
         let g = self.snapshot()?;
         Ok((g.cursor_col, g.cursor_row))
+    }
+
+    pub fn mode_state(&self) -> TerminalModeState {
+        self.modes
+    }
+
+    /// Cursor keys from Chip 1 DECCKM, not a host CSI parser (ADR 0037 D5).
+    pub fn encode_arrow(&self, letter: u8) -> [u8; 3] {
+        encode_arrow(self.modes.application_cursor_keys, letter)
+    }
+
+    pub fn wrap_paste(&self, body: &[u8]) -> Vec<u8> {
+        wrap_paste(self.modes.bracketed_paste, body)
     }
 
     /// Non-blocking. A partial write is queued and completed on the next pump;
@@ -341,7 +356,7 @@ fn cold_host_identity(attach_socket: &Path) -> Result<String, Error> {
     }
 }
 
-pub fn load_surface() -> Result<HostSurface, rill_chip0::Error> {
+pub fn load_surface() -> Result<HostSurface, rill_vt_types::Error> {
     let mut paths = vec![PathBuf::from("host-surface.toml")];
     if let Ok(configured) = std::env::var("RILL_HOST_SURFACE") {
         if !configured.is_empty() {
@@ -393,6 +408,33 @@ pub fn should_paint_cell(attrs: u16) -> bool {
     attrs & ATTR_WIDE_TAIL == 0
 }
 
+/// `letter` is `b'A'`..`b'D'` (up/down/right/left).
+pub fn encode_arrow(application_cursor_keys: bool, letter: u8) -> [u8; 3] {
+    #[cfg(feature = "mutate")]
+    if std::env::var("RILL_MUTATE").as_deref() == Ok("ignore_decckm") {
+        return [0x1b, b'[', letter];
+    }
+    if application_cursor_keys {
+        [0x1b, b'O', letter]
+    } else {
+        [0x1b, b'[', letter]
+    }
+}
+
+pub fn wrap_paste(bracketed: bool, body: &[u8]) -> Vec<u8> {
+    #[cfg(feature = "mutate")]
+    if std::env::var("RILL_MUTATE").as_deref() == Ok("skip_bracketed_paste") {
+        return body.to_vec();
+    }
+    if !bracketed {
+        return body.to_vec();
+    }
+    let mut out = b"\x1b[200~".to_vec();
+    out.extend_from_slice(body);
+    out.extend_from_slice(b"\x1b[201~");
+    out
+}
+
 /// Percentile over an already-sorted slice, 0-indexed and without the
 /// off-by-one the previous `ceil()` introduced (audit S3-8e).
 pub fn percentile(sorted: &[f64], q: f64) -> f64 {
@@ -429,5 +471,17 @@ mod tests {
     #[test]
     fn percentile_of_one_sample_is_that_sample() {
         assert_eq!(percentile(&[7.0], 0.95), 7.0);
+    }
+
+    #[test]
+    fn t_host_encodes_application_cursor_keys_from_mode() {
+        assert_eq!(encode_arrow(false, b'A'), [0x1b, b'[', b'A']);
+        assert_eq!(encode_arrow(true, b'A'), [0x1b, b'O', b'A']);
+    }
+
+    #[test]
+    fn t_host_wraps_bracketed_paste_from_mode() {
+        assert_eq!(wrap_paste(false, b"hi"), b"hi");
+        assert_eq!(wrap_paste(true, b"hi"), b"\x1b[200~hi\x1b[201~".to_vec());
     }
 }

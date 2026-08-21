@@ -217,7 +217,7 @@ corpus and table are [SPEC-VT-CONFORMANCE](SPEC-VT-CONFORMANCE.md) §2–§3.
 `fast.yml` MUST `clippy` and `test` `-p rill-vt-types -p vt-engine` on Linux,
 and MUST run the `vte` differential there. It MUST NOT gain `rill-chip0`.
 `lint-planes.sh` MUST cover Chip 1 snapshot types and unwraps, plus
-`no-vte-at-runtime`, `no-theme-rgb-in-rust` and `no-chip0-on-rilld-warm-path`
+`no-vte-at-runtime`, `no-theme-rgb-in-rust` and `no-chip0-on-warm-path`
 ([SPEC-VT-CONFORMANCE](SPEC-VT-CONFORMANCE.md) §5–§6).
 
 ## 6. Live swap
