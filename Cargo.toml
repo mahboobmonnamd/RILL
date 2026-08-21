@@ -22,6 +22,7 @@ rill-attach = { path = "crates/rill-attach" }
 rill-kernel = { path = "crates/rill-kernel" }
 rill-chip0 = { path = "crates/rill-chip0" }
 rill-vt-types = { path = "crates/rill-vt-types" }
+vt-engine = { path = "crates/vt-engine" }
 libc = "0.2"
 toml = "0.8"
 serde = { version = "1", features = ["derive"] }

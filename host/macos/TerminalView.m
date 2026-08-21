@@ -813,6 +813,12 @@ static unsigned rill_view_bg_rgb(NSView *v) {
                 continue;
             }
             RillPodCell cell = grid.cells[i];
+            if ((cell.attrs & (1u << 4)) != 0) {
+                const char *wmut = getenv("RILL_MUTATE");
+                if (!(wmut && strcmp(wmut, "ignore_wide_bits") == 0)) {
+                    continue;
+                }
+            }
             BOOL bold = (cell.attrs & 1u) != 0;
             BOOL inverse = (cell.attrs & 4u) != 0;
 

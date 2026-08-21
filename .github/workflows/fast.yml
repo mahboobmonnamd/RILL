@@ -43,6 +43,9 @@ jobs:
       - name: Kernel tests that do not need a display chip
         run: cargo test -p rill-kernel -- --test-threads=1 --nocapture
 
+      - name: rilld Chip 1 resync (no libghostty-vt)
+        run: cargo test -p rilld --test t_vt_live_resync -- --test-threads=1 --nocapture
+
       # Chip 1 library only. MUST NOT add rill-chip0 (SPEC-CHIP0 §9).
       - name: Chip 1 types and engine
         run: cargo test -p rill-vt-types -p vt-engine -- --nocapture

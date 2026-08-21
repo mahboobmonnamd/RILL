@@ -217,16 +217,12 @@ corpus and table are [SPEC-VT-CONFORMANCE](SPEC-VT-CONFORMANCE.md) §2–§3.
 `fast.yml` MUST `clippy` and `test` `-p rill-vt-types -p vt-engine` on Linux,
 and MUST run the `vte` differential there. It MUST NOT gain `rill-chip0`.
 `lint-planes.sh` MUST cover Chip 1 snapshot types and unwraps, plus
-`no-vte-at-runtime`, `no-theme-rgb-in-rust` and `no-host-dep-on-vt-engine`
+`no-vte-at-runtime`, `no-theme-rgb-in-rust` and `no-chip0-on-rilld-warm-path`
 ([SPEC-VT-CONFORMANCE](SPEC-VT-CONFORMANCE.md) §5–§6).
 
-## 6. Out of scope (isolated crate)
+## 6. Live swap
 
-Live swap **wiring** ([#24](https://github.com/mahboobmonnamd/RILL/issues/24)) —
-[ADR 0037](../adr/0037-chip1-live-swap.md) is Accepted; host/`rilld` dependency
-lifts only after checkpoint/reconciliation specs and their required mutations
-are demonstrated red, followed by the live-swap spec and named tests. Content,
-live TUI-in-content, cwd tap, chrome, conversations, Metal, fonts and changing
-the Ghostty pin remain outside this isolated-crate spec. The future runtime has
-one authoritative host VT per TerminalExecution plus disposable client mirrors;
-it does not add competing authoritative VTs.
+Normative wiring: [SPEC-VT-LIVE-SWAP](SPEC-VT-LIVE-SWAP.md) and
+[ADR 0037](../adr/0037-chip1-live-swap.md). Isolated-crate work does not
+implement the window. Content, TUI-in-content, cwd tap, conversations and
+changing the Ghostty pin remain outside this page.

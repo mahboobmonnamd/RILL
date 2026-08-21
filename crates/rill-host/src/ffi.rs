@@ -5,7 +5,7 @@
 //! oracle primitives — cursor cell, cell contents, warm-path frame accounting.
 
 use crate::{load_surface, Client};
-use rill_chip0::PodCell;
+use rill_vt_types::PodCell;
 use std::ffi::{c_char, CStr, CString};
 use std::ptr;
 use std::sync::Mutex;

@@ -11,16 +11,17 @@
 //! reported 32 microseconds (docs/SPIKE-0-AUDIT.md S1-2).
 
 use rill_attach::{cold_identity_socket_path, Decoder, Frame};
-use rill_chip0::{
-    apply_theme, load_resolved_surface, Chip0, HostSurface, PodGrid, TerminalEmulation,
-};
+use rill_chip0::{apply_theme, load_resolved_surface, HostSurface, PodGrid, ThemeColors};
+use rill_vt_types::{Rgb, TerminalEmulation, ATTR_WIDE_TAIL};
 use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
+use vt_engine::{Palette, VtEngine};
 
 mod error;
 pub use error::Error;
+pub use rill_chip0::chrome_surface_rgba;
 
 /// Initial credit window. Not `u32::MAX`: the client replenishes as it feeds,
 /// so the kernel can actually apply backpressure (SPEC-ATTACH §5, audit S3-5).
@@ -29,7 +30,7 @@ const CREDIT_WINDOW: u32 = 256 * 1024;
 pub struct Client {
     stream: UnixStream,
     decoder: Decoder,
-    chip: Chip0,
+    chip: VtEngine,
     surface: HostSurface,
     host_identity: String,
     alive: bool,
@@ -54,9 +55,9 @@ impl Client {
         let host_identity = cold_host_identity(socket.as_ref())?;
         let stream = UnixStream::connect(socket.as_ref())?;
         stream.set_nonblocking(true)?;
-        let mut chip = Chip0::new(surface.cols, surface.rows)?;
+        let mut chip = VtEngine::new(surface.cols, surface.rows)?;
         if let Some(ref colors) = surface.colors {
-            chip.apply_look(colors)?;
+            chip.set_palette(palette_from_theme(colors))?;
         }
         let mut client = Self {
             stream,
@@ -203,6 +204,11 @@ impl Client {
                             Frame::Data(bytes) => {
                                 fed += bytes.len();
                                 self.chip.feed(&bytes)?;
+                                let replies = self.chip.take_replies()?;
+                                if !replies.is_empty() {
+                                    self.send(Frame::Data(replies))?;
+                                }
+                                let _ = self.chip.mode_state();
                                 self.cached = None;
                             }
                             Frame::Exit { status } => {
@@ -243,7 +249,7 @@ impl Client {
         self.send(Frame::Credit(n))
     }
 
-    pub fn snapshot(&mut self) -> Result<&PodGrid, rill_chip0::Error> {
+    pub fn snapshot(&mut self) -> Result<&PodGrid, rill_vt_types::Error> {
         if self.cached.is_none() {
             let mut grid = self.chip.snapshot()?;
             apply_theme(&mut grid, &self.surface);
@@ -251,7 +257,7 @@ impl Client {
         }
         self.cached
             .as_ref()
-            .ok_or(rill_chip0::Error::Vt("snapshot cache"))
+            .ok_or(rill_vt_types::Error::Vt("snapshot cache"))
     }
 
     pub fn cell_codepoint(&mut self, col: u16, row: u16) -> u32 {
@@ -261,7 +267,7 @@ impl Client {
             .unwrap_or(0)
     }
 
-    pub fn cursor_cell(&mut self) -> Result<(u16, u16), rill_chip0::Error> {
+    pub fn cursor_cell(&mut self) -> Result<(u16, u16), rill_vt_types::Error> {
         let g = self.snapshot()?;
         Ok((g.cursor_col, g.cursor_row))
     }
@@ -354,6 +360,36 @@ pub fn load_surface() -> Result<HostSurface, rill_chip0::Error> {
         }
     }
     load_resolved_surface("host-surface.toml")
+}
+
+fn u32_to_rgb(v: u32) -> Rgb {
+    Rgb {
+        r: ((v >> 24) & 0xff) as u8,
+        g: ((v >> 16) & 0xff) as u8,
+        b: ((v >> 8) & 0xff) as u8,
+    }
+}
+
+fn palette_from_theme(colors: &ThemeColors) -> Palette {
+    let mut p = Palette::vt_default();
+    p.foreground = u32_to_rgb(colors.foreground);
+    p.background = u32_to_rgb(colors.background);
+    p.cursor = u32_to_rgb(colors.cursor);
+    if let Some(ansi) = colors.ansi {
+        for (i, v) in ansi.iter().enumerate() {
+            p.ansi[i] = u32_to_rgb(*v);
+        }
+    }
+    p
+}
+
+/// Metal must not place a glyph on a wide tail (ADR 0035 D7).
+pub fn should_paint_cell(attrs: u16) -> bool {
+    #[cfg(feature = "mutate")]
+    if std::env::var("RILL_MUTATE").as_deref() == Ok("ignore_wide_bits") {
+        return true;
+    }
+    attrs & ATTR_WIDE_TAIL == 0
 }
 
 /// Percentile over an already-sorted slice, 0-indexed and without the

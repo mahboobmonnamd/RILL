@@ -11,7 +11,6 @@
 //! - checkpoint wiring: `history_data_only`
 
 use rill_attach::{Decoder, Frame, PROTOCOL_2, PROTOCOL_VERSION};
-use rill_chip0::{Chip0, TerminalEmulation};
 use rill_kernel::Winsize;
 use rilld::{pump, Daemon};
 use std::io::{Read, Write};
@@ -20,6 +19,7 @@ use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
+use vt_engine::{TerminalEmulation, VtEngine};
 
 fn runtime_dir(tag: &str) -> PathBuf {
     let n = std::process::id();
@@ -76,7 +76,7 @@ fn observe_v1() -> Frame {
 }
 
 fn grid_has(chip_bytes: &[u8], needle: &str) -> bool {
-    let mut chip = Chip0::new(80, 24).expect("chip");
+    let mut chip = VtEngine::new(80, 24).expect("chip");
     chip.feed(chip_bytes).expect("feed");
     let g = chip.snapshot().expect("snap");
     let mut text = String::new();

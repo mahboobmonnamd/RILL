@@ -101,6 +101,8 @@ dependencies = [
  "libc",
  "rill-attach",
  "rill-chip0",
+ "rill-vt-types",
+ "vt-engine",
 ]
 
 [[package]]
@@ -130,8 +132,9 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "rill-attach",
- "rill-chip0",
  "rill-kernel",
+ "rill-vt-types",
+ "vt-engine",
 ]
 
 [[package]]
