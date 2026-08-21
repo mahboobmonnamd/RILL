@@ -15,6 +15,7 @@
 | transcript, ContentTimeline, graph, Task and attention | host runtime |
 | ClientId, role, grants, lease and audit | host runtime |
 | VT mirror, selected object, scroll, zoom, local selection and chrome | client |
+| composer draft | client-local, sensitive, non-durable by default |
 
 Client state may be persisted locally for convenience but is disposable. A
 client cannot make its screen, offset or lease authoritative by reconnecting.
@@ -54,6 +55,22 @@ other panes.
 
 Before ATTACH completes, no pane-directed frame is accepted. There is no
 implicit default execution for unattached traffic.
+
+### 3.1 Typed channels
+
+Protocol 2+ negotiates typed binary channels for topology, execution lifecycle,
+terminal bytes, terminal snapshots/deltas, semantic transcript, Flow
+projection, Tasks, structured requests/approvals, attention, artifacts/diffs,
+leases, capability/policy and resume cursors. Each channel declares ordering
+scope, frame and queue bounds, acknowledgement/credit, idempotency key,
+authorization and snapshot/resume behavior.
+
+Semantic events correlated to terminal output name the execution generation and
+byte offset boundary. One failed, unauthorized or slow semantic channel cannot
+withhold PTY DATA/CREDIT, raw input, terminal resync or another client's
+traffic. Slow/mobile clients receive bounded projections and must resume from a
+cursor or request a compatible snapshot. Unsupported protocol, checkpoint or
+content versions fail closed without interpreting one frame type as another.
 
 ## 4. Input and resize lease
 
@@ -103,6 +120,10 @@ and reachable.
 - T-SSH-ZERO-FOOTPRINT
 - T-SSH-ENHANCED-PLAN-CLEANUP
 - T-MOBILE-BACKGROUND-DETACH
+- T-PROTOCOL-SEMANTIC-INDEPENDENCE
+- T-PROTOCOL-BYTE-EVENT-ORDER
+- T-PROTOCOL-SLOW-CLIENT-CHANNEL-ISOLATION
+- T-PROTOCOL-VERSION-MISMATCH
 
 ## 7. Out of scope
 

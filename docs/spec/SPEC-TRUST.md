@@ -99,6 +99,18 @@ storage, deletion or transmission policy.
   private keys, device authentication material or credential-store payloads.
 - Secrets and PII MUST NOT appear in configuration, URLs, process arguments,
   socket names or service/crash metadata.
+- PTY traffic, raw history, semantic events, Flow/activity projections, Task
+  messages/tool calls, structured requests, approvals, attention, artifacts,
+  snapshots, notifications, mobile/remote transport, clipboard, file transfer,
+  shell integration, configuration export and backup each declare their sink
+  policy before receiving content.
+- Secret prompts navigate to their owning pane and expose no value or content
+  preview in notification/attention surfaces. Approval actions require an
+  authenticated StructuredRequestId and generation; stale/replayed responses
+  are rejected. Read-only clients cannot send terminal or approval input.
+- Clipboard, file transfer, export and remote access are separately
+  policy-controlled capabilities. Tool permissions are explicit, scoped,
+  inspectable and cannot be inferred from visible content.
 
 ## 5. No account
 
@@ -152,6 +164,9 @@ storage, deletion or transmission policy.
 | T-PRIVACY-BOUNDARY-ISOLATION | Red | §4 user/host/session/client/agent boundaries |
 | T-PRIVACY-DIAGNOSTICS | Red | §4a logs/telemetry/crash reports |
 | T-PRIVACY-BACKUP-SYNC | Red | §4a backup/sync allowlist and secrets |
+| T-PRIVACY-NOTIFICATION-SECRET | Red | §4a secret prompts/previews |
+| T-TRUST-STRUCTURED-REPLAY | Red | §4a authenticated request generation |
+| T-TRUST-READONLY-INPUT | Red | §4a read-only denial |
 | T-TRUST-NOACCT | Red (not attempted) | §5 |
 | T-TRUST-UPDATE | Red (not attempted) | §6 |
 | T-TRUST-SOCKET | Red (not attempted) | §7 |

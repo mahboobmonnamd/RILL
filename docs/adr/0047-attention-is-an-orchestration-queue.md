@@ -52,6 +52,23 @@ MUST NOT be computed on, or cost anything to, the warm path.
 
 ## Decision
 
+### 2026-08-21 amendment — stable structured attention and responses
+
+ADR 0053 D18 governs the product contract beyond the already-Proven queue
+library. Every product entry gains a stable AttentionId, exact Workspace,
+Session, Tab, Pane, optional TerminalExecution and Task references, a source
+StructuredRequestId when actionable, lifecycle/expiry, authorization policy,
+navigation target and allowed actions. The queue projects source request and
+runtime events; it does not become a second approval authority.
+
+Only safe single-step structured requests may be answered inline. Raw/TUI,
+secret and ambiguous interactions navigate to the exact owning pane.
+Authenticated responses bind request ID and generation and reject expired,
+stale, duplicate or replayed input. Terminal-cell scraping never creates an
+actionable control, and secret values never enter attention or notification
+previews. These clauses require new Red product gates; existing library gates
+do not prove them.
+
 ### D1 — One queue, one state machine, one source of truth
 
 There is exactly one attention queue. Every surface in this ADR — badges,

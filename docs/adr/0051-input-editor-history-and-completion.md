@@ -57,6 +57,20 @@ the user meant before the PTY sees it.
 
 ## Decision
 
+### 2026-08-21 amendment — explicit input modes and draft ownership
+
+ADR 0053 D20 replaces the binary Blocks-on/off wording with explicit native
+composer, shell line-editor, raw terminal, alternate-screen/raw-mode TUI,
+agent-prompt and structured-approval modes. Authoritative terminal modes,
+Task/request state and the current input lease decide routing. Missing shell
+integration falls back to direct native shell input.
+
+An unsent composer draft is sensitive client-local state and is non-durable by
+default. It is not synchronized, backed up or inherited by another client.
+Durable/cross-device drafts require a later policy and threat-model decision.
+TUI ownership suppresses the composer; mode exit restores focus without
+creating another pane, PTY, execution or Session.
+
 ### D1 — The input field exists only in Blocks mode, and never duplicates the shell
 
 With Blocks off, keys go to the PTY (ADR 0050 D4) and every feature in this ADR

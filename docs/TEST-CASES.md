@@ -1766,6 +1766,10 @@ are failed preconditions, never green skips.
 | T-CONTENT-BOUNDED-RECOVERY — logs/checkpoints/materialization stay bounded | Long-output/restart fixture remains within declared byte/item bounds and reconstructs or names discontinuity | checkpoint created for every frame |
 | T-BLOCK-CONTENT-IDENTITY — Block groups stable ContentItems, not only ring offsets | Evict hot ring and retain policy content; Block identity/output remains stable | Block stores only `(start,end)` |
 | T-BLOCK-RERUN — rerun fills input and never executes | Child receives no bytes until separate submit; exact retained command visible | rerun action writes directly to PTY |
+| T-TRANSCRIPT-EVENT-IDEMPOTENCY — event identity is stable and append is idempotent | Replay each event twice and recover from snapshot; final transcript IDs/order/hash equal single append | duplicate EventId creates a second item |
+| T-TRANSCRIPT-BYTE-EVENT-ORDER — semantic events correlate to exact terminal offsets | Real PTY fixture interleaves marks/output; recovered event ranges match independently captured byte offsets | semantic event is emitted before its source byte offset |
+| T-FLOW-RAW-SEMANTIC-FAILURE — semantic failure never breaks raw terminal | Kill/fault semantic projector during interactive shell/TUI; raw bytes, input, paint and original pid continue and Raw becomes available | semantic queue backpressure pauses PTY drain |
+| T-ACTIVITY-DERIVED-NOT-AUTHORITY — timeline teardown loses no source state | Destroy/rebuild/filter timeline from durable source events; source IDs/hashes and process state stay unchanged | timeline node owns and deletes approval event |
 
 ### Compositor, text, editor and library seams
 
@@ -1776,6 +1780,8 @@ are failed preconditions, never green skips.
 | T-COMPOSITOR-NO-DOMAIN-OWNERSHIP — scene teardown cannot delete domain state | Destroy/rebuild scene; Workspace/Session/Task/Content IDs and worker pid unchanged | scene-node drop closes Session |
 | T-TEXT-CLUSTER-SHAPING — text shaping operates on clusters/runs | Ligature, combining, emoji-ZWJ and fallback fixtures match platform shaping oracle | shaper maps only the first scalar |
 | T-EDITOR-RAW-BYPASS — raw mode never invokes structured editor | Instrumented TUI receives byte-identical keys with editor counters zero | raw input first inserts into editor buffer |
+| T-INPUT-MODE-TRANSITION — Flow/Raw/TUI reuse one execution and route by authority | Real shell enters/exits alternate/raw modes; pid/PTY/IDs remain stable, composer hides, keys/mouse/paste reach child, focus restores | client focus alone selects composer route |
+| T-COMPOSER-DRAFT-LOCAL — unsent draft is non-durable and client-local | Type secret canary without submit, restart/attach second client/backup; canary appears in none | draft is written to Session snapshot |
 | T-SELECTION-SURFACE-ANCHORS — selection survives surface-specific updates | Terminal, timeline and editor anchors produce ordered copy after unrelated reflow | all anchors use screen row/column |
 | T-A11Y-VIRTUALIZED-BOUNDS — accessibility is semantic and bounded | VoiceOver fixture reaches visible terminal/content/actions; offscreen node count stays bounded | full transcript rebuilt each frame |
 | T-COMPOSITOR-WARM-PATH-BOUNDARY — rich scene adds no warm control RPC/string cells | NFR trace has only allowed DATA/CREDIT and zero per-cell String allocations with content enabled | key event serializes ContentItem JSON |
@@ -1789,6 +1795,18 @@ are failed preconditions, never green skips.
 | T-TASK-SERIALIZE — existing `t_task_persist...` is a library serialization sub-gate | In-process text round-trip preserves current sections, decisions and queue only; it makes no disk/restart claim | `skip_persisting_queue` |
 | T-TASK-COMPLETE-OBJECT — Task contains required identity and targets | Durable round-trip preserves status/cwd/host/label and exact domain IDs | target is reconstructed from display label |
 | T-TASK-RUNTIME-PERSIST — Task survives GUI and daemon restart | Kill GUI and control daemon; recovered runtime returns same Task sections, decisions and queue from durable store | persistence remains an in-memory String |
+| T-TASK-FORK-NAVIGATION — fork stays grouped and hidden by default | Fork creates durable child ID but no Tab/Pane/nav row until open/pin/attention | fork automatically creates visible tab |
+| T-TASK-FORK-PROPAGATION — lifecycle propagation is explicit | Cancel/complete parent and child under each policy; journaled outcomes match policy and default changes neither peer | parent cancel always kills child |
+| T-TASK-WORKTREE-ISOLATION — concurrent writers never share filesystem authority | Two real tasks resolve distinct worktree roots/inodes and cannot write through the other's grant | second task reuses parent worktree |
+| T-TASK-FORK-CONFLICT — conflicts are durable and explicit | Create real divergent edits; conflict event survives restart and no side changes until authorized resolution | adapter silently chooses ours |
+| T-ATT-STRUCTURED-IDENTITY — attention deep-links to exact source | Two same-label requests in different panes resolve by stable IDs to their exact source | navigation resolves label or focused pane |
+| T-ATT-RESPONSE-AUTH — inline response is authenticated and capability-scoped | Observer and wrong-role fixtures cannot answer; authorized current-generation response changes only named request | rendering card grants approval capability |
+| T-ATT-REPLAY-REJECT — stale/duplicate responses have no effect | Replay captured response after completion/expiry/generation change; state/hash remain unchanged and rejection is audited | request ID alone bypasses generation check |
+| T-ATT-SECRET-NAVIGATION — secret/TUI prompts never become inline previews | Real no-echo and alternate-screen fixtures create navigation-only items with no canary bytes | notification copies recent terminal cells |
+| T-PROTOCOL-SEMANTIC-INDEPENDENCE — semantic channel failure cannot block terminal | Exhaust/fault semantic credit while real PTY emits and accepts input; DATA/CREDIT and paint continue within bounds | terminal and semantic frames share one blocking queue |
+| T-PROTOCOL-BYTE-EVENT-ORDER — byte/event correlation survives framing and reconnect | Split/coalesce frames and resume; semantic source offsets match independent byte capture | client arrival time defines event order |
+| T-PROTOCOL-SLOW-CLIENT-CHANNEL-ISOLATION — slow/mobile clients resync independently | Throttle one channel/client beyond bounds; controller and other panes continue, slow client receives cursor/snapshot requirement | observer credit gates worker read |
+| T-PROTOCOL-VERSION-MISMATCH — incompatible versions fail closed | Matrix mismatches protocol/checkpoint/content versions and observes explicit refusal/discontinuity with no misdecoded frame | unknown content version parsed as current |
 | T-TRUST-CAPTURE-POLICY — encryption/redaction never substitutes for capture permission | Capture-disabled policy produces no durable payload even with encryption key and redactor available | encrypted sink bypasses policy denial |
 
 ### Shell, unified configuration and privacy
@@ -1805,9 +1823,15 @@ are failed preconditions, never green skips.
 | T-PRIVACY-BOUNDARY-ISOLATION — data never crosses identity boundaries | Seed unique canaries across OS-user/runtime/host/Workspace/Session/client/agent stores; every unauthorized query/export returns none | cache key omits SessionId |
 | T-PRIVACY-DIAGNOSTICS — logs, telemetry and crash reports carry no sensitive payload | Emit terminal/command/clipboard/credential/PII canaries, force diagnostics/crash, and scan independent artifacts; no canary appears | crash reporter includes recent terminal bytes |
 | T-PRIVACY-BACKUP-SYNC — backup/sync obey allowlist, encryption and deletion | Inspect encrypted payload envelope and decrypted test fixture: only allowlisted non-secret config exists; deletion removes remote/local copies | sync serializes entire config directory |
+| T-PRIVACY-NOTIFICATION-SECRET — secret prompts never leak into previews | Feed unique password/no-echo canaries, trigger attention/OS notification, and independently scan payloads | preview includes recent line/cells |
+| T-TRUST-STRUCTURED-REPLAY — approvals bind authenticated request generation | Capture and replay an approval across clients/generations; only the authorized current request changes | handler accepts stale request ID |
+| T-TRUST-READONLY-INPUT — observers cannot send terminal or approval input | Observer DATA/approval attempts leave PTY/request hashes unchanged and return explicit denial | UI role only hides controls while protocol accepts input |
 
-The binding execution order is domain/lifecycle plus configuration/privacy →
-runtime/workers/leases → checkpoints/reconciliation → content/retention →
-compositor/input/selection → remote/mobile → agents. Shell compatibility is a
-foundation gate throughout. Chip 1 live-swap gates remain parked until the
-checkpoint and mirror gates above have demonstrated red.
+The binding execution order is schema/authority plus configuration/privacy →
+terminal and PTY compatibility → host state/workers/checkpoints/leases →
+semantic transcript/retention → Flow with independent Raw fallback → persistent
+topology → Tasks/isolation → structured attention/approvals → artifacts/diffs →
+optional activity timeline. Compositor/input/selection and remote/mobile enter
+only after their consumed authority exists. Shell compatibility is a foundation
+gate throughout. Chip 1 live-swap gates remain parked until checkpoint and
+mirror gates have demonstrated red.

@@ -25,9 +25,11 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
   producing values in it. There MUST NOT be a second internal representation.
 - The canonical serialization is TOML with an explicit schema version. It
   covers app and terminal themes, fonts, font sizes, keybindings, rendering,
-  Workspace/Session behavior, privacy/retention preferences and other user
-  settings. Platform adapters MAY expose only supported fields but MUST NOT
-  invent a parallel schema.
+  line height, cursor, shell selection, window/pane and Workspace/Session
+  behavior, Flow/Raw preferences, attention, inspector, notifications, remote
+  connections, privacy, logging, retention and export settings. Platform
+  adapters MAY expose only supported fields but MUST NOT invent a parallel
+  schema.
 - The schema is versioned. An unknown key MUST be reported and dropped, never
   guessed (T-LOOK-UNKNOWN).
 - A change that would reinterpret an existing key requires a version bump.

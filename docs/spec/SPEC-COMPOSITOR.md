@@ -29,12 +29,15 @@ The RILL compositor accepts a retained scene containing at least:
 - clips, transforms, layers and opacity;
 - controls and editor surfaces;
 - diff/change decoration;
+- virtualized workspace activity timelines and rich agent content;
 - hit-test and accessibility nodes; and
 - stable keys, damage and virtualization metadata.
 
 ContentTimeline virtualization constructs only visible/overscan scene nodes.
 The compositor does not own ContentItem, Workspace, Session, Task or Conversation
 lifecycles. It receives projections and returns presentation events.
+Inspector layout, Flow card/spine styling, navigation chrome, timeline geometry,
+attention overlays, hover and focus decoration are client projection state.
 
 ## 3. Text and font ownership
 

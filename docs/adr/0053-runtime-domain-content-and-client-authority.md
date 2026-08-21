@@ -4,7 +4,8 @@
 - **Tree:** this repository only
 - **Decision approval:** the repository-wide architecture decision gate answered
   by the product owner on 2026-08-21, including the accepted shell,
-  configuration and privacy follow-up recorded in D13–D15.
+  configuration and privacy follow-up recorded in D13–D15, and the
+  UI/workflow concept reconciliation recorded in D16–D21.
 - **Implementation tracking:** none created or modified by this documentation
   decision. Each implementation slice still requires its own open GitHub issue,
   lane, milestone and evidence sequence.
@@ -76,6 +77,9 @@ Runtime
 - `Leaf` remains internal split-tree terminology and MUST NOT be user-facing.
 - Layout branches, tabs, sidebars, inspectors, rich-content views,
   conversations and tasks own no PTY.
+- `Pane` is a typed layout leaf. `TerminalPane` is the only pane kind that may
+  bind a `TerminalExecution`; agent, activity, diff, artifact, inspector,
+  timeline and other typed panes own no PTY.
 - Primary and alternate screen are states of the same terminal pane and
   execution. Alternate screen MUST NOT allocate a second PTY.
 
@@ -187,12 +191,21 @@ terminal-grid presenter. JSON, per-cell strings and control-plane RPC are still
 forbidden on that path. Cold checkpoints MAY contain compact versioned POD/runs
 and shared grapheme data; they are not per-frame cell IPC.
 
-### D7 — ContentTimeline is the native content model
+### D7 — The semantic transcript and ContentTimeline are the native content model
 
-The primary terminal presentation is a virtualized `ContentTimeline` of typed
-items, not a byte-range-only BlockList. Initial item kinds include terminal
+The authoritative durable semantic transcript is an ordered, versioned event
+ledger owned by the persistent runtime. The primary normal-shell presentation
+is Flow: a compact virtualized `ContentTimeline` projection of typed transcript
+and runtime events, not a byte-range-only BlockList. Initial item kinds include terminal
 input, terminal output, background output, agent conversation, tool call and
 result, approval, question, diff/change result and explicit discontinuity.
+
+Every event has a stable event ID, owning runtime/domain IDs, per-stream
+sequence, causal/correlation references where authoritative, payload version,
+provenance and retention class. Append and recovery are idempotent. Snapshot
+plus ordered delta recovery has an explicit cursor; gaps, conflicts and
+truncation are visible. Terminal byte offsets correlate evidence to semantic
+events, but neither offsets nor renderer geometry are semantic identity.
 
 Terminal output items hold materialized semantic presentation data plus source
 execution offsets and checkpoint identity. Command boundaries come only from
@@ -208,6 +221,13 @@ recovery tool, not normal rendering and not a sufficient content identity.
 
 `Block` may remain a product label or derived grouping, but ADR 0050's
 range-only identity and normal replay requirements are superseded.
+
+Raw is an exact, user-selectable compatibility/troubleshooting presentation of
+the same execution and a mandatory fallback when semantic processing is absent,
+late or unreliable. Alternate-screen or raw-mode ownership selects the full
+terminal grid, suppresses the native composer and routes input directly to the
+PTY. Flow resumes only after authoritative terminal modes permit it. No
+presentation switch creates a pane, PTY, execution or Session.
 
 ### D8 — Persistence and capture are explicit policy
 
@@ -307,16 +327,26 @@ awake, online and reachable for live control.
 
 ### D12 — Dependency order is binding
 
-No implementation may infer authority from milestone numbers alone. Work lands
-in this dependency order:
+No implementation may infer authority from milestone numbers alone. The
+domain/identity schema, configuration and privacy foundations are specified
+first; behavioral slices then land in this dependency order:
 
-1. authority mapping, domain/lifecycle, configuration schema and privacy policy;
-2. supervised local runtime, worker recovery and client leases;
-3. host terminal checkpoints, offsets and reconciliation;
-4. ContentTimeline, transcript and retention policy;
-5. compositor, text, editor, input, selection and accessibility;
-6. remote/mobile transports and clients; and
-7. agent product surfaces.
+1. terminal and PTY compatibility;
+2. host-authoritative terminal state, supervision, checkpoints and leases;
+3. durable semantic transcript, ordering and retention;
+4. Flow Block/ContentTimeline projection with independent Raw fallback;
+5. persistent Workspace/Session/Tab/pane topology using the already-defined
+   canonical identities;
+6. durable agent Task state and isolation;
+7. structured attention, requests and approvals;
+8. artifact and diff state; and
+9. optional derived workspace activity timeline.
+
+Compositor, text, input, selection, accessibility, remote/mobile and
+configuration work enters only when the authority it consumes is available;
+none may reorder the dependencies above. Persistent topology is fifth even
+though its type/identity contract is specified first: early schema definition
+does not claim topology persistence is implemented before terminal content.
 
 Shell compatibility is a foundation gate across every step. Privacy and
 configuration isolation are cross-cutting prerequisites: a feature does not
@@ -392,6 +422,96 @@ before it receives data.
 Encryption and redaction reduce exposure only after collection is authorized;
 they do not make collection safe by default or replace minimization.
 
+### D16 — The UI concepts are projections, not architectural layers
+
+The supplied prototype and screenshots are product-concept evidence, not
+visual or API authority. Tabs, split geometry, Block styling, spines, cards,
+gutters, timeline lanes, inspector layout, navigation chrome, popovers,
+overlays and badges remain client projections over stable runtime objects.
+Switching Raw, Flow or TUI presentation changes only the view of one
+TerminalPane/TerminalExecution.
+
+Inspector and navigation consume typed authoritative state and deep links; they
+MUST NOT scrape terminal cells or become the only location for a critical
+action. The central work surface remains terminal-first. Optional agent,
+activity, attention, artifact, diff and timeline surfaces MUST NOT obstruct or
+be required for raw terminal operation.
+
+### D17 — The activity timeline is a derived cross-pane projection
+
+The workspace activity timeline is optional and is not the terminal,
+ContentTimeline, attention queue or an independent source of truth. It derives
+auditable cross-pane summaries from transcript, process, Task, approval,
+artifact and lifecycle events. It does not repeat every command or low-level
+tool call by default. Visual chronology, graph nodes, lanes and causal lines are
+client layout.
+
+New authoritative causal/dependency edges may be added only when correctness
+requires information that cannot be derived reliably. Such edges are ordinary
+versioned runtime events with authorization, retention and recovery semantics,
+not renderer-owned graph state.
+
+### D18 — Attention and responses are structured runtime objects
+
+Each actionable request has a stable `StructuredRequestId`; each attention item
+has a stable `AttentionId`, exact domain/task/execution references where
+applicable, type, urgency, lifecycle/expiry, authorization policy, navigation
+target and allowed actions. Attention is a projection over source events and
+request lifecycle, not a second copy of approval or task state.
+
+Inline response is allowed only for safe, single-step structured requests.
+Raw-terminal prompts, TUI-owned input, ambiguous/multi-step interactions and
+secret/password input navigate to the owning pane. Secret values are never
+duplicated in attention or notification previews. Responses are authenticated,
+bound to the request ID and current generation, and reject stale, expired,
+duplicate or replayed decisions. Cell scraping cannot create an actionable
+request.
+
+### D19 — Tasks and forks are durable, subordinate runtime objects
+
+Task identity, parent/child relations, domain associations, status, isolation
+context, messages, tool calls, approvals, artifacts, diffs, checkpoints,
+attention and authorization survive client disconnection under retention
+policy. A fork remains grouped beneath its parent and does not create a visible
+tab or pane unless explicitly opened, pinned or requiring attention.
+
+Cancellation and completion propagate only through explicit policy recorded in
+the task graph; no implicit parent/child termination is allowed. Concurrent
+write-capable tasks require distinct worktrees or equivalent filesystem
+isolation. Conflicts become durable structured events requiring explicit
+resolution; they are not silently merged by a client.
+
+### D20 — Input arbitration is host-authoritative and mode-explicit
+
+Input modes are native command composer, shell line editor, raw terminal,
+alternate-screen/raw-mode application, agent prompt and structured approval.
+The runtime terminal modes, task/request state and current input lease determine
+which target may receive input; client focus alone never grants authority.
+Transitions are ordered events and preserve focus restoration, IME composition,
+paste and mouse routing or fail safely to direct raw-terminal input.
+
+Composer drafts are sensitive, client-local and non-durable by default. They
+are never shared, backed up or synchronized implicitly. Durable or cross-device
+drafts require a later explicit policy and threat-model decision. Missing or
+unreliable shell integration disables composer-derived semantics, not native
+shell input.
+
+### D21 — Protocol channels are typed, ordered, bounded and independently failing
+
+The product protocol has capability-negotiated binary channels for topology,
+execution lifecycle, terminal bytes, terminal checkpoints/deltas, semantic
+events, Flow projections, Tasks, structured requests/approvals, attention,
+artifacts/diffs, leases, policy and resume cursors. Latency-sensitive terminal
+traffic remains binary and never waits on JSON or a semantic channel.
+
+Each channel declares ordering domain, maximum frame/queue size,
+acknowledgement/credit, idempotency key, snapshot cursor, missed-event recovery
+and authorization. Correlation records define ordering between terminal byte
+offsets and semantic events. Slow and mobile clients receive bounded projections
+or resync requirements; one failing semantic channel cannot stall PTY drain,
+raw input or another client. Protocol/checkpoint/content versions negotiate
+explicitly and fail closed when no compatible recovery path exists.
+
 ## Explicit amendments
 
 | Prior authority | Amendment |
@@ -409,6 +529,10 @@ they do not make collection safe by default or replace minimization.
 | ADR 0051 | Structured editor content lives in ContentTimeline; raw TUI input still bypasses it. |
 | ADR 0052 | Selection spans terminal and structured content through surface-specific anchors; raw-mode arbitration remains explicit. |
 | ADR 0037 | Implementation is parked until checkpoint/reconciliation authority is accepted in specifications and red tests. |
+| ADR 0047 | Attention becomes a stable structured runtime projection with exact source IDs, authenticated responses and replay protection; the existing queue implementation proves only its narrower library contract. |
+| ADR 0048/0049 | Task forks gain durable parentage, hidden-by-default navigation, explicit propagation, isolation and conflict events. |
+| ADR 0050 | Flow is the default normal-shell presentation over the authoritative transcript; Raw/TUI remain the exact independently operable fallback. |
+| ADR 0051/0052 | Input modes and transitions are explicit; composer drafts default to client-local, sensitive and non-durable. |
 
 ## Consequences
 
@@ -432,6 +556,10 @@ they do not make collection safe by default or replace minimization.
   become security-sensitive operations with explicit negative-data contracts.
 - Privacy gates precede every new sink, including diagnostics and agent context;
   encryption/redaction cannot be used to waive minimization.
+- The prototype's inspector, timeline, Flow styling and navigation can evolve
+  without runtime identity or protocol migration.
+- Typed semantic channels add protocol complexity but cannot become a
+  dependency of raw terminal availability.
 
 ## Rejected alternatives
 
@@ -451,6 +579,10 @@ they do not make collection safe by default or replace minimization.
 - Content-bearing telemetry or crash reports, even when nominally redacted.
 - Claiming encryption or redaction makes capture safe by default.
 - Publishing unstable internal crates as supported libraries.
+- Treating the prototype layout, inspector, timeline or Block cards as durable
+  runtime state or public API.
+- Encoding approvals, agent state or actionable requests only in terminal cells.
+- Making the activity timeline authoritative or mandatory for navigation.
 
 ## Evidence gates
 

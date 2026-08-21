@@ -53,6 +53,20 @@ F-131 (replay adapter) exists to prevent that, and this ADR makes it the
 
 ## Decision
 
+### 2026-08-21 amendment — durable fork graph and navigation policy
+
+ADR 0053 D19 extends the Task object with stable parent/child relations,
+domain/execution associations, isolation context, lifecycle, authorization,
+artifacts, diffs, checkpoints and attention references. Forks remain grouped
+under their parent and are hidden from ordinary navigation until explicitly
+opened, pinned or requiring attention; forking never creates a pane or tab.
+
+Cancellation/completion propagation is explicit and journalled, never inferred
+from parent status. Concurrent writers use distinct worktrees under ADR 0049
+D7. Conflicts are stable structured events with explicit resolution rather
+than client-local warnings or silent merges. Task/fork state survives client
+disconnect only when the runtime persistence/recovery gates are Proven.
+
 ### D1 — `Task` is a kernel-side runtime object with a stable id
 
 A `Task` has: a stable `TaskId` (`u64`, kernel-allocated, never reused while

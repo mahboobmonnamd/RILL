@@ -60,6 +60,21 @@ about a region of the byte stream**, not a copy of it.
 
 ## Decision
 
+### 2026-08-21 amendment — D1, D4–D7 and D9 are read through ADR 0053
+
+The historical decisions below remain visible so their evidence is not
+silently rewritten. ADR 0053 D7 and D16–D21 supersede the byte-range storage
+model: normal primary-screen shell activity defaults to Flow, a compact Block
+projection over materialized authoritative transcript/runtime events. Exact
+Raw remains user-selectable and is the independent fallback; alternate-screen
+and raw-mode applications automatically use the one live terminal grid. Flow,
+Raw and TUI reuse the same pane, execution, PTY and canonical terminal state.
+
+Actions operate on stable content/event IDs plus source evidence. They do not
+require replaying an arbitrary byte slice through a fresh VT. Styling is a
+client decision, and failure of transcript/Block processing cannot block raw
+terminal input, output or paint.
+
 ### D1 — A Block is a byte range in the ring, plus metadata
 
 A Block records: a `SessionId`, a start and end **offset into the kernel's byte
@@ -141,7 +156,8 @@ F-082 closes as `wontfix`.
 
 F-071, F-076, F-077, F-078, F-081.
 
-- Copy command / output / both (F-071) copies from the replayed byte range.
+- Copy command / output / both (F-071) copies from retained ContentItems and
+  their declared source evidence.
   Redaction (ADR 0044 D4) applies — the clipboard is a sink.
 - Find/filter (F-076) searches recorded metadata and replayed bytes. Cold.
 - **Rerun / edit-and-run (F-077):** MUST place the command in the input for
@@ -161,7 +177,8 @@ Sharing MUST show exactly what will be uploaded, MUST apply redaction before
 upload (ADR 0044 D4), and MUST be a per-Block explicit action. Nothing ships in
 M6; the constraint is fixed here.
 
-Attach-as-context (F-079) hands a Block's byte range to a task under
+Attach-as-context (F-079) hands explicitly selected retained content and its
+declared source evidence to a task under
 ADR 0048 D9's scoping and redaction rules.
 
 ### D8 — Prompt chips must not break the user's prompt
@@ -185,7 +202,7 @@ originated in a nicer text field.
 
 | ID | Closes |
 |---|---|
-| T-BLOCK-POD | D1 — no cell/`String` copy; ring is the store; truncation honest |
+| T-BLOCK-POD | Historical D1 memory guard only; ADR 0053 replaces ring-only identity with stable materialized content |
 | T-BLOCK-BOUNDARY | D2 — marks or background; no prompt-regex inference |
 | T-BLOCK-COLD | D3 — `--nfr-key` meets budget with Blocks on |
 | T-BLOCK-RAW | D4 — alt-screen is the same leaf, same pid, no reparse |

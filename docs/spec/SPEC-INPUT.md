@@ -14,6 +14,21 @@
 
 Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
+## 0. Authority and modes
+
+Input modes are native command composer, shell line editor, raw terminal,
+alternate-screen/raw-mode application, agent prompt and structured approval.
+Host terminal modes, Task/request lifecycle and the current input lease decide
+the legal target. Focus is necessary presentation state but never grants write
+authority. Mode transitions are ordered and define keyboard, mouse, focus,
+paste and IME ownership; an uncertain transition falls back to direct raw
+terminal input without submitting buffered composer text.
+
+Composer drafts are sensitive client-local state and non-durable by default.
+They are not synchronized, backed up or restored on another client. A future
+durable draft requires an explicit retention, encryption and cross-client
+authorization contract.
+
 ## 1. Mode
 
 - In raw terminal/TUI mode, keys go through the current input lease to the PTY
@@ -119,6 +134,8 @@ NFR-KEY MUST hold with the field active (SPEC-BLOCKS §3).
 ## 11. What we will not do
 
 - Run a rich field in raw mode.
+- Persist or synchronize an unsent composer draft implicitly.
+- Route input from focus alone without the authoritative mode and lease.
 - Expand or correct at submit time.
 - Execute anything to build a completion.
 - Sync history to a service.

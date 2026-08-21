@@ -25,11 +25,12 @@ flowchart TB
   S["Session - durable grouping and restoration"]
   T["Tab"]
   L["Split tree"]
-  P["Terminal pane"]
+  P["Typed pane"]
+  TP["TerminalPane"]
   E["TerminalExecution - one PTY and process group"]
   C["Conversation"]
   K["Task"]
-  R --> W --> S --> T --> L --> P --> E
+  R --> W --> S --> T --> L --> P --> TP --> E
   W -. attaches .-> C
   S -. attaches .-> C
   S -. attaches .-> K
@@ -37,8 +38,8 @@ flowchart TB
 ```
 
 `Leaf` is internal split-tree terminology. It is not a user-facing process or
-session name. Layout branches, tabs, sidebars, inspectors, rich content,
-conversations and tasks own no PTY. A terminal pane owns at most one
+session name. Agent, activity, diff, artifact, inspector, timeline and other
+typed panes own no PTY. A terminal pane owns at most one
 TerminalExecution; primary and alternate screen use that same execution and
 PTY.
 
@@ -111,7 +112,10 @@ they are not per-frame cell IPC.
 
 ## Content model
 
-Primary structured presentation uses a virtualized `ContentTimeline` with typed
+The durable semantic transcript is a host-owned ordered event ledger with
+stable IDs, typed payloads, byte/event correlation, idempotency and
+snapshot/delta recovery. Normal primary-screen shell activity defaults to Flow,
+a compact virtualized `ContentTimeline` projection with typed
 terminal input/output, background output, agent conversation, tool, approval,
 question, diff and lifecycle items. Terminal items retain materialized semantic
 presentation and source execution ranges. Replaying a raw byte range through a
@@ -121,6 +125,16 @@ Command boundaries require explicit marks or known structured-input submission.
 Prompt regex and language heuristics are forbidden. Alternate screen remains a
 mutable VT grid of the same terminal pane and is not a second PTY or a separate
 timeline Block.
+
+Raw is a user-selectable compatibility/troubleshooting view and the independent
+fallback when semantic processing fails. Alternate-screen/raw-mode TUI
+ownership automatically uses the full grid and bypasses the composer. Flow,
+Raw and TUI never allocate another pane, PTY, execution or Session.
+
+The optional workspace activity timeline derives cross-pane summaries from
+transcript, Task, approval, artifact, process and lifecycle events. It is not
+authoritative, mandatory navigation or a copy of the attention queue. Its
+visual graph/lanes and the inspector/navigation layouts are client projections.
 
 Durable retention is policy-controlled and may be disabled. Encryption does
 not authorize capture. Redaction is a derived sink and does not claim complete
@@ -181,6 +195,22 @@ Remote cases:
 
 No hosted relay or account is authorized.
 
+## Structured attention, tasks and input
+
+Attention items and actionable requests have stable IDs, exact deep-link
+targets, authorization, expiry and allowed actions. Only safe single-step
+requests may be answered inline. Raw/TUI, secret and ambiguous requests
+navigate to the owning pane; authenticated responses reject stale, duplicate
+or replayed generations. Cell scraping never fabricates a control.
+
+Task forks are durable parent/child objects, hidden from normal navigation until
+opened, pinned or requiring attention. They do not create panes/tabs and use
+explicit worktree isolation, propagation and conflict events.
+
+Native composer, shell line editor, raw terminal, TUI, agent prompt and
+structured approval are explicit input modes governed by host state and the
+lease. Composer drafts are sensitive client-local non-durable state by default.
+
 ## Normative specifications
 
 - [SPEC-DOMAIN-LIFECYCLE](spec/SPEC-DOMAIN-LIFECYCLE.md)
@@ -194,9 +224,10 @@ No hosted relay or account is authorized.
 
 ## Binding dependency order
 
-Authority/domain/lifecycle plus configuration/privacy → supervised runtime and
-leases → host checkpoints and reconciliation → content/transcript →
-compositor/text/input/selection → remote/mobile → agent product surfaces.
+Authority schema plus configuration/privacy → terminal/PTY compatibility →
+host state/workers/checkpoints/leases → semantic transcript/retention → Flow
+with independent Raw fallback → persistent topology → Tasks/isolation →
+structured attention/approvals → artifacts/diffs → optional activity timeline.
 
 Chip 1 live swap remains parked until checkpoint compatibility and disposable
 mirror reconciliation are specified and demonstrated red.
@@ -209,6 +240,9 @@ mirror reconciliation are specified and demonstrated red.
 - hidden UI deleting domain objects
 - crash, disconnect or lease expiry interpreted as termination
 - raw range replay called the native content model
+- semantic-channel failure blocking raw terminal traffic
+- terminal-cell scraping used for product state or actionable requests
+- renderer-owned inspector, timeline, approval, Task or artifact state
 - prompt-regex command boundaries
 - SSH probing in zero-footprint mode
 - shell/profile/prompt/plugin rewriting for RILL compatibility

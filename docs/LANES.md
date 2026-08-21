@@ -47,13 +47,16 @@ Retired slugs (GitHub renamed in place): `lane:A` â†’ `lane:kernel`, `lane:B` â†
 
 Milestone numbers do not authorize work out of dependency order:
 
-1. domain identity, visibility, lifecycle, canonical configuration and privacy;
-2. supervised runtime workers and client leases;
-3. host checkpoints and mirror reconciliation;
-4. ContentTimeline, transcript and retention;
-5. compositor, text, editor, selection and accessibility;
-6. remote/mobile; and
-7. agent product surfaces.
+1. schema/authority, canonical configuration and privacy;
+2. terminal and PTY compatibility;
+3. host state, workers, checkpoints and leases;
+4. semantic transcript and retention;
+5. Flow projection with independent Raw fallback;
+6. persistent topology;
+7. Tasks and isolation;
+8. structured attention and approvals;
+9. artifacts and diffs; and
+10. optional activity timeline.
 
 Every lane preserves the existing PTY, attach, raw VT, Chip 0/Chip 1 and Metal
 foundations while working through this order.

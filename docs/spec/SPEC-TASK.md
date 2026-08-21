@@ -85,6 +85,15 @@ Exactly: `prompt`, `plan`, `tool`, `command`, `output`, `approval`, `diff`,
 - It MUST NOT duplicate the PTY, MUST NOT attach a second writer to a leaf
   (FR-ONE), and MUST NOT continue the source task.
 - The two tasks MUST be independent afterwards.
+- ParentTaskId, fork point, worktree/isolation identity and lifecycle are
+  durable. A fork remains grouped under its parent and is hidden from ordinary
+  navigation unless opened, pinned or requiring attention.
+- Forking MUST NOT create a visible Tab or Pane.
+- Cancellation/completion propagation is an explicit recorded policy; the
+  default is no implicit propagation in either direction.
+- Concurrent write-capable forks MUST use distinct worktrees. Creation/cleanup
+  refuses on ambiguous ownership or data loss. Merge/rebase conflicts become
+  durable structured events and require explicit resolution.
 
 ## 7. Prompt queue
 
@@ -127,6 +136,10 @@ Exactly: `prompt`, `plan`, `tool`, `command`, `output`, `approval`, `diff`,
 | T-TASK-FORK | **Proven** (library) | §6 |
 | T-TASK-QUEUE | **Proven** (library) | §7 |
 | T-TASK-ATTACH | **Proven** (library) | §9 |
+| T-TASK-FORK-NAVIGATION | Red | §6 hidden/grouped behavior |
+| T-TASK-FORK-PROPAGATION | Red | §6 explicit lifecycle policy |
+| T-TASK-WORKTREE-ISOLATION | Red | §6 real filesystem isolation |
+| T-TASK-FORK-CONFLICT | Red | §6 structured conflict handling |
 
 **Library evidence (2026-08-18).** `crates/rill-orchestrate/tests/task_gates.rs`,
 green, each mutation confirmed to turn red under `--features mutate`:

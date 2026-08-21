@@ -14,17 +14,26 @@ RuntimeId
     └── SessionId
         └── TabId
             └── SplitNodeId
-                └── TerminalPaneId
-                    └── TerminalExecutionId?  -> PTY + process group
+                └── PaneId (typed)
+                    └── TerminalPaneId
+                        └── TerminalExecutionId?  -> PTY + process group
 ```
 
 IDs are stable opaque values. A label, path, title, selected row, attach token,
 socket address or process ID is never an object's identity.
 
 `Workspace` and `Session` are durable organizational records. `Tab`, split
-nodes and terminal panes are their layout. `TerminalExecution` alone owns one
+nodes and typed panes are their layout. `TerminalExecution` alone owns one
 PTY master and process group. A terminal pane owns zero or one execution. No
-other domain or view object owns a PTY.
+other domain or view object owns a PTY. Agent, activity, diff, artifact,
+inspector and timeline panes therefore have stable PaneIds and lifecycle but no
+TerminalExecutionId. Changing a pane's presentation never allocates another
+pane or domain object.
+
+Every Workspace, Session, Tab, Pane, TerminalExecution, Task, Activity,
+StructuredRequest, AttentionItem and Artifact type specifies stable identity,
+owner, lifecycle, persistence class, protocol representation, authorization,
+failure result, recovery behavior and named tests before implementation.
 
 The current kernel `Session` and `SessionId` have TerminalExecution semantics.
 Before a durable `Session` type can land, a migration spec MUST name:

@@ -51,6 +51,53 @@ The snapshot's existing tests remain evidence only for their named downstream
 oracles. Static code/document inspection did not reclassify a Red product gate
 as Proven.
 
+## UI/workflow concept input — 2026-08-21
+
+The product owner supplied a RILL interactive prototype, two screenshots and a
+detailed architecture-reconciliation prompt. The source references were:
+
+- [interactive prototype](https://rill-interactive-prototype.mahboobmonnamd.chatgpt.site/)
+- `ChatGPT Image Aug 21, 2026, 07_20_46 AM.png`
+- `ChatGPT Image Aug 21, 2026, 07_20_38 AM.png`
+
+The prototype is explicitly non-authoritative visual evidence. From the supplied
+screenshots it demonstrates terminal-first split panes, normal-shell Flow,
+full-grid agent/TUI presentation, server/log panes, optional inspector,
+attention/approval affordances and keyboard/mouse navigation. Cards, spines,
+gutters, tabs, inspector geometry, badges and timeline layout remain client
+choices.
+
+The live prototype URL returned HTTP 401 from the architecture-review
+environment on 2026-08-21, so no claim is made about interactions that were not
+visible in the supplied screenshots. This limitation does not affect the
+normative requirements supplied in the prompt.
+
+Repository reconciliation found no conflict with Q1–Q10. It confirmed these
+deltas:
+
+- typed non-terminal panes require stable lifecycle but never PTY ownership;
+- Flow/Raw/TUI are presentations of one execution, with Raw independently
+  operable when semantic work fails;
+- the semantic transcript needs stable event envelopes, ordering,
+  idempotency, byte correlation and snapshot/delta recovery;
+- the optional activity timeline is derived rather than authoritative;
+- attention needs structured request identity, authentication, exact deep
+  links and stale/replay rejection;
+- forks need durable parentage, hidden-by-default navigation, isolation and
+  conflict semantics;
+- input arbitration needs explicit modes, and unsent composer drafts default
+  to sensitive client-local non-durable state;
+- protocol channels need independent bounds/recovery so semantic failure cannot
+  block raw terminal traffic; and
+- ADR 0050's historical byte-range/replay model is explicitly superseded for
+  normal Block presentation.
+
+The accepted dependency order is PTY compatibility, host terminal authority,
+durable transcript, Flow projection, persistent topology, Task state,
+attention/approvals, artifacts/diffs, then optional activity timeline. Domain
+identity is specified before those slices but does not claim early topology
+implementation.
+
 ## Workflow coverage
 
 | Workflow | Evidence | RILL implication |

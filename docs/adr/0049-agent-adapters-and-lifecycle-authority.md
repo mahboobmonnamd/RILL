@@ -173,6 +173,12 @@ Two tasks MUST NOT write the same working tree concurrently. If a worktree
 cannot be created, the second task MUST refuse to start rather than share —
 silent overlap corrupts work in a way no checkpoint reliably undoes.
 
+Worktree identity and ownership are durable Task fields. Creation, cleanup and
+conflict state are journalled. Cleanup MUST refuse while another live Task owns
+the worktree or when unmerged/uncommitted state would be lost. Merge/rebase
+conflicts become structured Task events requiring an explicit resolution; an
+adapter or client MUST NOT silently choose a side.
+
 ### D8 — Everything cloud is optional, off, and additive
 
 F-157 (cloud agents), F-158 (cloud-synced conversations), F-159 (session
