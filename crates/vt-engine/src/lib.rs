@@ -89,6 +89,26 @@ impl VtEngine {
         out.extend(self.screen.repaint_bytes());
         Ok(out)
     }
+
+    /// Compact versioned checkpoint (SPEC-VT-CHECKPOINT, #312).
+    pub fn export_checkpoint(&self, ending_offset: u64) -> Result<Vec<u8>, Error> {
+        if !self.parser.is_idle() {
+            return Err(Error::Vt("incomplete parser"));
+        }
+        self.screen.export_checkpoint(ending_offset)
+    }
+
+    /// Restore from a checkpoint blob. Returns the encoded ending offset.
+    pub fn import_checkpoint(&mut self, bytes: &[u8]) -> Result<u64, Error> {
+        if mutate("import_is_resync_bytes") {
+            self.parser = Parser::new();
+            self.parser.feed(bytes, &mut self.screen);
+            return Ok(0);
+        }
+        let offset = self.screen.import_checkpoint(bytes)?;
+        self.parser = Parser::new();
+        Ok(offset)
+    }
 }
 
 pub(crate) fn mutate(name: &str) -> bool {

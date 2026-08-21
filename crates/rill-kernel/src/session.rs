@@ -2,6 +2,7 @@
 //!
 //! SPEC-KERNEL. Never paints, never ships cells, never exports the master fd.
 
+use crate::checkpoint::StoredCheckpoint;
 use crate::error::Error;
 use crate::pty::{Discipline, Pty, Winsize};
 use crate::ring::ByteRing;
@@ -74,6 +75,7 @@ pub struct Session {
     last_delivery: InputDelivery,
     observers: u32,
     terminated: bool,
+    checkpoint: Option<StoredCheckpoint>,
 }
 
 impl Session {
@@ -111,6 +113,7 @@ impl Session {
             last_delivery: InputDelivery::Unknown,
             observers: 0,
             terminated: false,
+            checkpoint: None,
         })
     }
 
@@ -135,6 +138,39 @@ impl Session {
 
     pub fn history(&self) -> Vec<u8> {
         self.ring.snapshot()
+    }
+
+    pub fn end_offset(&self) -> u64 {
+        self.ring.end_offset()
+    }
+
+    pub fn retained_base(&self) -> u64 {
+        self.ring.retained_base()
+    }
+
+    /// Install a host-captured VT checkpoint at a monotonic PTY offset.
+    pub fn install_checkpoint(&mut self, rec: StoredCheckpoint) -> Result<(), Error> {
+        rec.check_compatible()?;
+        self.checkpoint = Some(rec);
+        Ok(())
+    }
+
+    /// Worker recovery export: last checkpoint plus retained deltas after it.
+    ///
+    /// This Session is the worker failure boundary for #313. A later slice
+    /// splits the control daemon into a separate process; packaged T-RUNTIME
+    /// GUI-INDEPENDENT remains Red until then.
+    pub fn recovery(&self) -> Result<(StoredCheckpoint, Vec<u8>), Error> {
+        #[cfg(feature = "mutate")]
+        if std::env::var("RILL_MUTATE").as_deref() == Ok("blank_core") {
+            return Ok((
+                StoredCheckpoint::new(self.ring.end_offset(), 0, Vec::new()),
+                Vec::new(),
+            ));
+        }
+        let cp = self.checkpoint.clone().ok_or(Error::NoCheckpoint)?;
+        let deltas = self.ring.deltas_after(cp.ending_offset)?;
+        Ok((cp, deltas))
     }
 
     pub fn credit(&self) -> u64 {
@@ -429,7 +465,11 @@ impl Session {
                 self.flush_input()
             }
 
-            Frame::Exit { .. } | Frame::Refused { .. } => Ok(()),
+            Frame::Exit { .. }
+            | Frame::Refused { .. }
+            | Frame::Checkpoint { .. }
+            | Frame::Delta { .. }
+            | Frame::ResyncRequest => Ok(()),
         }
     }
 

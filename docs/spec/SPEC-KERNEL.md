@@ -53,8 +53,13 @@ impl Session {
   Product defaults and durable capture are not inferred from that constant;
   SPEC-CONTENT governs offsets, checkpoints and retention policy.
 - The ring MUST store raw bytes. No UTF-8 validation, no transformation.
-- Overflow discards from the head. The ring is never used as a live pipe;
-  live delivery uses credit (§4).
+- Overflow discards from the head and MUST advance `retained_base`; it never
+  renumbers surviving offsets ([#313](https://github.com/mahboobmonnamd/RILL/issues/313)).
+- `Session` MAY store one opaque `StoredCheckpoint` (format version, ending
+  offset, hash, blob). Unknown format versions MUST be refused.
+  `recovery()` returns that checkpoint plus `deltas_after(ending_offset)`.
+  Packaged control-daemon/worker process split remains a later gate.
+- The ring is never used as a live pipe; live delivery uses credit (§4).
 - `ByteRing::snapshot()` allocates and copies; it is a cold-path call only. The
   warm path MUST NOT call it.
 

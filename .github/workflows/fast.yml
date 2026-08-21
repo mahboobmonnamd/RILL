@@ -198,6 +198,24 @@ jobs:
           }
           red T-CHIP1-MODE ignore_mode_updates t_chip1_mode_tracks_host_encoder_flags
 
+      - name: T-CHIP1 slice 11 negative controls
+        run: |
+          set -eu
+          red() {
+            name="$1"
+            mut="$2"
+            shift 2
+            if RILL_MUTATE="$mut" cargo test -p vt-engine --features mutate --test t_chip1_slice11 "$@" -- --nocapture; then
+              echo "BROKEN INSTRUMENT: $name stayed green under $mut" >&2
+              exit 1
+            fi
+            echo "ok: $name went red under $mut"
+          }
+          red T-CHIP1-CHECKPOINT-ROUNDTRIP empty_checkpoint t_chip1_checkpoint_roundtrip_restores_grid_and_modes
+          red T-CHIP1-CHECKPOINT-HASH constant_hash t_chip1_checkpoint_hash_changes_when_cell_flips
+          red T-CHIP1-CHECKPOINT-VERSION accept_unknown_version t_chip1_checkpoint_unknown_version_fails_closed
+          red T-CHIP1-CHECKPOINT-NOT-RESYNC import_is_resync_bytes t_chip1_checkpoint_import_is_not_vt_replay
+
       # M1 T-GRAPH (ADR 0014 D1). Mutations must go red (ADR 0002 D3).
       # rilld named-id / flood stay in validate-spike0.sh (Chip 0 toolchain).
       - name: T-GRAPH kernel negative controls
@@ -221,6 +239,39 @@ jobs:
           red T-GRAPH-EVENTS duplicate_event_ids t_graph_event_ids_are_unique_and_terminate_is_idempotent
           red T-GRAPH-LAYOUT omit_second_leaf t_graph_layout_snapshot_names_every_live_leaf
           red T-GRAPH-EPHEMERAL ignore_ephemeral t_graph_ephemeral_drop_terminates_the_child
+
+      - name: T-RUNTIME checkpoint negative controls
+        run: |
+          set -eu
+          red() {
+            name="$1"
+            mut="$2"
+            shift 2
+            if RILL_MUTATE="$mut" cargo test -p rill-kernel --features mutate --test t_runtime_checkpoint "$@" -- --test-threads=1 --nocapture; then
+              echo "BROKEN INSTRUMENT: $name stayed green under $mut" >&2
+              exit 1
+            fi
+            echo "ok: $name went red under $mut"
+          }
+          red T-RUNTIME-DAEMON-STATE blank_core t_runtime_daemon_state_recovery_matches_independent_vt
+          red T-RUNTIME-UPDATE-COMPAT accept_incompatible_checkpoint t_runtime_update_compat_refuses_unknown_format
+
+      - name: T-CLIENT mirror negative controls
+        run: |
+          set -eu
+          red() {
+            name="$1"
+            mut="$2"
+            shift 2
+            if RILL_MUTATE="$mut" cargo test -p rill-attach --features mutate --test t_client_mirror "$@" -- --nocapture; then
+              echo "BROKEN INSTRUMENT: $name stayed green under $mut" >&2
+              exit 1
+            fi
+            echo "ok: $name went red under $mut"
+          }
+          red T-CLIENT-MIRROR-DISPOSABLE skip_host_checkpoint t_client_mirror_disposable_rebuilds_from_host
+          red T-CLIENT-MIRROR-RECONCILE mismatch_keeps_presenting t_client_mirror_reconcile_requests_checkpoint
+          red T-CLIENT-RING-EVICTION-RESYNC replay_from_ring_base t_client_ring_eviction_resync_uses_checkpoint
 
   fuzz-codec:
     runs-on: ubuntu-latest

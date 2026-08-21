@@ -1285,6 +1285,399 @@ impl Actions for Screen {
     }
 }
 
+impl Screen {
+    pub(crate) fn export_checkpoint(&self, ending_offset: u64) -> Result<Vec<u8>, Error> {
+        if crate::mutate("empty_checkpoint") {
+            return Ok(Vec::new());
+        }
+        let mut payload = Vec::new();
+        put_u16(&mut payload, self.cols);
+        put_u16(&mut payload, self.rows);
+        put_u16(&mut payload, self.cursor_col);
+        put_u16(&mut payload, self.cursor_row);
+        put_u16(&mut payload, self.scroll_top);
+        put_u16(&mut payload, self.scroll_bottom);
+        put_u16(&mut payload, self.pen_attrs);
+        put_u32(&mut payload, self.checkpoint_flags());
+        put_color(&mut payload, self.pen_fg);
+        put_color(&mut payload, self.pen_bg);
+        put_palette(&mut payload, &self.palette);
+        put_u32(&mut payload, self.grapheme_truncated);
+        for cell in &self.cells {
+            put_cell(&mut payload, cell);
+        }
+        match &self.saved_grid {
+            Some(grid) => {
+                payload.push(1);
+                for cell in grid {
+                    put_cell(&mut payload, cell);
+                }
+            }
+            None => payload.push(0),
+        }
+        put_saved(&mut payload, self.saved_cursor);
+        put_saved(&mut payload, self.alt_cursor);
+        put_open_cluster(&mut payload, self.open_cluster);
+
+        let mut out = Vec::with_capacity(22 + payload.len());
+        out.extend_from_slice(MAGIC);
+        put_u16(&mut out, VERSION);
+        put_u64(&mut out, ending_offset);
+        put_u64(&mut out, 0);
+        out.extend_from_slice(&payload);
+        let hash = if crate::mutate("constant_hash") {
+            0
+        } else {
+            fnv1a64_with_zero_hash(&out)
+        };
+        out[HASH_OFF..HASH_OFF + 8].copy_from_slice(&hash.to_le_bytes());
+        Ok(out)
+    }
+
+    pub(crate) fn import_checkpoint(&mut self, bytes: &[u8]) -> Result<u64, Error> {
+        if bytes.len() < 22 {
+            return Err(Error::Vt("truncated checkpoint"));
+        }
+        if bytes.get(..4) != Some(MAGIC) {
+            return Err(Error::Vt("bad checkpoint magic"));
+        }
+        let version = u16::from_le_bytes([bytes[4], bytes[5]]);
+        if version != VERSION && !crate::mutate("accept_unknown_version") {
+            return Err(Error::Vt("unsupported checkpoint version"));
+        }
+        let mut off_bytes = [0u8; 8];
+        off_bytes.copy_from_slice(&bytes[6..14]);
+        let ending_offset = u64::from_le_bytes(off_bytes);
+        let mut hash_bytes = [0u8; 8];
+        hash_bytes.copy_from_slice(&bytes[14..22]);
+        let stored = u64::from_le_bytes(hash_bytes);
+        if stored != fnv1a64_with_zero_hash(bytes) && !crate::mutate("accept_unknown_version") {
+            return Err(Error::Vt("checkpoint hash mismatch"));
+        }
+        let mut rest = &bytes[22..];
+        let cols = take_u16(&mut rest)?;
+        let rows = take_u16(&mut rest)?;
+        if cols == 0 || rows == 0 {
+            return Err(Error::Vt("empty grid"));
+        }
+        let n = usize::from(cols)
+            .checked_mul(usize::from(rows))
+            .ok_or(Error::Vt("grid overflow"))?;
+        let cursor_col = take_u16(&mut rest)?;
+        let cursor_row = take_u16(&mut rest)?;
+        let scroll_top = take_u16(&mut rest)?;
+        let scroll_bottom = take_u16(&mut rest)?;
+        let pen_attrs = take_u16(&mut rest)?;
+        let flags = take_u32(&mut rest)?;
+        let pen_fg = take_color(&mut rest)?;
+        let pen_bg = take_color(&mut rest)?;
+        let palette = take_palette(&mut rest)?;
+        let grapheme_truncated = take_u32(&mut rest)?;
+        let mut cells = Vec::with_capacity(n);
+        for _ in 0..n {
+            cells.push(take_cell(&mut rest)?);
+        }
+        let saved_grid = match take_u8(&mut rest)? {
+            0 => None,
+            1 => {
+                let mut g = Vec::with_capacity(n);
+                for _ in 0..n {
+                    g.push(take_cell(&mut rest)?);
+                }
+                Some(g)
+            }
+            _ => return Err(Error::Vt("bad saved grid tag")),
+        };
+        let saved_cursor = take_saved(&mut rest)?;
+        let alt_cursor = take_saved(&mut rest)?;
+        let open_cluster = take_open_cluster(&mut rest)?;
+        if !rest.is_empty() {
+            return Err(Error::Vt("trailing checkpoint bytes"));
+        }
+        self.cols = cols;
+        self.rows = rows;
+        self.cells = cells;
+        self.cursor_col = cursor_col.min(cols.saturating_sub(1));
+        self.cursor_row = cursor_row.min(rows.saturating_sub(1));
+        self.scroll_top = scroll_top;
+        self.scroll_bottom = scroll_bottom;
+        self.pen_attrs = pen_attrs;
+        self.pen_fg = pen_fg;
+        self.pen_bg = pen_bg;
+        self.palette = palette;
+        self.grapheme_truncated = grapheme_truncated;
+        self.apply_checkpoint_flags(flags);
+        self.saved_grid = saved_grid;
+        self.saved_cursor = saved_cursor;
+        self.alt_cursor = alt_cursor;
+        self.open_cluster = open_cluster;
+        self.full_damage = true;
+        self.damage_row0 = 0;
+        self.damage_row1 = 0;
+        self.replies.clear();
+        self.discard_replies = false;
+        Ok(ending_offset)
+    }
+
+    fn checkpoint_flags(&self) -> u32 {
+        let mut f = 0u32;
+        if self.pending_wrap {
+            f |= 1 << 0;
+        }
+        if self.autowrap {
+            f |= 1 << 1;
+        }
+        if self.cursor_visible {
+            f |= 1 << 2;
+        }
+        if self.in_alt {
+            f |= 1 << 3;
+        }
+        if self.application_cursor_keys {
+            f |= 1 << 4;
+        }
+        if self.application_keypad {
+            f |= 1 << 5;
+        }
+        if self.bracketed_paste {
+            f |= 1 << 6;
+        }
+        if self.mouse_x10 {
+            f |= 1 << 7;
+        }
+        if self.mouse_button {
+            f |= 1 << 8;
+        }
+        if self.mouse_any {
+            f |= 1 << 9;
+        }
+        if self.mouse_sgr {
+            f |= 1 << 10;
+        }
+        if self.focus_events {
+            f |= 1 << 11;
+        }
+        f
+    }
+
+    fn apply_checkpoint_flags(&mut self, f: u32) {
+        self.pending_wrap = f & (1 << 0) != 0;
+        self.autowrap = f & (1 << 1) != 0;
+        self.cursor_visible = f & (1 << 2) != 0;
+        self.in_alt = f & (1 << 3) != 0;
+        self.application_cursor_keys = f & (1 << 4) != 0;
+        self.application_keypad = f & (1 << 5) != 0;
+        self.bracketed_paste = f & (1 << 6) != 0;
+        self.mouse_x10 = f & (1 << 7) != 0;
+        self.mouse_button = f & (1 << 8) != 0;
+        self.mouse_any = f & (1 << 9) != 0;
+        self.mouse_sgr = f & (1 << 10) != 0;
+        self.focus_events = f & (1 << 11) != 0;
+    }
+}
+
+const MAGIC: &[u8] = b"R1CK";
+const VERSION: u16 = 1;
+const HASH_OFF: usize = 14;
+
+fn fnv1a64_with_zero_hash(blob: &[u8]) -> u64 {
+    const OFFSET: u64 = 0xcbf29ce484222325;
+    const PRIME: u64 = 0x100000001b3;
+    let mut h = OFFSET;
+    for (i, b) in blob.iter().enumerate() {
+        let byte = if (HASH_OFF..HASH_OFF + 8).contains(&i) {
+            0
+        } else {
+            *b
+        };
+        h ^= u64::from(byte);
+        h = h.wrapping_mul(PRIME);
+    }
+    h
+}
+
+fn put_u16(out: &mut Vec<u8>, v: u16) {
+    out.extend_from_slice(&v.to_le_bytes());
+}
+
+fn put_u32(out: &mut Vec<u8>, v: u32) {
+    out.extend_from_slice(&v.to_le_bytes());
+}
+
+fn put_u64(out: &mut Vec<u8>, v: u64) {
+    out.extend_from_slice(&v.to_le_bytes());
+}
+
+fn put_color(out: &mut Vec<u8>, c: Color) {
+    match c {
+        Color::Default => out.push(0),
+        Color::Indexed(i) => {
+            out.push(1);
+            out.push(i);
+        }
+        Color::Rgb(r, g, b) => {
+            out.push(2);
+            out.push(r);
+            out.push(g);
+            out.push(b);
+        }
+    }
+}
+
+fn put_rgb(out: &mut Vec<u8>, rgb: Rgb) {
+    out.push(rgb.r);
+    out.push(rgb.g);
+    out.push(rgb.b);
+}
+
+fn put_palette(out: &mut Vec<u8>, p: &Palette) {
+    for rgb in p.ansi {
+        put_rgb(out, rgb);
+    }
+    put_rgb(out, p.foreground);
+    put_rgb(out, p.background);
+    put_rgb(out, p.cursor);
+}
+
+fn put_cell(out: &mut Vec<u8>, c: &Cell) {
+    put_u32(out, c.codepoint);
+    put_u16(out, c.attrs);
+    put_color(out, c.fg);
+    put_color(out, c.bg);
+}
+
+fn put_saved(out: &mut Vec<u8>, s: Option<SavedCursor>) {
+    match s {
+        None => out.push(0),
+        Some(c) => {
+            out.push(1);
+            put_u16(out, c.col);
+            put_u16(out, c.row);
+            out.push(u8::from(c.pending_wrap));
+            put_color(out, c.fg);
+            put_color(out, c.bg);
+            put_u16(out, c.attrs);
+        }
+    }
+}
+
+fn take_u8(rest: &mut &[u8]) -> Result<u8, Error> {
+    let (b, tail) = rest
+        .split_first()
+        .ok_or(Error::Vt("truncated checkpoint"))?;
+    *rest = tail;
+    Ok(*b)
+}
+
+fn take_u16(rest: &mut &[u8]) -> Result<u16, Error> {
+    if rest.len() < 2 {
+        return Err(Error::Vt("truncated checkpoint"));
+    }
+    let v = u16::from_le_bytes([rest[0], rest[1]]);
+    *rest = &rest[2..];
+    Ok(v)
+}
+
+fn take_u32(rest: &mut &[u8]) -> Result<u32, Error> {
+    if rest.len() < 4 {
+        return Err(Error::Vt("truncated checkpoint"));
+    }
+    let mut raw = [0u8; 4];
+    raw.copy_from_slice(&rest[..4]);
+    let v = u32::from_le_bytes(raw);
+    *rest = &rest[4..];
+    Ok(v)
+}
+
+fn take_color(rest: &mut &[u8]) -> Result<Color, Error> {
+    match take_u8(rest)? {
+        0 => Ok(Color::Default),
+        1 => Ok(Color::Indexed(take_u8(rest)?)),
+        2 => {
+            let r = take_u8(rest)?;
+            let g = take_u8(rest)?;
+            let b = take_u8(rest)?;
+            Ok(Color::Rgb(r, g, b))
+        }
+        _ => Err(Error::Vt("bad colour tag")),
+    }
+}
+
+fn take_rgb(rest: &mut &[u8]) -> Result<Rgb, Error> {
+    Ok(Rgb {
+        r: take_u8(rest)?,
+        g: take_u8(rest)?,
+        b: take_u8(rest)?,
+    })
+}
+
+fn take_palette(rest: &mut &[u8]) -> Result<Palette, Error> {
+    let mut ansi = [Rgb { r: 0, g: 0, b: 0 }; 16];
+    for slot in &mut ansi {
+        *slot = take_rgb(rest)?;
+    }
+    Ok(Palette {
+        ansi,
+        foreground: take_rgb(rest)?,
+        background: take_rgb(rest)?,
+        cursor: take_rgb(rest)?,
+    })
+}
+
+fn take_cell(rest: &mut &[u8]) -> Result<Cell, Error> {
+    Ok(Cell {
+        codepoint: take_u32(rest)?,
+        attrs: take_u16(rest)?,
+        fg: take_color(rest)?,
+        bg: take_color(rest)?,
+    })
+}
+
+fn take_saved(rest: &mut &[u8]) -> Result<Option<SavedCursor>, Error> {
+    match take_u8(rest)? {
+        0 => Ok(None),
+        1 => Ok(Some(SavedCursor {
+            col: take_u16(rest)?,
+            row: take_u16(rest)?,
+            pending_wrap: take_u8(rest)? != 0,
+            fg: take_color(rest)?,
+            bg: take_color(rest)?,
+            attrs: take_u16(rest)?,
+        })),
+        _ => Err(Error::Vt("bad saved cursor tag")),
+    }
+}
+
+fn put_open_cluster(out: &mut Vec<u8>, o: Option<OpenCluster>) {
+    match o {
+        None => out.push(0),
+        Some(c) => {
+            out.push(1);
+            put_u16(out, c.row);
+            put_u16(out, c.col);
+            out.push(c.len);
+            out.push(u8::from(c.after_zwj));
+            out.push(u8::from(c.last_was_ri));
+            out.push(c.width);
+        }
+    }
+}
+
+fn take_open_cluster(rest: &mut &[u8]) -> Result<Option<OpenCluster>, Error> {
+    match take_u8(rest)? {
+        0 => Ok(None),
+        1 => Ok(Some(OpenCluster {
+            row: take_u16(rest)?,
+            col: take_u16(rest)?,
+            len: take_u8(rest)?,
+            after_zwj: take_u8(rest)? != 0,
+            last_was_ri: take_u8(rest)? != 0,
+            width: take_u8(rest)?,
+        })),
+        _ => Err(Error::Vt("bad open cluster tag")),
+    }
+}
+
 fn pack(rgb: Rgb) -> u32 {
     (u32::from(rgb.r) << 24) | (u32::from(rgb.g) << 16) | (u32::from(rgb.b) << 8) | 0xff
 }

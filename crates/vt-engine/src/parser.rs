@@ -51,6 +51,10 @@ pub(crate) struct Parser {
 }
 
 impl Parser {
+    pub(crate) fn is_idle(&self) -> bool {
+        self.state == State::Ground && self.utf8_len == 0 && self.putback.is_none()
+    }
+
     pub(crate) fn new() -> Self {
         Self {
             state: State::Ground,

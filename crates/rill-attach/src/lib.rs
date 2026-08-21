@@ -30,6 +30,12 @@ pub enum Tag {
     Exit = 4,
     Attach = 5,
     Refused = 6,
+    /// Cold checkpoint blob (SPEC-CLIENT-AUTHORITY §2, #314). Not warm-path.
+    Checkpoint = 7,
+    /// Ordered bytes strictly after a checkpoint offset.
+    Delta = 8,
+    /// Client requests a new checkpoint after hash mismatch.
+    ResyncRequest = 9,
 }
 
 impl Tag {
@@ -41,6 +47,9 @@ impl Tag {
             4 => Ok(Self::Exit),
             5 => Ok(Self::Attach),
             6 => Ok(Self::Refused),
+            7 => Ok(Self::Checkpoint),
+            8 => Ok(Self::Delta),
+            9 => Ok(Self::ResyncRequest),
             other => Err(Error::UnknownTag(other)),
         }
     }
@@ -91,6 +100,16 @@ pub enum Frame {
     Refused {
         reason: RefuseReason,
     },
+    Checkpoint {
+        ending_offset: u64,
+        hash: u64,
+        blob: Vec<u8>,
+    },
+    Delta {
+        start_offset: u64,
+        bytes: Vec<u8>,
+    },
+    ResyncRequest,
 }
 
 impl Frame {
@@ -102,6 +121,9 @@ impl Frame {
             Self::Exit { .. } => Tag::Exit,
             Self::Attach { .. } => Tag::Attach,
             Self::Refused { .. } => Tag::Refused,
+            Self::Checkpoint { .. } => Tag::Checkpoint,
+            Self::Delta { .. } => Tag::Delta,
+            Self::ResyncRequest => Tag::ResyncRequest,
         }
     }
 
@@ -165,6 +187,27 @@ impl Frame {
                 p
             }
             Self::Refused { reason } => vec![*reason as u8],
+            Self::Checkpoint {
+                ending_offset,
+                hash,
+                blob,
+            } => {
+                let mut p = Vec::with_capacity(16 + blob.len());
+                p.extend_from_slice(&ending_offset.to_le_bytes());
+                p.extend_from_slice(&hash.to_le_bytes());
+                p.extend_from_slice(blob);
+                p
+            }
+            Self::Delta {
+                start_offset,
+                bytes,
+            } => {
+                let mut p = Vec::with_capacity(8 + bytes.len());
+                p.extend_from_slice(&start_offset.to_le_bytes());
+                p.extend_from_slice(bytes);
+                p
+            }
+            Self::ResyncRequest => Vec::new(),
         };
         if payload.len() > MAX_FRAME {
             return Err(Error::TooLarge(payload.len()));
@@ -242,6 +285,37 @@ impl Frame {
                 Ok(Self::Refused {
                     reason: RefuseReason::from_u8(payload[0])?,
                 })
+            }
+            Tag::Checkpoint => {
+                if payload.len() < 16 {
+                    return Err(Error::Truncated);
+                }
+                let ending_offset =
+                    u64::from_le_bytes(payload[0..8].try_into().map_err(|_| Error::Truncated)?);
+                let hash =
+                    u64::from_le_bytes(payload[8..16].try_into().map_err(|_| Error::Truncated)?);
+                Ok(Self::Checkpoint {
+                    ending_offset,
+                    hash,
+                    blob: payload[16..].to_vec(),
+                })
+            }
+            Tag::Delta => {
+                if payload.len() < 8 {
+                    return Err(Error::Truncated);
+                }
+                let start_offset =
+                    u64::from_le_bytes(payload[0..8].try_into().map_err(|_| Error::Truncated)?);
+                Ok(Self::Delta {
+                    start_offset,
+                    bytes: payload[8..].to_vec(),
+                })
+            }
+            Tag::ResyncRequest => {
+                if !payload.is_empty() {
+                    return Err(Error::Truncated);
+                }
+                Ok(Self::ResyncRequest)
             }
         }
     }
@@ -431,6 +505,18 @@ mod tests {
             reason: RefuseReason::Invalid
         }
         .is_warm_path());
+        assert!(!Frame::Checkpoint {
+            ending_offset: 0,
+            hash: 0,
+            blob: vec![],
+        }
+        .is_warm_path());
+        assert!(!Frame::Delta {
+            start_offset: 0,
+            bytes: vec![],
+        }
+        .is_warm_path());
+        assert!(!Frame::ResyncRequest.is_warm_path());
     }
 
     #[test]

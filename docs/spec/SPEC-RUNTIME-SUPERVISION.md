@@ -105,3 +105,8 @@ must observe the original child PID or an equally downstream process oracle.
 This spec does not promise process survival across host shutdown, select Linux
 or Windows service APIs, or authorize root daemons, containers or hosted RILL
 infrastructure.
+
+[#313](https://github.com/mahboobmonnamd/RILL/issues/313) implements the
+offset/checkpoint *record* on the existing `Session` worker object. Killing a
+separate control-daemon process while the worker continues is not claimed
+Proven until T-RUNTIME-DAEMON-RESTART has a process-split oracle.
