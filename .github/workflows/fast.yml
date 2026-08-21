@@ -236,6 +236,39 @@ jobs:
           red T-GRAPH-ATTACH single_session t_graph_attach_to_a_second_id_is_accepted
           red T-GRAPH-TERMINATE terminate_all_leaves t_graph_terminate_one_leaf_leaves_the_other_alive
           red T-GRAPH-DELIVERY always_pending t_graph_input_write_is_dispatched
+
+      - name: T-RUNTIME checkpoint negative controls
+        run: |
+          set -eu
+          red() {
+            name="$1"
+            mut="$2"
+            shift 2
+            if RILL_MUTATE="$mut" cargo test -p rill-kernel --features mutate --test t_runtime_checkpoint "$@" -- --test-threads=1 --nocapture; then
+              echo "BROKEN INSTRUMENT: $name stayed green under $mut" >&2
+              exit 1
+            fi
+            echo "ok: $name went red under $mut"
+          }
+          red T-RUNTIME-DAEMON-STATE blank_core t_runtime_daemon_state_recovery_matches_independent_vt
+          red T-RUNTIME-UPDATE-COMPAT accept_incompatible_checkpoint t_runtime_update_compat_refuses_unknown_format
+
+      - name: T-CLIENT mirror negative controls
+        run: |
+          set -eu
+          red() {
+            name="$1"
+            mut="$2"
+            shift 2
+            if RILL_MUTATE="$mut" cargo test -p rill-attach --features mutate --test t_client_mirror "$@" -- --nocapture; then
+              echo "BROKEN INSTRUMENT: $name stayed green under $mut" >&2
+              exit 1
+            fi
+            echo "ok: $name went red under $mut"
+          }
+          red T-CLIENT-MIRROR-DISPOSABLE skip_host_checkpoint t_client_mirror_disposable_rebuilds_from_host
+          red T-CLIENT-MIRROR-RECONCILE mismatch_keeps_presenting t_client_mirror_reconcile_requests_checkpoint
+          red T-CLIENT-RING-EVICTION-RESYNC replay_from_ring_base t_client_ring_eviction_resync_uses_checkpoint
           red T-GRAPH-EVENTS duplicate_event_ids t_graph_event_ids_are_unique_and_terminate_is_idempotent
           red T-GRAPH-LAYOUT omit_second_leaf t_graph_layout_snapshot_names_every_live_leaf
           red T-GRAPH-EPHEMERAL ignore_ephemeral t_graph_ephemeral_drop_terminates_the_child

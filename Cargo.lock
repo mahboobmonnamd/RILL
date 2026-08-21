@@ -79,6 +79,9 @@ dependencies = [
 [[package]]
 name = "rill-attach"
 version = "0.1.0"
+dependencies = [
+ "vt-engine",
+]
 
 [[package]]
 name = "rill-chip0"
@@ -106,6 +109,7 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "rill-attach",
+ "vt-engine",
 ]
 
 [[package]]

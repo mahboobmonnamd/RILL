@@ -1753,8 +1753,8 @@ are failed preconditions, never green skips.
 |---|---|---|
 | T-RUNTIME-GUI-INDEPENDENT — packaged GUI uses the registered per-user service | Service-manager state and original worker/child identity survive all GUI processes exiting | packaged path directly spawns an unregistered daemon |
 | T-RUNTIME-DAEMON-RESTART — daemon restart preserves worker-owned PTY | Kill control daemon, restart it, reconcile worker, then exchange a nonce with the original child pid | worker exits when daemon channel closes |
-| T-RUNTIME-DAEMON-STATE — output produced while daemon is absent remains host-authoritative | Child emits numbered VT/mode changes during daemon outage; restarted daemon exports worker checkpoint+deltas matching an independent continuous VT at the same offset/hash | restarted daemon initializes a blank terminal core |
-| T-RUNTIME-UPDATE-COMPAT — compatible daemon update preserves workers | N/N-1 fixture reconnects to original worker; incompatible fixture refuses before replacement | version check accepts incompatible checkpoint format |
+| T-RUNTIME-DAEMON-STATE — output produced while daemon is absent remains host-authoritative | Child emits numbered VT/mode changes during daemon outage; restarted daemon exports worker checkpoint+deltas matching an independent continuous VT at the same offset/hash | `RILL_MUTATE=blank_core` |
+| T-RUNTIME-UPDATE-COMPAT — compatible daemon update preserves workers | N/N-1 fixture reconnects to original worker; incompatible fixture refuses before replacement | `RILL_MUTATE=accept_incompatible_checkpoint` |
 | T-RUNTIME-MALFORMED-CLIENT-ISOLATION — malformed client cannot kill runtime | Send oversized/unknown/truncated frames; second valid client and unrelated child continue | decoder error escapes connection task into daemon run loop |
 | T-RUNTIME-PROTECTED-ENDPOINT — local endpoint verifies owner and peer | Foreign-uid fixture is refused before ATTACH; endpoint parent is user-owned and non-world-writable | peer credential check returns constant success |
 | T-RUNTIME-HOST-SHUTDOWN-JOURNAL — restart reports host-caused process loss honestly | Simulated shutdown marker plus missing worker restores graph/transcript and explicit `host_terminated`, never a live pid | missing worker is reported running |
@@ -1763,9 +1763,9 @@ are failed preconditions, never green skips.
 
 | Gate | Downstream oracle | Required mutation |
 |---|---|---|
-| T-CLIENT-MIRROR-DISPOSABLE — deleting a client mirror loses no state | Destroy/recreate mirror from host checkpoint+deltas and compare independent VT state/hash | host reads state back from client mirror |
-| T-CLIENT-MIRROR-RECONCILE — mirror divergence fails closed and resyncs | Corrupt one mirror cell/mode; hash mismatch stops input/presentation and requests checkpoint | mismatch is logged but mirror keeps presenting |
-| T-CLIENT-RING-EVICTION-RESYNC — long disconnect uses checkpoint plus deltas | Disconnect beyond hot-ring eviction, reconnect and match continuous independent VT oracle | reconnect starts replay at retained ring base without checkpoint |
+| T-CLIENT-MIRROR-DISPOSABLE — deleting a client mirror loses no state | Destroy/recreate mirror from host checkpoint+deltas and compare independent VT state/hash | `RILL_MUTATE=skip_host_checkpoint` |
+| T-CLIENT-MIRROR-RECONCILE — mirror divergence fails closed and resyncs | Corrupt one mirror cell/mode; hash mismatch stops input/presentation and requests checkpoint | `RILL_MUTATE=mismatch_keeps_presenting` |
+| T-CLIENT-RING-EVICTION-RESYNC — long disconnect uses checkpoint plus deltas | Disconnect beyond hot-ring eviction, reconnect and match continuous independent VT oracle | `RILL_MUTATE=replay_from_ring_base` |
 | T-CLIENT-OBSERVER-ISOLATION — observer cannot write or resize | Attempt DATA/RESIZE; PTY bytes and winsize remain unchanged while controller continues | observer RESIZE is accepted |
 | T-CLIENT-CREDIT-ISOLATION — one client's credit cannot gate worker drain or peers | Hold observer credit at zero during numbered output; host offset and controller stream advance without gaps, observer later resyncs | minimum client credit gates PTY read |
 | T-CLIENT-UNATTACHED-REFUSAL — unattached frames cannot target a default pane | DATA/RESIZE before ATTACH closes only attacker connection; all child histories unchanged | missing attachment falls back to default ID |

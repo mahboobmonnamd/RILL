@@ -13,3 +13,6 @@ mutate = []
 [dependencies]
 rill-attach.workspace = true
 libc.workspace = true
+
+[dev-dependencies]
+vt-engine = { path = "../vt-engine" }

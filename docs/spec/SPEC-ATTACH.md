@@ -46,6 +46,12 @@
 | `EXIT` | 4 | kernel → GUI | `i32` raw wait status |
 | `ATTACH` | 5 | GUI → kernel | `generation u64`; optional `session_id u64`; optional `protocol u8` + `flags u8` (18-byte). 8 bytes is Spike 0: default leaf. |
 | `REFUSED` | 6 | kernel → GUI | `u8` reason |
+| `CHECKPOINT` | 7 | kernel → GUI | `ending_offset u64`, `hash u64`, opaque blob |
+| `DELTA` | 8 | kernel → GUI | `start_offset u64`, raw bytes |
+| `RESYNC_REQUEST` | 9 | GUI → kernel | empty |
+
+`CHECKPOINT`, `DELTA`, and `RESYNC_REQUEST` are cold. They MUST NOT be
+classified as warm-path frames ([#314](https://github.com/mahboobmonnamd/RILL/issues/314)).
 
 Reasons: `1 AlreadyAttached`, `2 Invalid`, `3 ProtocolMismatch` (ADR 0015 D1).
 
