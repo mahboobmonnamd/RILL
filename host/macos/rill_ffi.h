@@ -47,6 +47,8 @@ int rill_client_socket_fd(const RillClient *client);
 int rill_client_send_input(RillClient *client, const uint8_t *bytes, size_t len);
 int rill_client_encode_arrow(const RillClient *client, uint8_t letter, uint8_t *out);
 int rill_encode_edit(uint8_t op, uint8_t *out);
+int rill_client_send_pointer(RillClient *client, uint8_t kind, uint8_t button,
+                             uint16_t col, uint16_t row);
 int rill_client_paste(RillClient *client, const uint8_t *bytes, size_t len);
 int rill_client_resize(RillClient *client, uint16_t cols, uint16_t rows,
                        uint16_t px_w, uint16_t px_h);

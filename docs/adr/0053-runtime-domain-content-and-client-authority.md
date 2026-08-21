@@ -1,6 +1,9 @@
 # ADR 0053: Runtime, domain, content and client authority
 
-- **Status:** Accepted — 2026-08-21
+- **Status:** Accepted — 2026-08-21. **Amended by**
+  [ADR 0056](0056-vertical-slices-backend-and-host.md): journaled topology
+  persist remains D12 step 5; in-memory tab/pane host wiring is a vertical
+  slice and MUST NOT wait for that step.
 - **Tree:** this repository only
 - **Decision approval:** the repository-wide architecture decision gate answered
   by the product owner on 2026-08-21, including the accepted shell,
@@ -358,7 +361,10 @@ Compositor, text, input, selection, accessibility, remote/mobile and
 configuration work enters only when the authority it consumes is available;
 none may reorder the dependencies above. Persistent topology is fifth even
 though its type/identity contract is specified first: early schema definition
-does not claim topology persistence is implemented before terminal content.
+does not claim topology **journal/restore** is implemented before terminal
+content. **Amended (ADR 0056):** chrome-driven `create_node` / `spawn_leaf` on
+the live in-memory kernel tree is not that persist step. It ships as a
+vertical kernel+host slice ([#345](https://github.com/mahboobmonnamd/RILL/issues/345)).
 
 Shell compatibility is a foundation gate across every step. Privacy and
 configuration isolation are cross-cutting prerequisites: a feature does not

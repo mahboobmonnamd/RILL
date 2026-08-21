@@ -1,7 +1,11 @@
 # ADR 0018: Three-pane host chrome (one leaf)
 
 - **Status:** Accepted — 2026-08-17. **Amended by** [ADR 0054](0054-chip0-retired.md):
-  the center pane is Chip 1. D1's "Chip 0" is the then-live name.
+  the center pane is Chip 1. D1's "Chip 0" is the then-live name. **Amended by**
+  [ADR 0055](0055-mockup-is-destination-mouse-first.md): the mockup does not
+  authorize tabs or splits in this chrome. **Amended by**
+  [ADR 0056](0056-vertical-slices-backend-and-host.md): a second kernel leaf in
+  the same window is the #345 vertical slice, not this layout-closer PR.
 - **Tree:** this repository only
 - **Issue:** [#260](https://github.com/mahboobmonnamd/RILL/issues/260),
   look-file chrome: [#269](https://github.com/mahboobmonnamd/RILL/issues/269),
@@ -13,7 +17,8 @@
   [ADR 0017](0017-ghostty-look-windowed-default.md) (look files; D3 allows
   chrome to use the theme background)
 - **Amends:** ADR 0011 D5 — the shipped window may wrap the **one** attached
-  leaf in M2 chrome. Tabs, nested PTY splits, and a second window stay later.
+  leaf in M2 chrome. A second leaf in that window is [ADR 0056](0056-vertical-slices-backend-and-host.md)
+  / [#345](https://github.com/mahboobmonnamd/RILL/issues/345), not this closer.
 - **Does not authorize:** tabs, nested pane splits, agents, conversations,
   workspace persist, cwd-leave ([#261](https://github.com/mahboobmonnamd/RILL/issues/261)),
   JSON on the warm path, a second VT, dumping the live grid into `Text`,

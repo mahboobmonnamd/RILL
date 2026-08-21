@@ -12,7 +12,7 @@ Lanes are named after the plane they own. The GitHub label is the first column.
 |---|---|---|---|
 | **`lane:kernel`** | PTY spawn/reap, sole writer, byte ring, no drop | Yes (Rust library + tests) | Paint; JSON cells |
 | **`lane:attach`** | Frame codec, credit, resize/exit/attach-id | Yes (codec + fuzz tests) | Naked `read`/`write`; seqpacket |
-| **`lane:host`** | One `NSWindow`, kernel + attach + Chip 1, packaged tests | After kernel / attach have failing named tests | Hide an NFR miss with chrome |
+| **`lane:host`** | Native chrome as a **projection** of kernel objects; packaged tests. Vertical with kernel when chrome creates a leaf (ADR 0056) | After kernel / attach have failing named tests | Hide an NFR miss with chrome; invent ids |
 | **`lane:chip1-vt-engine`** | **Chip 1 (live VT):** `vt-engine`, bytes in / snapshots out | Yes | PTY, GUI, Blocks dump |
 
 Chip 0 / `libghostty-vt` is retired ([ADR 0054](adr/0054-chip0-retired.md)). `lane:chip0-ghostty-vt` is a historical label.
@@ -49,6 +49,11 @@ Milestone numbers do not authorize work out of dependency order:
 
 Every lane preserves the existing PTY, attach, raw VT, Chip 1 and Metal
 foundations while working through this order.
+
+Independent objects MAY proceed in parallel. A user-visible object is one
+vertical issue (mechanism + host projection) per [ADR 0056](adr/0056-vertical-slices-backend-and-host.md).
+Authority order still applies **inside** an object (no Flow UI before
+ContentTimeline).
 
 [SPEC-TERMINAL-PERFORMANCE](spec/SPEC-TERMINAL-PERFORMANCE.md) is cross-cutting:
 no lane may waive ADR 0053 D22. Feature work that cannot meet T-NFR and the

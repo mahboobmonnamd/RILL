@@ -85,9 +85,11 @@ keep every product-management surface hidden indefinitely.
 
 ## 5. Out of scope
 
-Tabs, nested PTY splits, agents, conversations, product visibility wiring,
-Workspace/Session persistence, cwd-leave ([#261](https://github.com/mahboobmonnamd/RILL/issues/261)),
-Blocks, Chip 1 live, a theme store, `NSVisualEffectView` over Metal.
+Command Blocks, agents, conversations, product visibility wiring,
+Workspace/Session **journal** persist, cwd-leave ([#261](https://github.com/mahboobmonnamd/RILL/issues/261)),
+a theme store, `NSVisualEffectView` over Metal. In-memory New Tab is
+[ADR 0056](../adr/0056-vertical-slices-backend-and-host.md) / SPEC-NAV, not this
+layout spec.
 
 ## 6. What we will not do
 

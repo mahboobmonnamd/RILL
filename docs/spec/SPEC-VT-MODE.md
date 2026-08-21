@@ -36,8 +36,10 @@ fields are `bool`. Defaults are `false` except `cursor_visible` which is
 | `alternate_screen` | internal alt-screen flag (`?1047` / `?1049`) |
 | `cursor_visible` | internal DECTCEM (`?25`) |
 
-Multiple mouse mode flags MAY be true if the program set them; the host
-chooses encoding precedence at M7. Chip 1 only records what was requested.
+Multiple mouse mode flags MAY be true if the program set them. Host encoding
+precedence is [SPEC-HOST-POINTER](SPEC-HOST-POINTER.md) (ADR 0055): SGR if
+`mouse_sgr`, else X10-style when any other mouse flag is set. Chip 1 only
+records what was requested.
 
 ## 3. API
 
@@ -62,7 +64,8 @@ expected field. Doc comment cites ADR 0036.
 
 ## 5. What we will not do
 
-- Wire the host encoder in this slice.
+- Wire the host encoder in **this** (Chip 1 mode) slice. Pointer encoding is
+  [ADR 0055](../adr/0055-mockup-is-destination-mouse-first.md).
 - Link `vt-engine` into `rill-host` / `rilld`.
 - Add attach frame tags or JSON.
 - Put mode bits on `PodCell`.

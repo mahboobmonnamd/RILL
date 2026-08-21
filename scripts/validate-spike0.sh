@@ -188,6 +188,9 @@ run_gate "T-INSPECTOR-CHORD" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
 run_gate "T-HOST-EDIT-KEYS" \
   cargo test -p rill-host --offline --lib \
   t_cmd_option_edit_keys_encode_readline_bytes -- --nocapture
+run_gate "T-MOUSE-SGR" \
+  cargo test -p rill-host --offline --lib \
+  t_host_encodes_sgr_mouse_when_mode_is_on -- --nocapture
 run_gate "T-HOST-PASTE" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
   cargo test -p rill-host --offline --test t_chrome_interact \
   t_cmd_v_pastes_onto_the_pty -- --nocapture
@@ -410,6 +413,9 @@ if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
   run_control "T-HOST-EDIT-KEYS" skip_host_edit_keys \
     cargo test -p rill-host --offline --lib \
     t_cmd_option_edit_keys_encode_readline_bytes -- --nocapture
+  run_control "T-MOUSE-SGR" skip_mouse_encode \
+    cargo test -p rill-host --offline --lib \
+    t_host_encodes_sgr_mouse_when_mode_is_on -- --nocapture
   run_control "T-APP-QUIT-CLOSE-MENU" skip_app_quit_menu \
     env RILL_GUI_APP="$ROOT/dist/Rill.app" \
     cargo test -p rill-host --offline --test t_chrome_interact \

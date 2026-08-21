@@ -37,3 +37,13 @@ original merge identity.
 
 [ADR 0054](0054-chip0-retired.md) deletes `crates/rill-chip0` and `libghostty-vt`.
 Historical ADRs that named Chip 0 as the then-live emulator stay as history.
+
+## 2026-08-21 mock destination and vertical slices
+
+[ADR 0055](0055-mockup-is-destination-mouse-first.md) maps the product mock to
+ADR 0053 D12: pointer encoder is PTY fidelity, not Block chrome.
+
+[ADR 0056](0056-vertical-slices-backend-and-host.md) requires backend and host
+projection of the same object in one issue. Lanes stay parallel on independent
+objects. In-memory New Tab is [#345](https://github.com/mahboobmonnamd/RILL/issues/345);
+Flow UI still waits on ContentTimeline.

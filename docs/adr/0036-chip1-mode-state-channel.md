@@ -1,6 +1,8 @@
 # ADR 0036: Chip 1 mode state reaches the host without a new attach frame
 
-- **Status:** Accepted — 2026-08-20
+- **Status:** Accepted — 2026-08-20. **Amended by**
+  [ADR 0055](0055-mockup-is-destination-mouse-first.md): the host encoder for
+  pointer bytes is now a named slice ([#344](https://github.com/mahboobmonnamd/RILL/issues/344)).
 - **Tree:** this repository only
 - **Issue:** T-CHIP1-MODE (M7 precondition 6; tracker slice — not live swap)
 - **Requires:** [ADR 0012](0012-chip1-isolated-vt.md) (Chip 1 isolated until
@@ -9,10 +11,11 @@
   warm path), [ADR 0035](0035-chip1-character-width.md) (T-CHIP1-WIDTH Proven)
 - **Amends:** [SPEC-CHIP1](../spec/SPEC-CHIP1.md) §2 — adds inherent
   `mode_state`. [M4-PLAN](../M4-PLAN.md) precondition 6.
-- **Does not authorize:** Chip 1 as the live chip, a `rill-host` / `rilld`
-  dependency on `vt-engine`, a new attach frame tag, JSON on the warm path,
-  cells over IPC, a second VT in the host, host key/mouse encoder changes,
-  sixel / images, Ghostty exec, [#24](https://github.com/mahboobmonnamd/RILL/issues/24)
+- **Does not authorize:** a new attach frame tag, JSON on the warm path,
+  cells over IPC, a second VT in the host, sixel / images, Ghostty exec,
+  [#24](https://github.com/mahboobmonnamd/RILL/issues/24). Host pointer
+  encoding is [ADR 0055](0055-mockup-is-destination-mouse-first.md), not this
+  ADR's original slice.
 
 ## Context
 

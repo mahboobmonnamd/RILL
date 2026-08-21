@@ -13,7 +13,8 @@
   proves the layer under it is sound.
 - **Authority:** [ADR 0038](../adr/0038-session-graph-navigation-model.md),
   [ADR 0039](../adr/0039-inventories-are-cold-readers.md), amended by
-  [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md) D1–D3
+  [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md) D1–D3,
+  [ADR 0056](../adr/0056-vertical-slices-backend-and-host.md)
 - **Requires:** [SPEC-GRAPH](SPEC-GRAPH.md), [SPEC-KERNEL](SPEC-KERNEL.md),
   [SPEC-CHROME](SPEC-CHROME.md),
   [SPEC-DOMAIN-LIFECYCLE](SPEC-DOMAIN-LIFECYCLE.md)
@@ -177,9 +178,8 @@ preserves decision history but is not evidence for the current T-NAV-CLOSE and
 its behavior MUST NOT be wired into chrome. The topology and reparent tests
 close only their data-structure prerequisites. None of the full gates has a
 window yet: `host/macos/ChromeHost` does not call `create_node`, `reparent_node`
-or `close_node`, and no packaged e2e has run. That wiring is open work — see
-[#260](https://github.com/mahboobmonnamd/RILL/issues/260)'s lane for the host
-side.
+or `close_node`, and no packaged e2e has run. That wiring is [#345](https://github.com/mahboobmonnamd/RILL/issues/345)
+(ADR 0056): cold `.nav` command in rilld plus host New Tab in the same issue.
 
 ## 12. Out of scope
 

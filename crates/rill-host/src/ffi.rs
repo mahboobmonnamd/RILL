@@ -136,6 +136,32 @@ pub unsafe extern "C" fn rill_encode_edit(op: u8, out: *mut u8) -> i32 {
     seq.len() as i32
 }
 
+/// Pointer CSI from Chip 1 modes. Returns 1 if bytes were sent, 0 if reporting
+/// is off, -1 on error.
+///
+/// # Safety
+/// `client` is a live `Client`.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_send_pointer(
+    client: *mut Client,
+    kind: u8,
+    button: u8,
+    col: u16,
+    row: u16,
+) -> i32 {
+    if client.is_null() {
+        return -1;
+    }
+    match unsafe { (*client).send_pointer(kind, button, col, row) } {
+        Ok(true) => 1,
+        Ok(false) => 0,
+        Err(e) => {
+            set_err(e);
+            -1
+        }
+    }
+}
+
 /// # Safety
 /// `bytes` points to `len` readable bytes.
 #[no_mangle]

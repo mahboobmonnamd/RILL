@@ -375,6 +375,15 @@ impl Client {
         wrap_paste(self.modes.bracketed_paste, body)
     }
 
+    pub fn send_pointer(&mut self, kind: u8, button: u8, col: u16, row: u16) -> Result<bool, Error> {
+        let bytes = encode_pointer(self.modes, kind, button, col, row);
+        if bytes.is_empty() {
+            return Ok(false);
+        }
+        self.send_input(&bytes)?;
+        Ok(true)
+    }
+
     pub fn paste(&mut self, body: &[u8]) -> Result<(), Error> {
         let wrapped = self.wrap_paste(body);
         self.send_input(&wrapped)
@@ -573,6 +582,48 @@ pub fn encode_edit(op: u8) -> &'static [u8] {
     }
 }
 
+pub const POINTER_PRESS: u8 = 0;
+pub const POINTER_RELEASE: u8 = 1;
+pub const POINTER_WHEEL_UP: u8 = 2;
+pub const POINTER_WHEEL_DOWN: u8 = 3;
+
+pub fn pointer_reporting(modes: TerminalModeState) -> bool {
+    modes.mouse_x10 || modes.mouse_button || modes.mouse_any || modes.mouse_sgr
+}
+
+/// Chip 1 modes in, attach DATA out (ADR 0055, SPEC-HOST-POINTER).
+pub fn encode_pointer(
+    modes: TerminalModeState,
+    kind: u8,
+    button: u8,
+    col: u16,
+    row: u16,
+) -> Vec<u8> {
+    if std::env::var("RILL_MUTATE").as_deref() == Ok("skip_mouse_encode") {
+        return Vec::new();
+    }
+    if !pointer_reporting(modes) {
+        return Vec::new();
+    }
+    let col = col.max(1);
+    let row = row.max(1);
+    let (cb, release) = match kind {
+        POINTER_PRESS => (button, false),
+        POINTER_RELEASE => (button, true),
+        POINTER_WHEEL_UP => (64, false),
+        POINTER_WHEEL_DOWN => (65, false),
+        _ => return Vec::new(),
+    };
+    if modes.mouse_sgr {
+        let end = if release { 'm' } else { 'M' };
+        return format!("\x1b[<{cb};{col};{row}{end}").into_bytes();
+    }
+    let cx = 32u16.saturating_add(col.min(223));
+    let cy = 32u16.saturating_add(row.min(223));
+    let b = 32u16.saturating_add(u16::from(cb.min(223)));
+    vec![0x1b, b'[', b'M', b.min(255) as u8, cx.min(255) as u8, cy.min(255) as u8]
+}
+
 /// Percentile over an already-sorted slice, 0-indexed and without the
 /// off-by-one the previous `ceil()` introduced (audit S3-8e).
 pub fn percentile(sorted: &[f64], q: f64) -> f64 {
@@ -637,5 +688,33 @@ mod tests {
         assert_eq!(encode_edit(EDIT_HOME), b"\x1b[H");
         assert_eq!(encode_edit(EDIT_END), b"\x1b[F");
         assert!(encode_edit(255).is_empty());
+    }
+
+    /// Bug: clicks never became PTY CSI. Required mutation: `skip_mouse_encode`.
+    #[test]
+    fn t_host_encodes_sgr_mouse_when_mode_is_on() {
+        let mut on = TerminalModeState::fresh();
+        on.mouse_sgr = true;
+        on.mouse_x10 = true;
+        assert_eq!(
+            encode_pointer(on, POINTER_PRESS, 0, 1, 1),
+            b"\x1b[<0;1;1M"
+        );
+        assert_eq!(
+            encode_pointer(on, POINTER_RELEASE, 0, 2, 3),
+            b"\x1b[<0;2;3m"
+        );
+        assert_eq!(
+            encode_pointer(on, POINTER_WHEEL_UP, 0, 1, 1),
+            b"\x1b[<64;1;1M"
+        );
+        let off = TerminalModeState::fresh();
+        assert!(encode_pointer(off, POINTER_PRESS, 0, 1, 1).is_empty());
+        let mut x10 = TerminalModeState::fresh();
+        x10.mouse_x10 = true;
+        assert_eq!(
+            encode_pointer(x10, POINTER_PRESS, 0, 1, 1),
+            vec![0x1b, b'[', b'M', 32, 33, 33]
+        );
     }
 }

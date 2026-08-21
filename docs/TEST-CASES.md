@@ -809,6 +809,37 @@ Authority: [SPEC-NAV](spec/SPEC-NAV.md) §3, T-KILL (GUI death must not reap the
 
 ---
 
+## T-MOUSE-SGR — pointer CSI reaches the PTY when Chip 1 mouse mode is on
+
+Authority: [ADR 0055](adr/0055-mockup-is-destination-mouse-first.md),
+[SPEC-HOST-POINTER](spec/SPEC-HOST-POINTER.md), [#344](https://github.com/mahboobmonnamd/RILL/issues/344).
+
+**Bug.** Clicks only focused the Metal view; TUIs never saw mouse reports.
+
+**Oracle.** `encode_pointer` with `mouse_sgr` emits `CSI <0;1;1M` for a press at
+cell (1,1). Reporting off is empty. Wheel with reporting on is `CSI <64;…M` and
+is not host history.
+
+**Required mutation.** `skip_mouse_encode`.
+
+---
+
+## T-NAV-NEW-TAB — File New Tab creates a kernel leaf and a host tab
+
+Authority: [ADR 0056](adr/0056-vertical-slices-backend-and-host.md),
+[SPEC-NAV](spec/SPEC-NAV.md), [#345](https://github.com/mahboobmonnamd/RILL/issues/345).
+
+**Bug.** Kernel Tab exists at bind; chrome cannot create another.
+
+**Oracle.** After ⌘T / File → New Tab, cold nav reports two tab ids and the
+host presents both. Second PTY is `rilld` `spawn_leaf`, not GUI spawn.
+
+**Required mutation.** `chrome_invents_tab`.
+
+**Status.** Named here; implementation is #345 (not closed by this doc).
+
+---
+
 ## T-NAV-WORKSPACE-PROJECTION — chrome row is a kernel Workspace id
 
 Authority: [SPEC-NAV](spec/SPEC-NAV.md) §1, [#341](https://github.com/mahboobmonnamd/RILL/issues/341).

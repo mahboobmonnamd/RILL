@@ -1270,7 +1270,78 @@ static unsigned rill_view_bg_rgb(NSView *v) {
 
 - (void)mouseDown:(NSEvent *)event {
     [self.window makeFirstResponder:self];
-    (void)event;
+    [self rillSendPointer:event kind:0];
+}
+
+- (void)mouseUp:(NSEvent *)event {
+    [self rillSendPointer:event kind:1];
+}
+
+- (void)rightMouseDown:(NSEvent *)event {
+    [self.window makeFirstResponder:self];
+    [self rillSendPointer:event kind:0];
+}
+
+- (void)rightMouseUp:(NSEvent *)event {
+    [self rillSendPointer:event kind:1];
+}
+
+- (void)otherMouseDown:(NSEvent *)event {
+    [self.window makeFirstResponder:self];
+    [self rillSendPointer:event kind:0];
+}
+
+- (void)otherMouseUp:(NSEvent *)event {
+    [self rillSendPointer:event kind:1];
+}
+
+- (uint8_t)rillButtonFromEvent:(NSEvent *)event {
+    NSInteger n = event.buttonNumber;
+    if (n <= 0) {
+        return 0;
+    }
+    if (n == 1) {
+        return 2;
+    }
+    if (n == 2) {
+        return 1;
+    }
+    return (uint8_t)MIN(n, 255);
+}
+
+- (void)rillCellFromEvent:(NSEvent *)event col:(uint16_t *)col row:(uint16_t *)row {
+    NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
+    CGFloat cw = MAX(_cellW, 1.0);
+    CGFloat ch = MAX(_cellH, 1.0);
+    int c = (int)floor((p.x - _padX) / cw);
+    int r = (int)floor((NSHeight(self.bounds) - p.y - _padY) / ch);
+    if (c < 0) {
+        c = 0;
+    }
+    if (r < 0) {
+        r = 0;
+    }
+    if (_cols > 0 && c >= (int)_cols) {
+        c = (int)_cols - 1;
+    }
+    if (_rows > 0 && r >= (int)_rows) {
+        r = (int)_rows - 1;
+    }
+    *col = (uint16_t)(c + 1);
+    *row = (uint16_t)(r + 1);
+}
+
+- (int)rillSendPointer:(NSEvent *)event kind:(uint8_t)kind {
+    if (!_client) {
+        return 0;
+    }
+    if ((event.modifierFlags & NSEventModifierFlagShift) != 0) {
+        return 0;
+    }
+    uint16_t col = 1;
+    uint16_t row = 1;
+    [self rillCellFromEvent:event col:&col row:&row];
+    return rill_client_send_pointer(_client, kind, [self rillButtonFromEvent:event], col, row);
 }
 
 - (void)scrollWheel:(NSEvent *)event {
@@ -1280,6 +1351,21 @@ static unsigned rill_view_bg_rgb(NSView *v) {
     const char *mut = getenv("RILL_MUTATE");
     if (mut && strcmp(mut, "ignore_wheel") == 0) {
         return;
+    }
+    if ((event.modifierFlags & NSEventModifierFlagShift) == 0) {
+        uint16_t col = 1;
+        uint16_t row = 1;
+        [self rillCellFromEvent:event col:&col row:&row];
+        CGFloat dy = event.scrollingDeltaY;
+        if (event.hasPreciseScrollingDeltas) {
+            dy /= 16.0;
+        }
+        if (dy != 0.0) {
+            uint8_t kind = dy > 0.0 ? 2 : 3;
+            if (rill_client_send_pointer(_client, kind, 0, col, row) == 1) {
+                return;
+            }
+        }
     }
     CGFloat dy = event.scrollingDeltaY;
     if (event.hasPreciseScrollingDeltas) {
