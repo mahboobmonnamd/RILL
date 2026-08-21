@@ -208,6 +208,35 @@ impl Session {
         self.pty.winsize()
     }
 
+    /// Observer pan/crop/letterbox. Must not change child `TIOCGWINSZ`.
+    /// Mutation `largest_observer_wins` applies the larger geometry (T-CLIENT-VIEWPORT-AUTHORITY).
+    pub fn apply_observer_viewport(
+        &mut self,
+        cols: u16,
+        rows: u16,
+        px_w: u16,
+        px_h: u16,
+    ) -> Result<(), Error> {
+        #[cfg(feature = "mutate")]
+        if std::env::var("RILL_MUTATE").as_deref() == Ok("largest_observer_wins") {
+            let want = u32::from(cols).saturating_mul(u32::from(rows));
+            let have = u32::from(self.size.cols).saturating_mul(u32::from(self.size.rows));
+            if want > have {
+                self.size = Winsize {
+                    cols,
+                    rows,
+                    px_w,
+                    px_h,
+                };
+                self.pty.set_winsize(self.size)?;
+                self.record(IoEvent::Winsize(self.size));
+            }
+            return Ok(());
+        }
+        let _ = (cols, rows, px_w, px_h);
+        Ok(())
+    }
+
     /// Readiness without handing out the descriptor (SPEC-KERNEL §1).
     pub fn wait_readable(&self, timeout: Duration) -> Result<bool, Error> {
         self.pty.wait_readable(timeout)
