@@ -38,6 +38,9 @@ typedef struct {
 const char *rill_client_last_error(void);
 
 RillClient *rill_client_connect(const char *socket);
+RillClient *rill_client_connect_leaf(const char *socket, uint64_t session_id);
+int rill_nav_new_tab(const char *socket, uint64_t *leaf_out);
+int rill_nav_tab_count(const char *socket);
 void rill_client_free(RillClient *client);
 
 /* Attach socket fd, for arming a dispatch_source. The warm path is

@@ -39,6 +39,7 @@ extern char **environ;
 @property (nonatomic, strong) NSWindow *window;
 - (void)toggleNavFromMenu:(id)sender;
 - (void)toggleInspectorFromMenu:(id)sender;
+- (void)newTabFromMenu:(id)sender;
 @end
 @implementation RillAppDelegate
 - (void)toggleNavFromMenu:(id)sender {
@@ -57,6 +58,10 @@ extern char **environ;
     }
     [[NSNotificationCenter defaultCenter] postNotificationName:@"RillToggleInspector"
                                                         object:self];
+}
+- (void)newTabFromMenu:(id)sender {
+    (void)sender;
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"RillNewTab" object:self];
 }
 - (void)restoreWindowForDockReopen {
     const char *mut = getenv("RILL_MUTATE");
@@ -128,6 +133,11 @@ static void rill_install_menus(id appDelegate) {
                                             keyEquivalent:@"w"];
     close.target = appDelegate;
     [file addItem:close];
+    NSMenuItem *newTab = [[NSMenuItem alloc] initWithTitle:@"New Tab"
+                                                    action:@selector(newTabFromMenu:)
+                                             keyEquivalent:@"t"];
+    newTab.target = appDelegate;
+    [file addItem:newTab];
     fileItem.submenu = file;
     [menubar addItem:fileItem];
 

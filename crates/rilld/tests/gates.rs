@@ -5,7 +5,7 @@
 //! These drive a real `Daemon` over a real `AF_UNIX` socket. They do **not**
 //! close T-KILL, T-SPAWN, or T-NFR — socket-only tests never do (AGENTS.md §8).
 
-use rill_attach::{Decoder, Frame, RefuseReason};
+use rill_attach::{cold_nav_socket_path, Decoder, Frame, RefuseReason};
 use rill_kernel::Winsize;
 use rill_vt_types::{PodGrid, TerminalEmulation};
 use rilld::{pump, Daemon};
@@ -779,4 +779,39 @@ fn t_graph_dropping_the_daemon_does_not_kill_either_child() {
         libc::kill(a as i32, libc::SIGKILL);
         libc::kill(pid_b as i32, libc::SIGKILL);
     }
+}
+
+/// Bug: chrome could not create a second kernel leaf. Mutation: skip_nav_new_tab.
+#[test]
+fn t_nav_new_tab_spawns_a_second_leaf() {
+    let sock = temp_sock("ntab");
+    let mut daemon = Daemon::bind(&sock, "/bin/sh", &[], Winsize::default()).expect("bind");
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    let worker = std::thread::spawn(move || {
+        while rx.try_recv().is_err() {
+            let _ = pump(&mut daemon, Duration::from_millis(30));
+        }
+    });
+    std::thread::sleep(Duration::from_millis(50));
+    let mut nav = UnixStream::connect(cold_nav_socket_path(&sock)).expect("nav");
+    nav.set_read_timeout(Some(Duration::from_secs(2))).ok();
+    nav.set_write_timeout(Some(Duration::from_secs(2))).ok();
+    let mut buf = [0u8; 256];
+    let n = nav.read(&mut buf).expect("snap");
+    let snap = std::str::from_utf8(&buf[..n]).unwrap_or("").to_string();
+    assert!(snap.contains("tabs="), "snapshot={snap}");
+    nav.write_all(b"NEW_TAB\n").expect("cmd");
+    let n2 = nav.read(&mut buf).expect("reply");
+    let _ = tx.send(());
+    let _ = worker.join();
+    let reply = std::str::from_utf8(&buf[..n2]).unwrap_or("");
+    let tabs = reply
+        .split_whitespace()
+        .find_map(|p| p.strip_prefix("tabs="))
+        .unwrap_or("");
+    assert_eq!(
+        tabs.split(',').filter(|s| !s.is_empty()).count(),
+        2,
+        "need two kernel tabs; snap={snap} reply={reply}"
+    );
 }

@@ -110,6 +110,7 @@ pub fn run_control(attach_sock: &Path) -> Result<(), Error> {
     let worker_nav = cold_nav_socket_path(&worker_sock);
 
     let mut pipes: Vec<Pipe> = Vec::new();
+    let mut nav_pipes: Vec<Pipe> = Vec::new();
     loop {
         match listener.accept() {
             Ok((stream, _)) => {
@@ -144,13 +145,17 @@ pub fn run_control(attach_sock: &Path) -> Result<(), Error> {
             Err(e) => return Err(e.into()),
         }
         match nav.accept() {
-            Ok((mut stream, _)) => {
+            Ok((stream, _)) => {
                 if authorize_peer(&stream).is_ok() {
-                    if let Ok(mut w) = UnixStream::connect(&worker_nav) {
-                        let mut buf = [0u8; 64];
-                        if let Ok(n) = w.read(&mut buf) {
-                            let _ = stream.write_all(&buf[..n]);
-                        }
+                    if let Ok(worker) = UnixStream::connect(&worker_nav) {
+                        let _ = stream.set_nonblocking(true);
+                        let _ = worker.set_nonblocking(true);
+                        nav_pipes.push(Pipe {
+                            a: stream,
+                            b: worker,
+                            a_to_b: VecDeque::new(),
+                            b_to_a: VecDeque::new(),
+                        });
                     }
                 }
             }
@@ -162,6 +167,14 @@ pub fn run_control(attach_sock: &Path) -> Result<(), Error> {
         while i < pipes.len() {
             if splice(&mut pipes[i]).is_err() {
                 pipes.remove(i);
+            } else {
+                i += 1;
+            }
+        }
+        i = 0;
+        while i < nav_pipes.len() {
+            if splice(&mut nav_pipes[i]).is_err() {
+                nav_pipes.remove(i);
             } else {
                 i += 1;
             }
@@ -185,6 +198,26 @@ pub fn run_control(attach_sock: &Path) -> Result<(), Error> {
             },
         ];
         for p in &pipes {
+            let mut ev_a = libc::POLLIN;
+            if !p.b_to_a.is_empty() {
+                ev_a |= libc::POLLOUT;
+            }
+            let mut ev_b = libc::POLLIN;
+            if !p.a_to_b.is_empty() {
+                ev_b |= libc::POLLOUT;
+            }
+            fds.push(libc::pollfd {
+                fd: p.a.as_raw_fd(),
+                events: ev_a,
+                revents: 0,
+            });
+            fds.push(libc::pollfd {
+                fd: p.b.as_raw_fd(),
+                events: ev_b,
+                revents: 0,
+            });
+        }
+        for p in &nav_pipes {
             let mut ev_a = libc::POLLIN;
             if !p.b_to_a.is_empty() {
                 ev_a |= libc::POLLOUT;

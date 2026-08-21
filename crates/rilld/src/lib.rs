@@ -5,7 +5,7 @@ mod error;
 mod proxy;
 
 use rill_attach::{cold_identity_socket_path, cold_nav_socket_path, Decoder, Frame, PROTOCOL_2, PROTOCOL_VERSION};
-use rill_kernel::{Kernel, NodeKind, Session, SessionId, Winsize};
+use rill_kernel::{Kernel, NodeChild, NodeKind, Session, SessionId, Winsize};
 use rill_vt_types::{PodGrid, TerminalEmulation};
 use std::collections::VecDeque;
 use std::fs::File;
@@ -38,6 +38,10 @@ pub struct Daemon {
     chip: VtEngine,
     /// Cached at bind. The drain loop must not `getenv` per PTY read.
     is_worker: bool,
+    shell: String,
+    shell_args: Vec<String>,
+    size: Winsize,
+    nav_conns: Vec<UnixStream>,
 }
 
 struct Client {
@@ -155,6 +159,10 @@ impl Daemon {
             clients: Vec::new(),
             chip,
             is_worker: std::env::var("RILL_WORKER").as_deref() == Ok("1"),
+            shell: shell.to_string(),
+            shell_args: args.iter().map(|s| (*s).to_string()).collect(),
+            size,
+            nav_conns: Vec::new(),
         })
     }
 
@@ -315,8 +323,9 @@ impl Daemon {
             self.serve_cold_identity()?;
         }
         if fds[2].revents & libc::POLLIN != 0 {
-            self.serve_cold_nav()?;
+            self.accept_cold_nav()?;
         }
+        self.poll_nav_commands()?;
         let mut i = 0;
         while i < self.clients.len() && i < n_clients {
             let idx = 3 + i;
@@ -418,22 +427,95 @@ impl Daemon {
         Ok(())
     }
 
-    fn serve_cold_nav(&mut self) -> Result<(), Error> {
+    fn nav_snapshot_line(&self) -> String {
+        let mut tabs = Vec::new();
+        let mut leaves = Vec::new();
+        for row in self.kernel.container_snapshot() {
+            if row.kind != NodeKind::Tab {
+                continue;
+            }
+            tabs.push(row.id.as_u64().to_string());
+            let leaf = row.children.iter().find_map(|c| match c {
+                NodeChild::Leaf(id) => Some(id.as_u64()),
+                NodeChild::Node(_) => None,
+            });
+            leaves.push(leaf.unwrap_or(0).to_string());
+        }
+        format!(
+            "ws={} tabs={} leaves={}\n",
+            self.workspace_id.as_u64(),
+            tabs.join(","),
+            leaves.join(",")
+        )
+    }
+
+    fn spawn_tab_leaf(&mut self) -> Result<(), Error> {
+        if std::env::var("RILL_MUTATE").as_deref() == Ok("skip_nav_new_tab") {
+            return Ok(());
+        }
+        let args: Vec<&str> = self.shell_args.iter().map(String::as_str).collect();
+        let leaf = self.kernel.spawn_leaf(&self.shell, &args, self.size)?;
+        let tab = self
+            .kernel
+            .create_node(NodeKind::Tab, Some(self.workspace_id))?;
+        self.kernel.attach_leaf(tab, leaf)?;
+        Ok(())
+    }
+
+    fn accept_cold_nav(&mut self) -> Result<(), Error> {
         match self.nav_listener.accept() {
             Ok((mut stream, _)) => {
-                let line = format!("ws={}\n", self.workspace_id.as_u64());
+                let _ = stream.set_nonblocking(false);
+                let line = self.nav_snapshot_line();
                 match stream.write_all(line.as_bytes()) {
-                    Ok(()) => {}
+                    Ok(()) => {
+                        let _ = stream.set_nonblocking(true);
+                        self.nav_conns.push(stream);
+                    }
                     Err(e)
                         if matches!(
                             e.kind(),
                             std::io::ErrorKind::BrokenPipe | std::io::ErrorKind::ConnectionReset
                         ) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        self.nav_conns.push(stream);
+                    }
                     Err(e) => return Err(e.into()),
                 }
             }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
             Err(e) => return Err(e.into()),
+        }
+        Ok(())
+    }
+
+    fn poll_nav_commands(&mut self) -> Result<(), Error> {
+        let mut i = 0;
+        while i < self.nav_conns.len() {
+            let mut buf = [0u8; 64];
+            let n = match self.nav_conns[i].read(&mut buf) {
+                Ok(0) => {
+                    self.nav_conns.remove(i);
+                    continue;
+                }
+                Ok(n) => n,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    i += 1;
+                    continue;
+                }
+                Err(_) => {
+                    self.nav_conns.remove(i);
+                    continue;
+                }
+            };
+            let cmd = String::from_utf8_lossy(&buf[..n]);
+            if cmd.contains("NEW_TAB") {
+                self.spawn_tab_leaf()?;
+                let reply = self.nav_snapshot_line();
+                let _ = self.nav_conns[i].set_nonblocking(false);
+                let _ = self.nav_conns[i].write_all(reply.as_bytes());
+            }
+            self.nav_conns.remove(i);
         }
         Ok(())
     }

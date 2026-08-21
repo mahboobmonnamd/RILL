@@ -627,6 +627,20 @@ static NSView *rill_find_ident(NSView *root, NSString *ident) {
     return nil;
 }
 
+static int rill_count_ident_prefix(NSView *root, NSString *prefix) {
+    if (!root) {
+        return 0;
+    }
+    int n = 0;
+    if ([root.accessibilityIdentifier hasPrefix:prefix]) {
+        n++;
+    }
+    for (NSView *sub in root.subviews) {
+        n += rill_count_ident_prefix(sub, prefix);
+    }
+    return n;
+}
+
 static unsigned rill_view_bg_rgb(NSView *v) {
     if (!v || !v.layer || !v.layer.backgroundColor) {
         return 0;
@@ -766,16 +780,18 @@ static unsigned rill_view_bg_rgb(NSView *v) {
     }
     int quit = rill_menu_has_key(NSApp.mainMenu, @"q", NSEventModifierFlagCommand) ? 1 : 0;
     int closedef = rill_menu_has_key(NSApp.mainMenu, @"w", NSEventModifierFlagCommand) ? 1 : 0;
+    int tabs = rill_count_ident_prefix(content, @"kernel-tab-");
+    int kern_tabs = rill_nav_tab_count(NULL);
     NSString *line = [NSString
         stringWithFormat:
             @"seq=%u fullscreen=%d visible=%d key=%d chrome=%u left=%.0f center=%.0f right=%.0f "
             @"first=%s opaque=%d alpha=%d nav_bg=%06x nav_top=%.0f pad_y=%.0f chrome_font=%.0f "
             @"host=%s cell_px=%.0f glyph_m=%.0f paint0=%u live0=%u hist=%u scroll=%u mark=%d ws_id=%llu "
-            @"ws_label=%s agents=%d hidden=%d insp=%d sent=%llu quit=%d close=%d\n",
+            @"ws_label=%s agents=%d hidden=%d insp=%d sent=%llu quit=%d close=%d tabs=%d kern_tabs=%d\n",
             _heartbeatSeq, fs, vis, key, chrome, left, center, right, first, opaque, alpha, nav_bg,
             nav_top, _padY, chrome_font, host, cell_px, glyph_m, paint0, live0, hist, scrolloff, mark,
             (unsigned long long)ws_id, ws_label, agents, hidden, insp, (unsigned long long)sent, quit,
-            closedef];
+            closedef, tabs, kern_tabs];
     [line writeToFile:@(path) atomically:YES encoding:NSUTF8StringEncoding error:NULL];
 }
 

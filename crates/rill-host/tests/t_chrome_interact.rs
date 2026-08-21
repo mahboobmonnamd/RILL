@@ -56,6 +56,8 @@ struct Heartbeat {
     sent: Option<u64>,
     quit: Option<u32>,
     close: Option<u32>,
+    tabs: Option<u32>,
+    kern_tabs: Option<u32>,
 }
 
 fn read_heartbeat(path: &PathBuf) -> Option<Heartbeat> {
@@ -79,6 +81,8 @@ fn read_heartbeat(path: &PathBuf) -> Option<Heartbeat> {
     let mut sent = None;
     let mut quit = None;
     let mut close = None;
+    let mut tabs = None;
+    let mut kern_tabs = None;
     for part in s.split_whitespace() {
         if let Some(v) = part.strip_prefix("seq=") {
             seq = v.parse().ok();
@@ -137,6 +141,12 @@ fn read_heartbeat(path: &PathBuf) -> Option<Heartbeat> {
         if let Some(v) = part.strip_prefix("close=") {
             close = v.parse().ok();
         }
+        if let Some(v) = part.strip_prefix("tabs=") {
+            tabs = v.parse().ok();
+        }
+        if let Some(v) = part.strip_prefix("kern_tabs=") {
+            kern_tabs = v.parse().ok();
+        }
     }
     Some(Heartbeat {
         seq: seq?,
@@ -158,6 +168,8 @@ fn read_heartbeat(path: &PathBuf) -> Option<Heartbeat> {
         sent,
         quit,
         close,
+        tabs,
+        kern_tabs,
     })
 }
 
@@ -484,4 +496,32 @@ fn t_cmd_w_hides_window_keeps_the_gui() {
     assert!(still, "⌘W must not terminate the GUI; heartbeat={raw:?}");
     let hb = hb.unwrap_or_else(|| panic!("window never hid; heartbeat={raw:?}"));
     assert_eq!(hb.visible, Some(0), "close must hide the window; heartbeat={raw:?}");
+}
+
+/// Bug: File New Tab did not spawn a kernel leaf. Mutation: chrome_invents_tab.
+#[test]
+fn t_new_tab_creates_a_kernel_leaf() {
+    let sock = unique_sock();
+    let heartbeat = PathBuf::from(format!("{}.hb", sock.display()));
+    let _ = fs::remove_file(&heartbeat);
+    let mut gui = spawn_gui(&sock, &heartbeat, &[("RILL_TEST_NEW_TAB", "1")]);
+    let pid = gui.id();
+    let hb = wait_heartbeat(&heartbeat, pid, Duration::from_secs(8), |h| {
+        h.kern_tabs == Some(2)
+    });
+    let raw = fs::read_to_string(&heartbeat).ok();
+    unsafe {
+        libc::kill(pid as i32, libc::SIGTERM);
+    }
+    let _ = gui.wait();
+    let hb = hb.unwrap_or_else(|| panic!("kernel still one tab; heartbeat={raw:?}"));
+    assert_eq!(
+        hb.kern_tabs,
+        Some(2),
+        "NEW_TAB must spawn_leaf; heartbeat={raw:?}"
+    );
+    assert!(
+        hb.tabs.unwrap_or(0) >= 2,
+        "host must project two tab controls; heartbeat={raw:?}"
+    );
 }

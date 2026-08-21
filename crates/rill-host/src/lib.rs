@@ -20,8 +20,10 @@ use std::path::{Path, PathBuf};
 use vt_engine::{Palette, VtEngine};
 
 mod error;
+mod nav;
 mod scroll;
 pub use error::Error;
+pub use nav::{nav_new_tab, nav_snapshot, parse_nav_line, NavSnapshot};
 pub use rill_look::chrome_surface_rgba;
 use scroll::{
     clamp_offset, compose_viewport, follow_live_after_input, ingest_scrolled,
@@ -60,13 +62,24 @@ pub struct Client {
     workspace_id: Option<u64>,
     modes: TerminalModeState,
     bytes_sent: u64,
+    #[allow(dead_code)]
+    attach_path: PathBuf,
 }
 
 impl Client {
     pub fn connect(socket: impl AsRef<Path>, surface: HostSurface) -> Result<Self, Error> {
-        let host_identity = cold_host_identity(socket.as_ref())?;
-        let workspace_id = cold_workspace_id(socket.as_ref());
-        let stream = UnixStream::connect(socket.as_ref())?;
+        Self::connect_session(socket, surface, None)
+    }
+
+    pub fn connect_session(
+        socket: impl AsRef<Path>,
+        surface: HostSurface,
+        session_id: Option<u64>,
+    ) -> Result<Self, Error> {
+        let attach_path = socket.as_ref().to_path_buf();
+        let host_identity = cold_host_identity(&attach_path)?;
+        let workspace_id = cold_workspace_id(&attach_path);
+        let stream = UnixStream::connect(&attach_path)?;
         stream.set_nonblocking(true)?;
         let mut chip = VtEngine::new(surface.cols, surface.rows)?;
         if let Some(ref colors) = surface.colors {
@@ -92,8 +105,9 @@ impl Client {
             workspace_id,
             modes: TerminalModeState::default(),
             bytes_sent: 0,
+            attach_path,
         };
-        client.send(Frame::attach(1, None))?;
+        client.send(Frame::attach(1, session_id))?;
         client.grant_credit(CREDIT_WINDOW)?;
         Ok(client)
     }
@@ -455,11 +469,10 @@ fn cold_workspace_id(attach_socket: &Path) -> Option<u64> {
     stream
         .set_read_timeout(Some(std::time::Duration::from_secs(1)))
         .ok()?;
-    let mut buf = [0_u8; 64];
+    let mut buf = [0_u8; 512];
     let n = stream.read(&mut buf).ok()?;
     let text = std::str::from_utf8(&buf[..n]).ok()?;
-    let line = text.lines().next()?;
-    line.strip_prefix("ws=")?.parse().ok()
+    crate::parse_nav_line(text).map(|s| s.workspace_id)
 }
 
 fn cold_host_identity(attach_socket: &Path) -> Result<String, Error> {
@@ -716,5 +729,13 @@ mod tests {
             encode_pointer(x10, POINTER_PRESS, 0, 1, 1),
             vec![0x1b, b'[', b'M', 32, 33, 33]
         );
+    }
+
+    #[test]
+    fn t_parse_nav_line_reads_tab_and_leaf_ids() {
+        let s = parse_nav_line("ws=1 tabs=2,4 leaves=7,9").expect("parse");
+        assert_eq!(s.workspace_id, 1);
+        assert_eq!(s.tabs, vec![2, 4]);
+        assert_eq!(s.leaves, vec![7, 9]);
     }
 }

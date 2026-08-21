@@ -70,8 +70,32 @@ static const CGFloat kRillCenterMin = 320.0;
 }
 @end
 
+@interface RillCenterHost : NSView
+@property (nonatomic, strong) NSView *tabStrip;
+@property (nonatomic, strong) NSView *terminalHost;
+@end
+@implementation RillCenterHost
+- (BOOL)isFlipped {
+    return YES;
+}
+- (void)layout {
+    [super layout];
+    CGFloat w = self.bounds.size.width;
+    CGFloat h = self.bounds.size.height;
+    CGFloat bar = 26.0;
+    self.tabStrip.frame = NSMakeRect(0, 0, w, bar);
+    self.terminalHost.frame = NSMakeRect(0, bar, w, MAX(8.0, h - bar));
+    for (NSView *v in self.terminalHost.subviews) {
+        v.frame = self.terminalHost.bounds;
+    }
+}
+@end
+
 @interface RillChromeController () <NSSplitViewDelegate>
 @property (nonatomic, strong) TerminalView *terminal;
+@property (nonatomic, strong) NSMutableArray<TerminalView *> *terminals;
+@property (nonatomic, strong) RillCenterHost *centerHost;
+@property (nonatomic, assign) NSUInteger selectedTab;
 @property (nonatomic, assign) BOOL positioned;
 @property (nonatomic, assign) uint32_t bgRgba;
 @property (nonatomic, assign) uint32_t fgRgba;
@@ -96,6 +120,10 @@ static const CGFloat kRillCenterMin = 320.0;
     self = [super initWithNibName:nil bundle:nil];
     if (self) {
         _terminal = terminal;
+        _terminals = [NSMutableArray array];
+        if (terminal) {
+            [_terminals addObject:terminal];
+        }
         _topInset = topInset;
         _hostIdentity = [host copy];
         _workspaceId = workspaceId;
@@ -134,12 +162,32 @@ static const CGFloat kRillCenterMin = 320.0;
 
     self.terminal.accessibilityIdentifier = @"chrome-center";
 
+    RillCenterHost *center = [[RillCenterHost alloc] initWithFrame:NSMakeRect(0, 0, 700, 680)];
+    NSStackView *tabs = [NSStackView stackViewWithViews:@[]];
+    tabs.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    tabs.spacing = 4;
+    tabs.edgeInsets = NSEdgeInsetsMake(4, 8, 4, 8);
+    tabs.wantsLayer = YES;
+    tabs.layer.backgroundColor = RillRgbaColor(self.paneRgba).CGColor;
+    tabs.accessibilityIdentifier = @"chrome-tab-strip";
+    NSView *host = [[NSView alloc] initWithFrame:NSMakeRect(0, 26, 700, 650)];
+    host.autoresizesSubviews = YES;
+    [host addSubview:self.terminal];
+    self.terminal.frame = host.bounds;
+    self.terminal.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    center.tabStrip = tabs;
+    center.terminalHost = host;
+    [center addSubview:tabs];
+    [center addSubview:host];
+    self.centerHost = center;
+    [self addTabButtonAtIndex:0];
+
     RillChromePane *right = [self inspectorPaneNamed:self.hostIdentity];
     right.terminal = self.terminal;
     right.accessibilityIdentifier = @"chrome-right";
 
     [split addSubview:left];
-    [split addSubview:self.terminal];
+    [split addSubview:center];
     [split addSubview:right];
     [split setHoldingPriority:NSLayoutPriorityDefaultHigh forSubviewAtIndex:0];
     [split setHoldingPriority:NSLayoutPriorityDefaultLow forSubviewAtIndex:1];
@@ -154,8 +202,8 @@ static const CGFloat kRillCenterMin = 320.0;
                                                  name:@"RillToggleInspector"
                                                object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(toggleNav)
-                                                 name:@"RillToggleSidebars"
+                                             selector:@selector(newTabFromKernel)
+                                                 name:@"RillNewTab"
                                                object:nil];
 }
 
@@ -223,7 +271,7 @@ static const CGFloat kRillCenterMin = 320.0;
 
 - (BOOL)splitView:(NSSplitView *)splitView canCollapseSubview:(NSView *)subview {
     (void)splitView;
-    if (subview == self.terminal) {
+    if (subview == self.centerHost) {
         return NO;
     }
     return YES;
@@ -231,6 +279,12 @@ static const CGFloat kRillCenterMin = 320.0;
 
 - (void)viewDidAppear {
     [super viewDidAppear];
+    if (getenv("RILL_TEST_NEW_TAB")) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.45 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+                         [self newTabFromKernel];
+                       });
+    }
     if (!getenv("RILL_TEST_HIDE_CHROME")) {
         return;
     }
@@ -273,6 +327,66 @@ static const CGFloat kRillCenterMin = 320.0;
         [self.terminal returnToLiveViewport];
         [self.terminal writeTestHeartbeat];
     }
+}
+
+- (void)addTabButtonAtIndex:(NSUInteger)idx {
+    NSButton *b = [NSButton buttonWithTitle:[NSString stringWithFormat:@"%lu", (unsigned long)(idx + 1)]
+                                     target:self
+                                     action:@selector(selectTabButton:)];
+    b.bezelStyle = NSBezelStyleFlexiblePush;
+    b.tag = (NSInteger)idx;
+    b.accessibilityIdentifier = [NSString stringWithFormat:@"kernel-tab-%lu", (unsigned long)idx];
+    [(NSStackView *)self.centerHost.tabStrip addArrangedSubview:b];
+}
+
+- (void)selectTabButton:(NSButton *)sender {
+    [self showTabAtIndex:(NSUInteger)sender.tag];
+}
+
+- (void)showTabAtIndex:(NSUInteger)idx {
+    if (idx >= self.terminals.count) {
+        return;
+    }
+    self.selectedTab = idx;
+    for (NSUInteger i = 0; i < self.terminals.count; i++) {
+        TerminalView *tv = self.terminals[i];
+        tv.hidden = i != idx;
+        tv.accessibilityIdentifier = i == idx ? @"chrome-center" : @"pane-surface";
+    }
+    self.terminal = self.terminals[idx];
+    [self.view.window makeFirstResponder:self.terminal];
+    [self.terminal writeTestHeartbeat];
+}
+
+- (void)newTabFromKernel {
+    const char *mut = getenv("RILL_MUTATE");
+    if (mut && strcmp(mut, "chrome_invents_tab") == 0) {
+        [self addTabButtonAtIndex:self.terminals.count];
+        if (self.terminal) {
+            [self.terminal writeTestHeartbeat];
+        }
+        return;
+    }
+    uint64_t leaf = 0;
+    int n = rill_nav_new_tab(NULL, &leaf);
+    if (n < 2 || leaf == 0) {
+        return;
+    }
+    RillClient *client = rill_client_connect_leaf(NULL, leaf);
+    if (!client) {
+        return;
+    }
+    TerminalView *tv = [[TerminalView alloc] initWithClient:client];
+    if (!tv) {
+        rill_client_free(client);
+        return;
+    }
+    tv.frame = self.centerHost.terminalHost.bounds;
+    tv.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [self.centerHost.terminalHost addSubview:tv];
+    [self.terminals addObject:tv];
+    [self addTabButtonAtIndex:self.terminals.count - 1];
+    [self showTabAtIndex:self.terminals.count - 1];
 }
 
 - (void)finishPane:(RillChromePane *)pane width:(CGFloat)width {

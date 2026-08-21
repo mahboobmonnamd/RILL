@@ -52,6 +52,88 @@ pub unsafe extern "C" fn rill_client_connect(socket: *const c_char) -> *mut Clie
     }
 }
 
+/// Attach an existing kernel leaf. `session_id` is the leaf from NEW_TAB.
+///
+/// # Safety
+/// `socket` is NUL-terminated UTF-8 or NULL.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_connect_leaf(
+    socket: *const c_char,
+    session_id: u64,
+) -> *mut Client {
+    let path = if socket.is_null() {
+        crate::default_socket()
+    } else {
+        let c = unsafe { CStr::from_ptr(socket) };
+        std::path::PathBuf::from(c.to_string_lossy().as_ref())
+    };
+    let surface = match load_surface() {
+        Ok(s) => s,
+        Err(e) => {
+            set_err(e);
+            return ptr::null_mut();
+        }
+    };
+    match Client::connect_session(&path, surface, Some(session_id)) {
+        Ok(c) => Box::into_raw(Box::new(c)),
+        Err(e) => {
+            set_err(e);
+            ptr::null_mut()
+        }
+    }
+}
+
+/// Cold NEW_TAB. Writes the new leaf id to `leaf_out`. Returns tab count or -1.
+///
+/// # Safety
+/// `socket` NUL or NULL; `leaf_out` may be null.
+#[no_mangle]
+pub unsafe extern "C" fn rill_nav_new_tab(socket: *const c_char, leaf_out: *mut u64) -> i32 {
+    let path = if socket.is_null() {
+        crate::default_socket()
+    } else {
+        let c = unsafe { CStr::from_ptr(socket) };
+        std::path::PathBuf::from(c.to_string_lossy().as_ref())
+    };
+    match crate::nav_new_tab(&path) {
+        Ok(snap) => {
+            if let Some(leaf) = snap.leaves.last().copied() {
+                if !leaf_out.is_null() {
+                    unsafe {
+                        *leaf_out = leaf;
+                    }
+                }
+            }
+            snap.tabs.len() as i32
+        }
+        Err(e) => {
+            set_err(e);
+            -1
+        }
+    }
+}
+
+/// Snapshot tab count from `.nav`. Returns -1 on error.
+///
+/// # Safety
+/// `socket` NUL or NULL.
+#[no_mangle]
+pub unsafe extern "C" fn rill_nav_tab_count(socket: *const c_char) -> i32 {
+    let path = if socket.is_null() {
+        crate::default_socket()
+    } else {
+        let c = unsafe { CStr::from_ptr(socket) };
+        std::path::PathBuf::from(c.to_string_lossy().as_ref())
+    };
+    match crate::nav_snapshot(&path) {
+        Ok(snap) => snap.tabs.len() as i32,
+        Err(e) => {
+            set_err(e);
+            -1
+        }
+    }
+}
+
 /// # Safety
 /// `client` came from `rill_client_connect` and is not used afterwards.
 #[no_mangle]

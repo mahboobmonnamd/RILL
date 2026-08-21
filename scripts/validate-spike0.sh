@@ -200,6 +200,12 @@ run_gate "T-APP-QUIT-CLOSE-MENU" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
 run_gate "T-CMD-W-CLOSE" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
   cargo test -p rill-host --offline --test t_chrome_interact \
   t_cmd_w_hides_window_keeps_the_gui -- --nocapture
+run_gate "T-NAV-NEW-TAB-DAEMON" \
+  cargo test -p rilld --offline --test gates \
+  t_nav_new_tab_spawns_a_second_leaf -- --nocapture
+run_gate "T-NAV-NEW-TAB" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_chrome_interact \
+  t_new_tab_creates_a_kernel_leaf -- --nocapture
 run_gate "T-NAV-WORKSPACE" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
   cargo test -p rill-host --offline --test t_chrome_interact \
   t_nav_workspace_projection_uses_kernel_id -- --nocapture
@@ -420,6 +426,10 @@ if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
     env RILL_GUI_APP="$ROOT/dist/Rill.app" \
     cargo test -p rill-host --offline --test t_chrome_interact \
     t_app_menu_has_quit_and_close -- --nocapture
+  run_control "T-NAV-NEW-TAB" chrome_invents_tab \
+    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rill-host --offline --test t_chrome_interact \
+    t_new_tab_creates_a_kernel_leaf -- --nocapture
   run_control "T-NAV-WORKSPACE" chrome_invents_workspace_row \
     env RILL_GUI_APP="$ROOT/dist/Rill.app" \
     cargo test -p rill-host --offline --features mutate --test t_chrome_interact \

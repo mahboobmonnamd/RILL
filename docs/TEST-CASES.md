@@ -836,10 +836,6 @@ host presents both. Second PTY is `rilld` `spawn_leaf`, not GUI spawn.
 
 **Required mutation.** `chrome_invents_tab`.
 
-**Status.** Named here; implementation is #345 (not closed by this doc).
-
----
-
 ## T-NAV-WORKSPACE-PROJECTION — chrome row is a kernel Workspace id
 
 Authority: [SPEC-NAV](spec/SPEC-NAV.md) §1, [#341](https://github.com/mahboobmonnamd/RILL/issues/341).
