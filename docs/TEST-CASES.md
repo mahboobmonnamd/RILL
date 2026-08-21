@@ -836,6 +836,20 @@ host presents both. Second PTY is `rilld` `spawn_leaf`, not GUI spawn.
 
 **Required mutation.** `chrome_invents_tab`.
 
+---
+
+## T-NAV-CMD-W-TAB — ⌘W closes the tab presentation, not the window
+
+Authority: [SPEC-NAV](spec/SPEC-NAV.md) §3, [#346](https://github.com/mahboobmonnamd/RILL/issues/346).
+
+**Bug.** Close always `performClose`d the window.
+
+**Oracle.** After New Tab then ⌘W: `visible=1`, host `tabs=1`, `kern_tabs=2`.
+
+**Required mutation.** `always_close_window`.
+
+---
+
 ## T-NAV-WORKSPACE-PROJECTION — chrome row is a kernel Workspace id
 
 Authority: [SPEC-NAV](spec/SPEC-NAV.md) §1, [#341](https://github.com/mahboobmonnamd/RILL/issues/341).

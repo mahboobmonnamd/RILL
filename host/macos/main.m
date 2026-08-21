@@ -40,6 +40,7 @@ extern char **environ;
 - (void)toggleNavFromMenu:(id)sender;
 - (void)toggleInspectorFromMenu:(id)sender;
 - (void)newTabFromMenu:(id)sender;
+- (IBAction)closeWindowForced:(id)sender;
 @end
 @implementation RillAppDelegate
 - (void)toggleNavFromMenu:(id)sender {
@@ -62,6 +63,9 @@ extern char **environ;
 - (void)newTabFromMenu:(id)sender {
     (void)sender;
     [[NSNotificationCenter defaultCenter] postNotificationName:@"RillNewTab" object:self];
+}
+- (IBAction)closeWindowForced:(id)sender {
+    [self.window performClose:sender];
 }
 - (void)restoreWindowForDockReopen {
     const char *mut = getenv("RILL_MUTATE");
@@ -106,7 +110,16 @@ extern char **environ;
 
 - (IBAction)closeMainWindow:(id)sender {
     (void)sender;
-    [self.window performClose:sender];
+    const char *mut = getenv("RILL_MUTATE");
+    if (mut && strcmp(mut, "always_close_window") == 0) {
+        [self.window performClose:sender];
+        return;
+    }
+    if ([self.window.contentView isKindOfClass:[TerminalView class]]) {
+        [self.window performClose:sender];
+        return;
+    }
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"RillCloseInnermost" object:self];
 }
 @end
 
@@ -128,7 +141,7 @@ static void rill_install_menus(id appDelegate) {
 
     NSMenuItem *fileItem = [[NSMenuItem alloc] init];
     NSMenu *file = [[NSMenu alloc] initWithTitle:@"File"];
-    NSMenuItem *close = [[NSMenuItem alloc] initWithTitle:@"Close"
+    NSMenuItem *close = [[NSMenuItem alloc] initWithTitle:@"Close Tab"
                                                    action:@selector(closeMainWindow:)
                                             keyEquivalent:@"w"];
     close.target = appDelegate;
@@ -138,6 +151,11 @@ static void rill_install_menus(id appDelegate) {
                                              keyEquivalent:@"t"];
     newTab.target = appDelegate;
     [file addItem:newTab];
+    NSMenuItem *closeWin = [[NSMenuItem alloc] initWithTitle:@"Close Window"
+                                                      action:@selector(closeWindowForced:)
+                                               keyEquivalent:@"W"];
+    closeWin.target = appDelegate;
+    [file addItem:closeWin];
     fileItem.submenu = file;
     [menubar addItem:fileItem];
 

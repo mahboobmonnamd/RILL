@@ -498,6 +498,36 @@ fn t_cmd_w_hides_window_keeps_the_gui() {
     assert_eq!(hb.visible, Some(0), "close must hide the window; heartbeat={raw:?}");
 }
 
+/// Bug: ⌘W closed the window while a second tab was open (SPEC-NAV §3).
+#[test]
+fn t_cmd_w_closes_the_tab_not_the_window() {
+    let sock = unique_sock();
+    let heartbeat = PathBuf::from(format!("{}.hb", sock.display()));
+    let _ = fs::remove_file(&heartbeat);
+    let mut gui = spawn_gui(
+        &sock,
+        &heartbeat,
+        &[("RILL_TEST_NEW_TAB", "1"), ("RILL_TEST_CLOSE_TAB", "1")],
+    );
+    let pid = gui.id();
+    let hb = wait_heartbeat(&heartbeat, pid, Duration::from_secs(10), |h| {
+        h.visible == Some(1) && h.tabs == Some(1) && h.kern_tabs == Some(2)
+    });
+    let raw = fs::read_to_string(&heartbeat).ok();
+    unsafe {
+        libc::kill(pid as i32, libc::SIGTERM);
+    }
+    let _ = gui.wait();
+    let hb = hb.unwrap_or_else(|| panic!("⌘W closed the window or the PTY; heartbeat={raw:?}"));
+    assert_eq!(hb.visible, Some(1), "window must stay; heartbeat={raw:?}");
+    assert_eq!(hb.tabs, Some(1), "one tab presentation; heartbeat={raw:?}");
+    assert_eq!(
+        hb.kern_tabs,
+        Some(2),
+        "presentation close must not terminate the leaf; heartbeat={raw:?}"
+    );
+}
+
 /// Bug: File New Tab did not spawn a kernel leaf. Mutation: chrome_invents_tab.
 #[test]
 fn t_new_tab_creates_a_kernel_leaf() {

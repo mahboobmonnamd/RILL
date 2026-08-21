@@ -4,6 +4,7 @@
 #import "ChromeHost.h"
 #import "TerminalView.h"
 #include "rill_ffi.h"
+#import <QuartzCore/QuartzCore.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -82,9 +83,14 @@ static const CGFloat kRillCenterMin = 320.0;
     [super layout];
     CGFloat w = self.bounds.size.width;
     CGFloat h = self.bounds.size.height;
-    CGFloat bar = 26.0;
+    CGFloat bar = 32.0;
     self.tabStrip.frame = NSMakeRect(0, 0, w, bar);
     self.terminalHost.frame = NSMakeRect(0, bar, w, MAX(8.0, h - bar));
+    for (CALayer *layer in self.tabStrip.layer.sublayers) {
+        if ([layer.name isEqualToString:@"tab-edge"]) {
+            layer.frame = NSMakeRect(0, bar - 1.0, w, 1);
+        }
+    }
     for (NSView *v in self.terminalHost.subviews) {
         v.frame = self.terminalHost.bounds;
     }
@@ -165,12 +171,28 @@ static const CGFloat kRillCenterMin = 320.0;
     RillCenterHost *center = [[RillCenterHost alloc] initWithFrame:NSMakeRect(0, 0, 700, 680)];
     NSStackView *tabs = [NSStackView stackViewWithViews:@[]];
     tabs.orientation = NSUserInterfaceLayoutOrientationHorizontal;
-    tabs.spacing = 4;
-    tabs.edgeInsets = NSEdgeInsetsMake(4, 8, 4, 8);
+    tabs.alignment = NSLayoutAttributeCenterY;
+    tabs.spacing = 6;
+    tabs.edgeInsets = NSEdgeInsetsMake(4, 10, 4, 8);
     tabs.wantsLayer = YES;
     tabs.layer.backgroundColor = RillRgbaColor(self.paneRgba).CGColor;
+    tabs.layer.borderWidth = 0;
+    CALayer *edge = [CALayer layer];
+    edge.backgroundColor = [RillRgbaColor(self.fgRgba) colorWithAlphaComponent:0.12].CGColor;
+    edge.frame = NSMakeRect(0, 0, 700, 1);
+    edge.autoresizingMask = kCALayerWidthSizable;
+    edge.name = @"tab-edge";
+    [tabs.layer addSublayer:edge];
     tabs.accessibilityIdentifier = @"chrome-tab-strip";
-    NSView *host = [[NSView alloc] initWithFrame:NSMakeRect(0, 26, 700, 650)];
+    NSButton *plus = [NSButton buttonWithImage:[NSImage imageWithSystemSymbolName:@"plus"
+                                                         accessibilityDescription:@"New Tab"]
+                                        target:self
+                                        action:@selector(newTabFromKernel)];
+    plus.bordered = NO;
+    plus.imagePosition = NSImageOnly;
+    plus.toolTip = @"New Tab";
+    plus.accessibilityLabel = @"New Tab";
+    NSView *host = [[NSView alloc] initWithFrame:NSMakeRect(0, 32, 700, 650)];
     host.autoresizesSubviews = YES;
     [host addSubview:self.terminal];
     self.terminal.frame = host.bounds;
@@ -180,6 +202,10 @@ static const CGFloat kRillCenterMin = 320.0;
     [center addSubview:tabs];
     [center addSubview:host];
     self.centerHost = center;
+    NSView *grow = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 8, 8)];
+    [grow setContentHuggingPriority:1 forOrientation:NSLayoutConstraintOrientationHorizontal];
+    [tabs addArrangedSubview:grow];
+    [tabs addArrangedSubview:plus];
     [self addTabButtonAtIndex:0];
 
     RillChromePane *right = [self inspectorPaneNamed:self.hostIdentity];
@@ -204,6 +230,10 @@ static const CGFloat kRillCenterMin = 320.0;
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(newTabFromKernel)
                                                  name:@"RillNewTab"
+                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(closeInnermostPresentation)
+                                                 name:@"RillCloseInnermost"
                                                object:nil];
 }
 
@@ -283,6 +313,13 @@ static const CGFloat kRillCenterMin = 320.0;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.45 * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
                          [self newTabFromKernel];
+                         if (getenv("RILL_TEST_CLOSE_TAB")) {
+                             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
+                                                          (int64_t)(0.45 * NSEC_PER_SEC)),
+                                            dispatch_get_main_queue(), ^{
+                                              [self closeInnermostPresentation];
+                                            });
+                         }
                        });
     }
     if (!getenv("RILL_TEST_HIDE_CHROME")) {
@@ -330,13 +367,51 @@ static const CGFloat kRillCenterMin = 320.0;
 }
 
 - (void)addTabButtonAtIndex:(NSUInteger)idx {
-    NSButton *b = [NSButton buttonWithTitle:[NSString stringWithFormat:@"%lu", (unsigned long)(idx + 1)]
-                                     target:self
-                                     action:@selector(selectTabButton:)];
-    b.bezelStyle = NSBezelStyleFlexiblePush;
+    NSButton *b = [[NSButton alloc] initWithFrame:NSMakeRect(0, 0, 96, 24)];
+    b.bordered = NO;
+    b.buttonType = NSButtonTypeMomentaryChange;
+    b.title = @"Terminal";
+    b.font = [NSFont systemFontOfSize:NSFont.systemFontSize
+                               weight:idx == self.selectedTab ? NSFontWeightMedium
+                                                              : NSFontWeightRegular];
+    b.contentTintColor = RillRgbaColor(self.fgRgba);
+    b.wantsLayer = YES;
+    b.layer.cornerRadius = 6;
+    b.layer.backgroundColor =
+        idx == self.selectedTab ? [RillRgbaColor(self.fgRgba) colorWithAlphaComponent:0.14].CGColor
+                                : [NSColor clearColor].CGColor;
     b.tag = (NSInteger)idx;
+    b.toolTip = @"Terminal";
+    b.accessibilityLabel = @"Terminal";
     b.accessibilityIdentifier = [NSString stringWithFormat:@"kernel-tab-%lu", (unsigned long)idx];
-    [(NSStackView *)self.centerHost.tabStrip addArrangedSubview:b];
+    b.target = self;
+    b.action = @selector(selectTabButton:);
+    NSStackView *strip = (NSStackView *)self.centerHost.tabStrip;
+    NSUInteger insert = strip.arrangedSubviews.count >= 2 ? strip.arrangedSubviews.count - 2 : 0;
+    [strip insertArrangedSubview:b atIndex:insert];
+}
+
+- (void)restyleTabChips {
+    NSStackView *strip = (NSStackView *)self.centerHost.tabStrip;
+    NSUInteger i = 0;
+    for (NSView *v in strip.arrangedSubviews) {
+        if (![v isKindOfClass:[NSButton class]]) {
+            continue;
+        }
+        NSButton *b = (NSButton *)v;
+        if (![b.accessibilityIdentifier hasPrefix:@"kernel-tab-"]) {
+            continue;
+        }
+        BOOL on = i == self.selectedTab;
+        b.tag = (NSInteger)i;
+        b.font = [NSFont systemFontOfSize:NSFont.systemFontSize
+                                   weight:on ? NSFontWeightMedium : NSFontWeightRegular];
+        b.layer.backgroundColor =
+            on ? [RillRgbaColor(self.fgRgba) colorWithAlphaComponent:0.14].CGColor
+               : [NSColor clearColor].CGColor;
+        b.accessibilityIdentifier = [NSString stringWithFormat:@"kernel-tab-%lu", (unsigned long)i];
+        i++;
+    }
 }
 
 - (void)selectTabButton:(NSButton *)sender {
@@ -354,8 +429,46 @@ static const CGFloat kRillCenterMin = 320.0;
         tv.accessibilityIdentifier = i == idx ? @"chrome-center" : @"pane-surface";
     }
     self.terminal = self.terminals[idx];
+    [self restyleTabChips];
     [self.view.window makeFirstResponder:self.terminal];
     [self.terminal writeTestHeartbeat];
+}
+
+- (void)closeInnermostPresentation {
+    const char *mut = getenv("RILL_MUTATE");
+    if (mut && strcmp(mut, "always_close_window") == 0) {
+        [self.view.window performClose:nil];
+        return;
+    }
+    if (self.terminals.count > 1) {
+        NSUInteger idx = self.selectedTab;
+        if (idx >= self.terminals.count) {
+            idx = self.terminals.count - 1;
+        }
+        TerminalView *tv = self.terminals[idx];
+        [tv removeFromSuperview];
+        [self.terminals removeObjectAtIndex:idx];
+        NSStackView *strip = (NSStackView *)self.centerHost.tabStrip;
+        NSView *removeBtn = nil;
+        for (NSView *v in strip.arrangedSubviews) {
+            if ([v.accessibilityIdentifier isEqualToString:[NSString stringWithFormat:@"kernel-tab-%lu",
+                                                                                 (unsigned long)idx]]) {
+                removeBtn = v;
+                break;
+            }
+        }
+        if (removeBtn) {
+            [strip removeArrangedSubview:removeBtn];
+            [removeBtn removeFromSuperview];
+        }
+        NSUInteger next = idx == 0 ? 0 : idx - 1;
+        if (next >= self.terminals.count) {
+            next = self.terminals.count - 1;
+        }
+        [self showTabAtIndex:next];
+        return;
+    }
+    [self.view.window performClose:nil];
 }
 
 - (void)newTabFromKernel {
