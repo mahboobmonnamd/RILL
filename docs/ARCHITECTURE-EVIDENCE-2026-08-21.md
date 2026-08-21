@@ -93,7 +93,8 @@ deltas:
   normal Block presentation.
 
 The accepted dependency order is PTY compatibility, host terminal authority,
-durable transcript, Flow projection, persistent topology, Task state,
+the authoritative semantic transcript runtime model with policy-governed
+retention, Flow projection, persistent topology, Task state,
 attention/approvals, artifacts/diffs, then optional activity timeline. Domain
 identity is specified before those slices but does not claim early topology
 implementation.

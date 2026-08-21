@@ -59,11 +59,18 @@ implicit default execution for unattached traffic.
 ### 3.1 Typed channels
 
 Protocol 2+ negotiates typed binary channels for topology, execution lifecycle,
-terminal bytes, terminal snapshots/deltas, semantic transcript, Flow
-projection, Tasks, structured requests/approvals, attention, artifacts/diffs,
-leases, capability/policy and resume cursors. Each channel declares ordering
-scope, frame and queue bounds, acknowledgement/credit, idempotency key,
-authorization and snapshot/resume behavior.
+terminal bytes, terminal snapshots/deltas, semantic events, ContentTimeline
+snapshots/deltas or bounded semantic-content projections, Tasks, structured
+requests/approvals, attention, artifacts/diffs, leases, capability/policy and
+resume cursors. Each channel declares ordering scope, frame and queue bounds,
+acknowledgement/credit, idempotency key, authorization and snapshot/resume
+behavior.
+
+Clients derive Flow, accessibility views, mobile summaries, future
+presentations and visual Block styling from the authoritative semantic
+content. Cards, spines, gutters, separators, timeline geometry and prototype
+layout choices are not protocol fields. Client derivation never makes the
+client authoritative for semantic content.
 
 Semantic events correlated to terminal output name the execution generation and
 byte offset boundary. One failed, unauthorized or slow semantic channel cannot

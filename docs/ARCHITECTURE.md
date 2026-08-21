@@ -112,10 +112,12 @@ they are not per-frame cell IPC.
 
 ## Content model
 
-The durable semantic transcript is a host-owned ordered event ledger with
-stable IDs, typed payloads, byte/event correlation, idempotency and
-snapshot/delta recovery. Normal primary-screen shell activity defaults to Flow,
-a compact virtualized `ContentTimeline` projection with typed
+The semantic transcript is a host-authoritative ordered runtime event ledger
+with stable IDs, typed payloads, byte/event correlation, idempotency and
+snapshot/delta recovery. Durable persistence is separately policy-controlled
+and may be disabled without disabling raw correctness or live Flow. Normal
+primary-screen shell activity defaults to Flow, a compact virtualized
+`ContentTimeline` projection with typed
 terminal input/output, background output, agent conversation, tool, approval,
 question, diff and lifecycle items. Terminal items retain materialized semantic
 presentation and source execution ranges. Replaying a raw byte range through a
@@ -139,6 +141,11 @@ visual graph/lanes and the inspector/navigation layouts are client projections.
 Durable retention is policy-controlled and may be disabled. Encryption does
 not authorize capture. Redaction is a derived sink and does not claim complete
 secret detection or silently rewrite source evidence.
+
+The protocol carries semantic events and ContentTimeline snapshots/deltas or
+bounded semantic-content projections, never a Flow-specific UI channel.
+Clients derive Flow, accessibility/mobile views and visual styling; cards,
+spines, gutters, separators and timeline geometry are not protocol schema.
 
 ## Shell, configuration and privacy
 

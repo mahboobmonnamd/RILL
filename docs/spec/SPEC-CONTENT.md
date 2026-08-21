@@ -16,7 +16,7 @@ RILL maintains separate concepts:
 | Terminal event ledger | ordered PTY bytes, explicit marks, resize/mode/exit events and offsets |
 | Terminal checkpoint | bounded reconstruction starting point for canonical VT and client mirrors |
 | ContentTimeline | ordered typed content used for normal primary-screen presentation |
-| Durable semantic transcript | searchable retained meaning under capture policy |
+| Semantic event ledger/transcript | authoritative typed runtime meaning; durable retention only under capture policy |
 | Conversation and Task | structured orchestration objects referenced by timeline items |
 | Client view state | presentation-only focus, scroll, selection, filters and chrome |
 
@@ -61,7 +61,7 @@ feeding an arbitrary byte slice to a fresh VT.
 
 ### 3.1 Semantic event envelope and invariants
 
-The durable transcript event envelope contains:
+The authoritative semantic event envelope contains:
 
 - stable EventId, schema version and event kind;
 - RuntimeId, WorkspaceId, SessionId and applicable TabId, PaneId,
@@ -125,6 +125,13 @@ Policy values include disabled, memory-only bounded, bounded durable and an
 explicitly configured duration/size. Disabled durable retention is a supported
 state. The UI and protocol report recovery and history consequences before the
 policy changes.
+
+When durable persistence is disabled, only bounded memory required for live
+operation, attach, reconciliation and the declared recovery window may remain.
+The authoritative semantic runtime model and live ContentTimeline/Flow
+projection continue within those bounds, and raw terminal correctness is
+unchanged. UI and protocol continuously expose the reduced history/recovery
+capability and render unavailable history honestly.
 
 When durable capture is enabled:
 

@@ -164,7 +164,8 @@ The process-owning host is authoritative for:
 - PTY and process state;
 - canonical terminal state, active screen, modes and canonical PTY geometry;
 - monotonic execution offsets, checkpoints and byte deltas;
-- durable transcript and structured content;
+- authoritative semantic event/content runtime state and any
+  policy-authorized durable records;
 - Workspace, Session, Tab and pane graph;
 - Conversation, Task and attention state; and
 - client roles, input/resize leases and audit decisions.
@@ -193,12 +194,15 @@ and shared grapheme data; they are not per-frame cell IPC.
 
 ### D7 — The semantic transcript and ContentTimeline are the native content model
 
-The authoritative durable semantic transcript is an ordered, versioned event
-ledger owned by the persistent runtime. The primary normal-shell presentation
-is Flow: a compact virtualized `ContentTimeline` projection of typed transcript
-and runtime events, not a byte-range-only BlockList. Initial item kinds include terminal
-input, terminal output, background output, agent conversation, tool call and
-result, approval, question, diff/change result and explicit discontinuity.
+The authoritative semantic event ledger is an ordered, versioned runtime model
+owned by the persistent runtime. Its durable persistence is governed by D8;
+when durable persistence is disabled, only bounded memory required for live
+operation, attach, reconciliation and the declared recovery window may remain.
+The primary normal-shell presentation is Flow: a compact virtualized
+`ContentTimeline` projection of typed semantic and runtime events, not a
+byte-range-only BlockList. Initial item kinds include terminal input, terminal
+output, background output, agent conversation, tool call and result, approval,
+question, diff/change result and explicit discontinuity.
 
 Every event has a stable event ID, owning runtime/domain IDs, per-stream
 sequence, causal/correlation references where authoritative, payload version,
@@ -228,6 +232,10 @@ late or unreliable. Alternate-screen or raw-mode ownership selects the full
 terminal grid, suppresses the native composer and routes input directly to the
 PTY. Flow resumes only after authoritative terminal modes permit it. No
 presentation switch creates a pane, PTY, execution or Session.
+Disabling durable semantic persistence does not disable raw terminal
+correctness or live Flow presentation. The product reports the resulting
+history and recovery limits instead of implying that unavailable content was
+retained.
 
 ### D8 — Persistence and capture are explicit policy
 
@@ -333,7 +341,8 @@ first; behavioral slices then land in this dependency order:
 
 1. terminal and PTY compatibility;
 2. host-authoritative terminal state, supervision, checkpoints and leases;
-3. durable semantic transcript, ordering and retention;
+3. authoritative semantic transcript runtime model, ordering and
+   policy-governed retention;
 4. Flow Block/ContentTimeline projection with independent Raw fallback;
 5. persistent Workspace/Session/Tab/pane topology using the already-defined
    canonical identities;
@@ -500,9 +509,16 @@ shell input.
 
 The product protocol has capability-negotiated binary channels for topology,
 execution lifecycle, terminal bytes, terminal checkpoints/deltas, semantic
-events, Flow projections, Tasks, structured requests/approvals, attention,
-artifacts/diffs, leases, policy and resume cursors. Latency-sensitive terminal
-traffic remains binary and never waits on JSON or a semantic channel.
+events, ContentTimeline snapshots/deltas or bounded semantic-content
+projections, Tasks, structured requests/approvals, attention, artifacts/diffs,
+leases, policy and resume cursors. Latency-sensitive terminal traffic remains
+binary and never waits on JSON or a semantic channel.
+
+Clients derive Flow, accessibility views, mobile summaries, future
+presentations and visual Block styling from authoritative semantic content.
+Cards, spines, gutters, separators, timeline geometry and other presentation
+choices MUST NOT enter protocol schemas. This derivation does not move semantic
+authority into the client.
 
 Each channel declares ordering domain, maximum frame/queue size,
 acknowledgement/credit, idempotency key, snapshot cursor, missed-event recovery

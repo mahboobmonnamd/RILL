@@ -46,7 +46,8 @@ D12:
 1. domain/authority schema, canonical configuration and privacy;
 2. terminal and PTY compatibility;
 3. host terminal state, supervised workers, checkpoints and client leases;
-4. durable semantic transcript and retention;
+4. authoritative semantic transcript runtime model and policy-governed
+   retention;
 5. Flow projection with independently operable Raw fallback;
 6. persistent Workspace/Session/Tab/pane topology;
 7. durable Task state and isolation;
@@ -81,12 +82,12 @@ out of scope.
 | FR-RUNTIME | A production per-user service supervises a control daemon and PTY-owning workers. Daemon restart or compatible update does not kill healthy workers. |
 | FR-CONTENT | Primary presentation supports a virtualized typed ContentTimeline. Raw byte replay is recovery/audit, not normal content identity. Alternate screen remains the same pane and PTY. |
 | FR-FLOW | Normal primary-screen shell activity defaults to compact Flow projected from authoritative semantic events. Exact Raw is selectable and remains independently operable when semantic processing fails. Flow/Raw/TUI switches never create another domain object or PTY. |
-| FR-TRANSCRIPT | Runtime owns a versioned semantic event ledger with stable IDs, ordering, byte correlation, idempotency, bounded retention and snapshot/delta recovery. Renderer geometry and cell scraping are never product authority. |
+| FR-TRANSCRIPT | Runtime owns a versioned authoritative semantic event ledger with stable IDs, ordering, byte correlation, idempotency, bounded retention and snapshot/delta recovery. Durable persistence is separately policy-controlled; disabling it preserves raw correctness and bounded live Flow while reporting reduced history/recovery. Renderer geometry and cell scraping are never product authority. |
 | FR-ACTIVITY | Workspace activity is an optional cross-pane projection over durable source events, not an authoritative timeline domain, attention duplicate or navigation requirement. |
 | FR-ATTENTION | Attention and structured requests have stable IDs, exact deep links, lifecycle/expiry, authorization and allowed actions. Secret/TUI/raw prompts navigate to source; stale/replayed responses fail closed. |
 | FR-TASK-FORK | Task forks are durable children, hidden/grouped by default, create no pane/tab, use explicit isolation and record propagation/conflict semantics. |
 | FR-INPUT-MODE | Composer, shell editor, Raw, TUI, agent and approval input modes are explicit and host/lease-authorized. Composer drafts are client-local and non-durable by default. |
-| FR-PROTOCOL | Typed binary channels have independent ordering, bounds, credit, recovery and version negotiation; semantic failure cannot block raw terminal traffic. |
+| FR-PROTOCOL | Typed binary channels carry authoritative semantic events, ContentTimeline snapshots/deltas or bounded semantic-content projections with independent ordering, bounds, credit, recovery and version negotiation. Clients derive Flow and other presentations; semantic failure cannot block raw terminal traffic. |
 | FR-COMPOSITOR | Existing Metal terminal-grid rendering remains inside a broader RILL compositor for shaped text, rich content, editor, diffs, images, controls and accessibility. |
 | FR-CLIENTS | Each client has identity, role, independent credit and view state. Observers cannot write, resize or affect controller flow control. |
 | FR-REMOTE | A RILL runtime on the process host is authoritative. Zero-footprint SSH performs no probing/bootstrap/history/profile/hidden commands. Enhanced bootstrap is explicit opt-in with best-effort cleanup. |
