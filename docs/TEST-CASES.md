@@ -850,6 +850,54 @@ Authority: [SPEC-NAV](spec/SPEC-NAV.md) §3, [#346](https://github.com/mahboobmo
 
 ---
 
+## T-NAV-TAB-STRIP — close control, trailing +, ⌘1–⌘9
+
+Authority: [SPEC-NAV](spec/SPEC-NAV.md), Apple tab chrome.
+
+**Bug.** Tabs had no ×, chips were cramped with + in the empty middle, and
+⌘1–⌘9 did not switch tabs.
+
+**Oracle.** After New Tab: `tab_close>=2`, `plus_trail=1`, `tab1=1`, and
+select-first yields `selected=0`.
+
+**Required mutations.** `skip_tab_close`, `plus_after_tabs`, `skip_tab_index_keys`.
+
+---
+
+## T-NAV-TAB-OVERFLOW — overflowing tabs stay reachable
+
+Authority: [SPEC-NAV](spec/SPEC-NAV.md) §2.
+
+**Bug.** Extra tabs were clipped with no scroll.
+
+**Oracle.** After six kernel tabs, heartbeat `overflow=1` and `tabs>=6`.
+
+**Required mutation.** `clip_tabs_no_scroll`.
+
+---
+
+## T-NAV-CHORD-HINTS — ⌘ hold previews tab and workspace chords
+
+Authority: [SPEC-NAV](spec/SPEC-NAV.md) §2.
+
+**Bug.** No cmux-style chord badges; overlays must not steal the grid.
+
+**Oracle.** With ⌘ down / `RILL_TEST_CMD_HINT`: `hints>=3`, `first=terminal`.
+
+**Required mutation.** `skip_cmd_hints`.
+
+---
+
+## T-NAV-TAB-STRESS — many tabs, present still ticks (occasional)
+
+Authority: [SPEC-NAV](spec/SPEC-NAV.md) §2. **Not** a `make gates` closer.
+
+**Oracle.** Eight tabs: `overflow=1`, GUI alive, heartbeat `seq` still advances.
+
+**Run.** `make stress` (`--ignored`). Do not add to regular validate.
+
+---
+
 ## T-NAV-WORKSPACE-PROJECTION — chrome row is a kernel Workspace id
 
 Authority: [SPEC-NAV](spec/SPEC-NAV.md) §1, [#341](https://github.com/mahboobmonnamd/RILL/issues/341).

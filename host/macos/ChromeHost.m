@@ -32,6 +32,12 @@ static const CGFloat kRillNavMin = 160.0;
 static const CGFloat kRillInspectorMin = 140.0;
 static const CGFloat kRillCenterMin = 320.0;
 
+@protocol RillTabChrome <NSObject>
+- (void)showTabAtIndex:(NSUInteger)idx;
+- (void)closeTabButton:(id)sender;
+- (void)newTabFromKernel;
+@end
+
 @interface RillChromePane : NSView
 @property (nonatomic, weak) TerminalView *terminal;
 @property (nonatomic, strong) NSView *heading;
@@ -66,7 +72,271 @@ static const CGFloat kRillCenterMin = 320.0;
     }
     for (NSView *row in self.rows) {
         row.frame = NSMakeRect(8, y, MAX(8.0, w - 16), 28);
+        NSTextField *label = nil;
+        NSView *hint = nil;
+        for (NSView *sub in row.subviews) {
+            if ([sub.accessibilityIdentifier hasPrefix:@"chord-hint-"]) {
+                hint = sub;
+            } else if ([sub isKindOfClass:[NSTextField class]]) {
+                label = (NSTextField *)sub;
+            }
+        }
+        if (hint) {
+            hint.frame = NSMakeRect(MAX(40.0, row.bounds.size.width - 48.0), 6, 44, 16);
+        }
+        if (label) {
+            CGFloat right = hint ? NSMinX(hint.frame) - 8.0 : row.bounds.size.width - 8.0;
+            label.frame = NSMakeRect(28, 5, MAX(16.0, right - 28.0), 18);
+        }
         y += 32;
+    }
+}
+@end
+
+static NSTextField *RillChordHint(NSString *text, uint32_t fg) {
+    NSTextField *h = [NSTextField labelWithString:text];
+    h.font = [NSFont monospacedSystemFontOfSize:10 weight:NSFontWeightMedium];
+    h.textColor = [RillRgbaColor(fg) colorWithAlphaComponent:0.72];
+    h.alignment = NSTextAlignmentCenter;
+    h.drawsBackground = YES;
+    h.backgroundColor = [RillRgbaColor(fg) colorWithAlphaComponent:0.10];
+    h.wantsLayer = YES;
+    h.layer.cornerRadius = 3;
+    h.selectable = NO;
+    h.hidden = YES;
+    return h;
+}
+
+@interface RillTabChip : NSView
+@property (nonatomic, assign) NSUInteger index;
+@property (nonatomic, assign) BOOL on;
+@property (nonatomic, strong) NSTextField *titleField;
+@property (nonatomic, strong) NSTextField *hint;
+@property (nonatomic, strong) NSButton *closeButton;
+@property (nonatomic, weak) id<RillTabChrome> target;
+@end
+@implementation RillTabChip
+- (BOOL)isFlipped {
+    return YES;
+}
+- (instancetype)initWithIndex:(NSUInteger)idx
+                           on:(BOOL)on
+                           fg:(uint32_t)fg {
+    self = [super initWithFrame:NSMakeRect(0, 0, 160, 26)];
+    if (self) {
+        _index = idx;
+        _on = on;
+        self.wantsLayer = YES;
+        self.layer.cornerRadius = 7;
+        self.layer.backgroundColor =
+            on ? [RillRgbaColor(fg) colorWithAlphaComponent:0.16].CGColor
+               : [RillRgbaColor(fg) colorWithAlphaComponent:0.05].CGColor;
+        self.accessibilityIdentifier = [NSString stringWithFormat:@"kernel-tab-%lu", (unsigned long)idx];
+        self.accessibilityRole = NSAccessibilityButtonRole;
+        self.accessibilityLabel = @"Terminal";
+        NSTextField *t = [[NSTextField alloc] initWithFrame:NSZeroRect];
+        t.stringValue = @"Terminal";
+        t.bezeled = NO;
+        t.editable = NO;
+        t.drawsBackground = NO;
+        t.selectable = NO;
+        t.font = [NSFont systemFontOfSize:NSFont.systemFontSize
+                                   weight:on ? NSFontWeightMedium : NSFontWeightRegular];
+        t.textColor = RillRgbaColor(fg);
+        t.lineBreakMode = NSLineBreakByTruncatingTail;
+        _titleField = t;
+        [self addSubview:t];
+        NSString *chord = idx < 8 ? [NSString stringWithFormat:@"⌘%lu", (unsigned long)(idx + 1)]
+                                  : (idx == 8 ? @"⌘9" : @"");
+        NSTextField *hint = RillChordHint(chord.length ? chord : @"", fg);
+        hint.accessibilityIdentifier =
+            [NSString stringWithFormat:@"chord-hint-tab-%lu", (unsigned long)idx];
+        _hint = hint;
+        [self addSubview:hint];
+        NSImage *x = [NSImage imageWithSystemSymbolName:@"xmark"
+                              accessibilityDescription:@"Close Tab"];
+        NSButton *c = [NSButton buttonWithImage:x target:nil action:nil];
+        c.bordered = NO;
+        c.imagePosition = NSImageOnly;
+        c.toolTip = @"Close Tab";
+        c.accessibilityLabel = @"Close Tab";
+        c.accessibilityIdentifier =
+            [NSString stringWithFormat:@"rill-tab-close-%lu", (unsigned long)idx];
+        _closeButton = c;
+        [self addSubview:c];
+    }
+    return self;
+}
+- (void)layout {
+    [super layout];
+    CGFloat w = MAX(1.0, self.bounds.size.width);
+    CGFloat h = MAX(1.0, self.bounds.size.height);
+    CGFloat pad = 6.0;
+    CGFloat closeW = self.closeButton.hidden ? 0.0 : 18.0;
+    BOOL hintOn = !self.hint.hidden && self.hint.stringValue.length > 0;
+    CGFloat hintW = hintOn ? 28.0 : 0.0;
+    self.closeButton.frame = NSMakeRect(w - pad - 18.0, MAX(0.0, (h - 18.0) / 2.0), 18.0, 18.0);
+    self.hint.frame = NSMakeRect(pad, MAX(0.0, (h - 16.0) / 2.0), 28.0, 16.0);
+    CGFloat titleX = pad + (hintOn ? hintW + 4.0 : 0.0);
+    CGFloat titleR = w - pad - (closeW > 0.0 ? closeW + 4.0 : 0.0);
+    self.titleField.frame =
+        NSMakeRect(titleX, MAX(0.0, (h - 18.0) / 2.0), MAX(8.0, titleR - titleX), 18.0);
+}
+- (NSView *)hitTest:(NSPoint)point {
+    NSView *hit = [super hitTest:point];
+    if (hit == self.hint) {
+        return self;
+    }
+    return hit;
+}
+- (void)mouseDown:(NSEvent *)event {
+    (void)event;
+    [self.target showTabAtIndex:self.index];
+}
+@end
+
+@interface RillTabBar : NSView
+@property (nonatomic, strong) NSMutableArray<RillTabChip *> *chips;
+@property (nonatomic, strong) NSView *chipRow;
+@property (nonatomic, strong) NSScrollView *chipScroll;
+@property (nonatomic, strong) NSButton *plus;
+@property (nonatomic, weak) id<RillTabChrome> chrome;
+@property (nonatomic, assign) uint32_t fgRgba;
+@property (nonatomic, assign) uint32_t paneRgba;
+@property (nonatomic, assign) BOOL hintsOn;
+@property (nonatomic, assign) NSUInteger selectedIndex;
+@end
+@implementation RillTabBar
+- (BOOL)isFlipped {
+    return YES;
+}
+- (instancetype)initWithFg:(uint32_t)fg pane:(uint32_t)pane chrome:(id)chrome {
+    self = [super initWithFrame:NSMakeRect(0, 0, 700, 36)];
+    if (self) {
+        _fgRgba = fg;
+        _paneRgba = pane;
+        _chrome = chrome;
+        _chips = [NSMutableArray array];
+        self.wantsLayer = YES;
+        self.layer.backgroundColor = RillRgbaColor(pane).CGColor;
+        self.accessibilityIdentifier = @"chrome-tab-strip";
+        NSView *row = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 400, 26)];
+        row.wantsLayer = YES;
+        _chipRow = row;
+        NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, 400, 36)];
+        scroll.drawsBackground = NO;
+        scroll.hasHorizontalScroller = YES;
+        scroll.hasVerticalScroller = NO;
+        scroll.autohidesScrollers = YES;
+        scroll.borderType = NSNoBorder;
+        scroll.documentView = row;
+        if (@available(macOS 11.0, *)) {
+            scroll.automaticallyAdjustsContentInsets = NO;
+            scroll.contentInsets = NSEdgeInsetsZero;
+        }
+        scroll.accessibilityIdentifier = @"chrome-tab-scroll";
+        _chipScroll = scroll;
+        [self addSubview:scroll];
+        NSButton *plus = [NSButton buttonWithImage:[NSImage imageWithSystemSymbolName:@"plus"
+                                                             accessibilityDescription:@"New Tab"]
+                                            target:chrome
+                                            action:@selector(newTabFromKernel)];
+        plus.bordered = NO;
+        plus.imagePosition = NSImageOnly;
+        plus.toolTip = @"New Tab";
+        plus.accessibilityLabel = @"New Tab";
+        plus.accessibilityIdentifier = @"rill-tab-plus";
+        _plus = plus;
+        [self addSubview:plus];
+        CALayer *edge = [CALayer layer];
+        edge.backgroundColor = [RillRgbaColor(fg) colorWithAlphaComponent:0.14].CGColor;
+        edge.name = @"tab-edge";
+        [self.layer addSublayer:edge];
+    }
+    return self;
+}
+- (void)layout {
+    [super layout];
+    CGFloat w = self.bounds.size.width;
+    CGFloat h = self.bounds.size.height;
+    CGFloat pad = 10;
+    CGFloat plusW = 28;
+    CGFloat gap = 6;
+    NSUInteger n = self.chips.count;
+    const char *mut = getenv("RILL_MUTATE");
+    BOOL noscroll = mut && strcmp(mut, "clip_tabs_no_scroll") == 0;
+    CGFloat avail = MAX(80, w - pad * 2 - plusW - 8);
+    CGFloat tw = 148;
+    if (noscroll && n > 0) {
+        tw = (avail - gap * (CGFloat)(n - 1)) / (CGFloat)n;
+        if (tw < 72) {
+            tw = 72;
+        }
+        if (tw > 240) {
+            tw = 240;
+        }
+    }
+    CGFloat x = 0;
+    for (RillTabChip *chip in self.chips) {
+        chip.hint.hidden = !self.hintsOn || chip.hint.stringValue.length == 0;
+        chip.frame = NSMakeRect(x, 2, tw, h - 8);
+        x += tw + gap;
+    }
+    CGFloat rowW = MAX(avail, x);
+    if (noscroll) {
+        rowW = avail;
+    }
+    self.chipRow.frame = NSMakeRect(0, 0, rowW, h);
+    self.chipScroll.frame = NSMakeRect(pad, 0, avail, h);
+    self.plus.frame = NSMakeRect(w - pad - plusW, (h - 22) / 2, plusW, 22);
+    if (mut && strcmp(mut, "plus_after_tabs") == 0) {
+        self.plus.frame = NSMakeRect(pad + MIN(x, avail), (h - 22) / 2, plusW, 22);
+    }
+    for (CALayer *layer in self.layer.sublayers) {
+        if ([layer.name isEqualToString:@"tab-edge"]) {
+            layer.frame = NSMakeRect(0, h - 1, w, 1);
+        }
+    }
+}
+- (void)reloadCount:(NSUInteger)count selected:(NSUInteger)selected {
+    for (RillTabChip *c in self.chips) {
+        [c removeFromSuperview];
+    }
+    [self.chips removeAllObjects];
+    self.selectedIndex = selected;
+    for (NSUInteger i = 0; i < count; i++) {
+        RillTabChip *chip = [[RillTabChip alloc] initWithIndex:i
+                                                            on:i == selected
+                                                            fg:self.fgRgba];
+        chip.target = self.chrome;
+        chip.closeButton.target = self.chrome;
+        chip.closeButton.action = @selector(closeTabButton:);
+        chip.closeButton.tag = (NSInteger)i;
+        chip.hint.hidden = !self.hintsOn;
+        const char *mut = getenv("RILL_MUTATE");
+        if (mut && strcmp(mut, "skip_tab_close") == 0) {
+            chip.closeButton.hidden = YES;
+            chip.closeButton.accessibilityIdentifier = @"muted-close";
+        }
+        [self.chipRow addSubview:chip];
+        [self.chips addObject:chip];
+    }
+    [self setNeedsLayout:YES];
+    [self layoutSubtreeIfNeeded];
+}
+
+- (void)restyleSelected:(NSUInteger)selected {
+    self.selectedIndex = selected;
+    NSUInteger i = 0;
+    for (RillTabChip *chip in self.chips) {
+        BOOL on = i == selected;
+        chip.on = on;
+        chip.layer.backgroundColor =
+            on ? [RillRgbaColor(self.fgRgba) colorWithAlphaComponent:0.16].CGColor
+               : [RillRgbaColor(self.fgRgba) colorWithAlphaComponent:0.05].CGColor;
+        chip.titleField.font = [NSFont systemFontOfSize:NSFont.systemFontSize
+                                                 weight:on ? NSFontWeightMedium : NSFontWeightRegular];
+        i++;
     }
 }
 @end
@@ -83,21 +353,16 @@ static const CGFloat kRillCenterMin = 320.0;
     [super layout];
     CGFloat w = self.bounds.size.width;
     CGFloat h = self.bounds.size.height;
-    CGFloat bar = 32.0;
+    CGFloat bar = 36.0;
     self.tabStrip.frame = NSMakeRect(0, 0, w, bar);
     self.terminalHost.frame = NSMakeRect(0, bar, w, MAX(8.0, h - bar));
-    for (CALayer *layer in self.tabStrip.layer.sublayers) {
-        if ([layer.name isEqualToString:@"tab-edge"]) {
-            layer.frame = NSMakeRect(0, bar - 1.0, w, 1);
-        }
-    }
     for (NSView *v in self.terminalHost.subviews) {
         v.frame = self.terminalHost.bounds;
     }
 }
 @end
 
-@interface RillChromeController () <NSSplitViewDelegate>
+@interface RillChromeController () <NSSplitViewDelegate, RillTabChrome>
 @property (nonatomic, strong) TerminalView *terminal;
 @property (nonatomic, strong) NSMutableArray<TerminalView *> *terminals;
 @property (nonatomic, strong) RillCenterHost *centerHost;
@@ -113,6 +378,8 @@ static const CGFloat kRillCenterMin = 320.0;
 @property (nonatomic, assign) BOOL navHidden;
 @property (nonatomic, assign) BOOL inspectorHidden;
 @property (nonatomic, assign) BOOL hideDetaches;
+@property (nonatomic, strong) NSTextField *workspaceHint;
+@property (nonatomic, strong) id flagsMonitor;
 @end
 
 @implementation RillChromeController
@@ -169,44 +436,18 @@ static const CGFloat kRillCenterMin = 320.0;
     self.terminal.accessibilityIdentifier = @"chrome-center";
 
     RillCenterHost *center = [[RillCenterHost alloc] initWithFrame:NSMakeRect(0, 0, 700, 680)];
-    NSStackView *tabs = [NSStackView stackViewWithViews:@[]];
-    tabs.orientation = NSUserInterfaceLayoutOrientationHorizontal;
-    tabs.alignment = NSLayoutAttributeCenterY;
-    tabs.spacing = 6;
-    tabs.edgeInsets = NSEdgeInsetsMake(4, 10, 4, 8);
-    tabs.wantsLayer = YES;
-    tabs.layer.backgroundColor = RillRgbaColor(self.paneRgba).CGColor;
-    tabs.layer.borderWidth = 0;
-    CALayer *edge = [CALayer layer];
-    edge.backgroundColor = [RillRgbaColor(self.fgRgba) colorWithAlphaComponent:0.12].CGColor;
-    edge.frame = NSMakeRect(0, 0, 700, 1);
-    edge.autoresizingMask = kCALayerWidthSizable;
-    edge.name = @"tab-edge";
-    [tabs.layer addSublayer:edge];
-    tabs.accessibilityIdentifier = @"chrome-tab-strip";
-    NSButton *plus = [NSButton buttonWithImage:[NSImage imageWithSystemSymbolName:@"plus"
-                                                         accessibilityDescription:@"New Tab"]
-                                        target:self
-                                        action:@selector(newTabFromKernel)];
-    plus.bordered = NO;
-    plus.imagePosition = NSImageOnly;
-    plus.toolTip = @"New Tab";
-    plus.accessibilityLabel = @"New Tab";
-    NSView *host = [[NSView alloc] initWithFrame:NSMakeRect(0, 32, 700, 650)];
+    RillTabBar *bar = [[RillTabBar alloc] initWithFg:self.fgRgba pane:self.paneRgba chrome:self];
+    NSView *host = [[NSView alloc] initWithFrame:NSMakeRect(0, 36, 700, 644)];
     host.autoresizesSubviews = YES;
     [host addSubview:self.terminal];
     self.terminal.frame = host.bounds;
     self.terminal.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    center.tabStrip = tabs;
+    center.tabStrip = bar;
     center.terminalHost = host;
-    [center addSubview:tabs];
+    [center addSubview:bar];
     [center addSubview:host];
     self.centerHost = center;
-    NSView *grow = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 8, 8)];
-    [grow setContentHuggingPriority:1 forOrientation:NSLayoutConstraintOrientationHorizontal];
-    [tabs addArrangedSubview:grow];
-    [tabs addArrangedSubview:plus];
-    [self addTabButtonAtIndex:0];
+    [bar reloadCount:self.terminals.count selected:0];
 
     RillChromePane *right = [self inspectorPaneNamed:self.hostIdentity];
     right.terminal = self.terminal;
@@ -235,6 +476,24 @@ static const CGFloat kRillCenterMin = 320.0;
                                              selector:@selector(closeInnermostPresentation)
                                                  name:@"RillCloseInnermost"
                                                object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(selectTabFromNote:)
+                                                 name:@"RillSelectTab"
+                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(chordHintsFromNote:)
+                                                 name:@"RillChordHints"
+                                               object:nil];
+    __weak RillChromeController *weakSelf = self;
+    self.flagsMonitor =
+        [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskFlagsChanged
+                                              handler:^NSEvent *(NSEvent *event) {
+                                                RillChromeController *strong = weakSelf;
+                                                if (strong) {
+                                                    [strong applyChordHintsFromFlags:event.modifierFlags];
+                                                }
+                                                return event;
+                                              }];
 }
 
 - (void)applySplitPositions {
@@ -313,6 +572,16 @@ static const CGFloat kRillCenterMin = 320.0;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.45 * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
                          [self newTabFromKernel];
+                         if (getenv("RILL_TEST_SELECT_TAB")) {
+                             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
+                                                          (int64_t)(0.55 * NSEC_PER_SEC)),
+                                            dispatch_get_main_queue(), ^{
+                                              [[NSNotificationCenter defaultCenter]
+                                                  postNotificationName:@"RillSelectTab"
+                                                                object:nil
+                                                              userInfo:@{@"i" : @0}];
+                                            });
+                         }
                          if (getenv("RILL_TEST_CLOSE_TAB")) {
                              dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
                                                           (int64_t)(0.45 * NSEC_PER_SEC)),
@@ -322,6 +591,18 @@ static const CGFloat kRillCenterMin = 320.0;
                          }
                        });
     }
+    const char *many = getenv("RILL_TEST_MANY_TABS");
+    if (many && many[0]) {
+        int n = atoi(many);
+        if (n > 1) {
+            [self spawnExtraTabs:(n - 1)];
+        }
+    }
+    if (getenv("RILL_TEST_CMD_HINT")) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self applyChordHintsFromFlags:NSEventModifierFlagCommand];
+        });
+    }
     if (!getenv("RILL_TEST_HIDE_CHROME")) {
         return;
     }
@@ -330,6 +611,43 @@ static const CGFloat kRillCenterMin = 320.0;
             [self toggleNav];
         }
     });
+}
+
+- (void)spawnExtraTabs:(int)left {
+    if (left <= 0) {
+        return;
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.18 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+                     [self newTabFromKernel];
+                     [self spawnExtraTabs:(left - 1)];
+                   });
+}
+
+- (void)dealloc {
+    if (self.flagsMonitor) {
+        [NSEvent removeMonitor:self.flagsMonitor];
+    }
+}
+
+- (void)chordHintsFromNote:(NSNotification *)note {
+    NSNumber *on = note.userInfo[@"on"];
+    [self applyChordHintsFromFlags:on.boolValue ? NSEventModifierFlagCommand : 0];
+}
+
+- (void)applyChordHintsFromFlags:(NSEventModifierFlags)flags {
+    const char *mut = getenv("RILL_MUTATE");
+    if (mut && strcmp(mut, "skip_cmd_hints") == 0) {
+        return;
+    }
+    BOOL cmd = (flags & NSEventModifierFlagCommand) != 0;
+    RillTabBar *bar = (RillTabBar *)self.centerHost.tabStrip;
+    bar.hintsOn = cmd;
+    [bar setNeedsLayout:YES];
+    self.workspaceHint.hidden = !cmd;
+    if (self.terminal) {
+        [self.terminal writeTestHeartbeat];
+    }
 }
 
 - (BOOL)sidebarsHidden {
@@ -366,56 +684,9 @@ static const CGFloat kRillCenterMin = 320.0;
     }
 }
 
-- (void)addTabButtonAtIndex:(NSUInteger)idx {
-    NSButton *b = [[NSButton alloc] initWithFrame:NSMakeRect(0, 0, 96, 24)];
-    b.bordered = NO;
-    b.buttonType = NSButtonTypeMomentaryChange;
-    b.title = @"Terminal";
-    b.font = [NSFont systemFontOfSize:NSFont.systemFontSize
-                               weight:idx == self.selectedTab ? NSFontWeightMedium
-                                                              : NSFontWeightRegular];
-    b.contentTintColor = RillRgbaColor(self.fgRgba);
-    b.wantsLayer = YES;
-    b.layer.cornerRadius = 6;
-    b.layer.backgroundColor =
-        idx == self.selectedTab ? [RillRgbaColor(self.fgRgba) colorWithAlphaComponent:0.14].CGColor
-                                : [NSColor clearColor].CGColor;
-    b.tag = (NSInteger)idx;
-    b.toolTip = @"Terminal";
-    b.accessibilityLabel = @"Terminal";
-    b.accessibilityIdentifier = [NSString stringWithFormat:@"kernel-tab-%lu", (unsigned long)idx];
-    b.target = self;
-    b.action = @selector(selectTabButton:);
-    NSStackView *strip = (NSStackView *)self.centerHost.tabStrip;
-    NSUInteger insert = strip.arrangedSubviews.count >= 2 ? strip.arrangedSubviews.count - 2 : 0;
-    [strip insertArrangedSubview:b atIndex:insert];
-}
-
-- (void)restyleTabChips {
-    NSStackView *strip = (NSStackView *)self.centerHost.tabStrip;
-    NSUInteger i = 0;
-    for (NSView *v in strip.arrangedSubviews) {
-        if (![v isKindOfClass:[NSButton class]]) {
-            continue;
-        }
-        NSButton *b = (NSButton *)v;
-        if (![b.accessibilityIdentifier hasPrefix:@"kernel-tab-"]) {
-            continue;
-        }
-        BOOL on = i == self.selectedTab;
-        b.tag = (NSInteger)i;
-        b.font = [NSFont systemFontOfSize:NSFont.systemFontSize
-                                   weight:on ? NSFontWeightMedium : NSFontWeightRegular];
-        b.layer.backgroundColor =
-            on ? [RillRgbaColor(self.fgRgba) colorWithAlphaComponent:0.14].CGColor
-               : [NSColor clearColor].CGColor;
-        b.accessibilityIdentifier = [NSString stringWithFormat:@"kernel-tab-%lu", (unsigned long)i];
-        i++;
-    }
-}
-
-- (void)selectTabButton:(NSButton *)sender {
-    [self showTabAtIndex:(NSUInteger)sender.tag];
+- (void)reloadTabBar {
+    RillTabBar *bar = (RillTabBar *)self.centerHost.tabStrip;
+    [bar reloadCount:self.terminals.count selected:self.selectedTab];
 }
 
 - (void)showTabAtIndex:(NSUInteger)idx {
@@ -429,52 +700,64 @@ static const CGFloat kRillCenterMin = 320.0;
         tv.accessibilityIdentifier = i == idx ? @"chrome-center" : @"pane-surface";
     }
     self.terminal = self.terminals[idx];
-    [self restyleTabChips];
+    RillTabBar *bar = (RillTabBar *)self.centerHost.tabStrip;
+    if (bar.chips.count == self.terminals.count) {
+        [bar restyleSelected:idx];
+    } else {
+        [self reloadTabBar];
+    }
     [self.view.window makeFirstResponder:self.terminal];
     [self.terminal writeTestHeartbeat];
 }
 
-- (void)closeInnermostPresentation {
+- (void)selectTabFromNote:(NSNotification *)note {
+    const char *mut = getenv("RILL_MUTATE");
+    if (mut && strcmp(mut, "skip_tab_index_keys") == 0) {
+        return;
+    }
+    NSNumber *i = note.userInfo[@"i"];
+    if (i) {
+        [self showTabAtIndex:i.unsignedIntegerValue];
+    }
+}
+
+- (void)closeTabButton:(id)sender {
+    [self closeTabAtIndex:(NSUInteger)[sender tag]];
+}
+
+- (void)closeTabAtIndex:(NSUInteger)idx {
     const char *mut = getenv("RILL_MUTATE");
     if (mut && strcmp(mut, "always_close_window") == 0) {
         [self.view.window performClose:nil];
         return;
     }
     if (self.terminals.count > 1) {
-        NSUInteger idx = self.selectedTab;
         if (idx >= self.terminals.count) {
             idx = self.terminals.count - 1;
         }
         TerminalView *tv = self.terminals[idx];
         [tv removeFromSuperview];
         [self.terminals removeObjectAtIndex:idx];
-        NSStackView *strip = (NSStackView *)self.centerHost.tabStrip;
-        NSView *removeBtn = nil;
-        for (NSView *v in strip.arrangedSubviews) {
-            if ([v.accessibilityIdentifier isEqualToString:[NSString stringWithFormat:@"kernel-tab-%lu",
-                                                                                 (unsigned long)idx]]) {
-                removeBtn = v;
-                break;
-            }
-        }
-        if (removeBtn) {
-            [strip removeArrangedSubview:removeBtn];
-            [removeBtn removeFromSuperview];
-        }
         NSUInteger next = idx == 0 ? 0 : idx - 1;
         if (next >= self.terminals.count) {
             next = self.terminals.count - 1;
         }
+        self.selectedTab = next;
         [self showTabAtIndex:next];
         return;
     }
     [self.view.window performClose:nil];
 }
 
+- (void)closeInnermostPresentation {
+    [self closeTabAtIndex:self.selectedTab];
+}
+
 - (void)newTabFromKernel {
     const char *mut = getenv("RILL_MUTATE");
     if (mut && strcmp(mut, "chrome_invents_tab") == 0) {
-        [self addTabButtonAtIndex:self.terminals.count];
+        RillTabBar *bar = (RillTabBar *)self.centerHost.tabStrip;
+        [bar reloadCount:self.terminals.count + 1 selected:self.selectedTab];
         if (self.terminal) {
             [self.terminal writeTestHeartbeat];
         }
@@ -498,7 +781,6 @@ static const CGFloat kRillCenterMin = 320.0;
     tv.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     [self.centerHost.terminalHost addSubview:tv];
     [self.terminals addObject:tv];
-    [self addTabButtonAtIndex:self.terminals.count - 1];
     [self showTabAtIndex:self.terminals.count - 1];
 }
 
@@ -543,6 +825,12 @@ static const CGFloat kRillCenterMin = 320.0;
         rowName = NSHomeDirectory().lastPathComponent ?: @"Rill";
     }
     NSView *row = [self iconRow:rowName symbol:@"folder" ident:ident];
+    NSTextField *wsHint = RillChordHint(@"⌥⌘1", self.fgRgba);
+    wsHint.accessibilityIdentifier = @"chord-hint-ws";
+    wsHint.autoresizingMask = NSViewMinXMargin;
+    wsHint.frame = NSMakeRect(kRillNavWidth - 58, 5, 44, 16);
+    [row addSubview:wsHint];
+    self.workspaceHint = wsHint;
     [pane.rows addObject:row];
     [pane addSubview:row];
     [self finishPane:pane width:kRillNavWidth];
@@ -616,7 +904,7 @@ static const CGFloat kRillCenterMin = 320.0;
     label.drawsBackground = NO;
     label.selectable = NO;
     label.lineBreakMode = NSLineBreakByTruncatingTail;
-    label.frame = NSMakeRect(28, 5, 120, 18);
+    label.frame = NSMakeRect(28, 5, 80, 18);
     label.autoresizingMask = NSViewWidthSizable;
     [row addSubview:label];
     return row;

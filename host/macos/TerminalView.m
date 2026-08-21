@@ -627,6 +627,20 @@ static NSView *rill_find_ident(NSView *root, NSString *ident) {
     return nil;
 }
 
+static int rill_count_visible_ident_prefix(NSView *root, NSString *prefix) {
+    if (!root || root.hidden) {
+        return 0;
+    }
+    int n = 0;
+    if ([root.accessibilityIdentifier hasPrefix:prefix]) {
+        n++;
+    }
+    for (NSView *sub in root.subviews) {
+        n += rill_count_visible_ident_prefix(sub, prefix);
+    }
+    return n;
+}
+
 static int rill_count_ident_prefix(NSView *root, NSString *prefix) {
     if (!root) {
         return 0;
@@ -781,17 +795,52 @@ static unsigned rill_view_bg_rgb(NSView *v) {
     int quit = rill_menu_has_key(NSApp.mainMenu, @"q", NSEventModifierFlagCommand) ? 1 : 0;
     int closedef = rill_menu_has_key(NSApp.mainMenu, @"w", NSEventModifierFlagCommand) ? 1 : 0;
     int tabs = rill_count_ident_prefix(content, @"kernel-tab-");
+    int tab_close = rill_count_ident_prefix(content, @"rill-tab-close-");
+    int tab1 = rill_menu_has_key(NSApp.mainMenu, @"1", NSEventModifierFlagCommand) ? 1 : 0;
     int kern_tabs = rill_nav_tab_count(NULL);
+    NSUInteger selected = 0;
+    for (NSUInteger i = 0; i < 16; i++) {
+        NSString *ident = [NSString stringWithFormat:@"kernel-tab-%lu", (unsigned long)i];
+        NSView *chip = rill_find_ident(content, ident);
+        if (!chip) {
+            break;
+        }
+        if (chip.layer && chip.layer.backgroundColor) {
+            CGFloat a = CGColorGetAlpha(chip.layer.backgroundColor);
+            if (a > 0.10) {
+                selected = i;
+            }
+        }
+    }
+    int plus_trail = 0;
+    NSView *strip = rill_find_ident(content, @"chrome-tab-strip");
+    NSView *plusv = rill_find_ident(content, @"rill-tab-plus");
+    if (strip && plusv) {
+        if (NSMaxX(plusv.frame) > strip.bounds.size.width - 48.0) {
+            plus_trail = 1;
+        }
+    }
+    int overflow = 0;
+    NSView *sv = rill_find_ident(content, @"chrome-tab-scroll");
+    if ([sv isKindOfClass:[NSScrollView class]]) {
+        NSScrollView *scroll = (NSScrollView *)sv;
+        if (scroll.documentView.bounds.size.width > scroll.contentView.bounds.size.width + 2.0) {
+            overflow = 1;
+        }
+    }
+    int hints = rill_count_visible_ident_prefix(content, @"chord-hint-");
     NSString *line = [NSString
         stringWithFormat:
             @"seq=%u fullscreen=%d visible=%d key=%d chrome=%u left=%.0f center=%.0f right=%.0f "
             @"first=%s opaque=%d alpha=%d nav_bg=%06x nav_top=%.0f pad_y=%.0f chrome_font=%.0f "
             @"host=%s cell_px=%.0f glyph_m=%.0f paint0=%u live0=%u hist=%u scroll=%u mark=%d ws_id=%llu "
-            @"ws_label=%s agents=%d hidden=%d insp=%d sent=%llu quit=%d close=%d tabs=%d kern_tabs=%d\n",
+            @"ws_label=%s agents=%d hidden=%d insp=%d sent=%llu quit=%d close=%d tabs=%d kern_tabs=%d "
+            @"tab_close=%d tab1=%d selected=%lu plus_trail=%d overflow=%d hints=%d\n",
             _heartbeatSeq, fs, vis, key, chrome, left, center, right, first, opaque, alpha, nav_bg,
             nav_top, _padY, chrome_font, host, cell_px, glyph_m, paint0, live0, hist, scrolloff, mark,
             (unsigned long long)ws_id, ws_label, agents, hidden, insp, (unsigned long long)sent, quit,
-            closedef, tabs, kern_tabs];
+            closedef, tabs, kern_tabs, tab_close, tab1, (unsigned long)selected, plus_trail, overflow,
+            hints];
     [line writeToFile:@(path) atomically:YES encoding:NSUTF8StringEncoding error:NULL];
 }
 
@@ -1578,6 +1627,16 @@ static BOOL rill_is_inspector_chord(NSEvent *event) {
         }
     }
     return [super performKeyEquivalent:event];
+}
+
+- (void)flagsChanged:(NSEvent *)event {
+    NSEventModifierFlags mods =
+        event.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask;
+    BOOL cmd = (mods & NSEventModifierFlagCommand) != 0;
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"RillChordHints"
+                                                        object:self
+                                                      userInfo:@{@"on" : @(cmd)}];
+    [super flagsChanged:event];
 }
 
 - (void)keyDown:(NSEvent *)event {

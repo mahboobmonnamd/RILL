@@ -58,6 +58,12 @@ struct Heartbeat {
     close: Option<u32>,
     tabs: Option<u32>,
     kern_tabs: Option<u32>,
+    tab_close: Option<u32>,
+    tab1: Option<u32>,
+    selected: Option<u32>,
+    plus_trail: Option<u32>,
+    overflow: Option<u32>,
+    hints: Option<u32>,
 }
 
 fn read_heartbeat(path: &PathBuf) -> Option<Heartbeat> {
@@ -83,6 +89,12 @@ fn read_heartbeat(path: &PathBuf) -> Option<Heartbeat> {
     let mut close = None;
     let mut tabs = None;
     let mut kern_tabs = None;
+    let mut tab_close = None;
+    let mut tab1 = None;
+    let mut selected = None;
+    let mut plus_trail = None;
+    let mut overflow = None;
+    let mut hints = None;
     for part in s.split_whitespace() {
         if let Some(v) = part.strip_prefix("seq=") {
             seq = v.parse().ok();
@@ -147,6 +159,24 @@ fn read_heartbeat(path: &PathBuf) -> Option<Heartbeat> {
         if let Some(v) = part.strip_prefix("kern_tabs=") {
             kern_tabs = v.parse().ok();
         }
+        if let Some(v) = part.strip_prefix("tab_close=") {
+            tab_close = v.parse().ok();
+        }
+        if let Some(v) = part.strip_prefix("tab1=") {
+            tab1 = v.parse().ok();
+        }
+        if let Some(v) = part.strip_prefix("selected=") {
+            selected = v.parse().ok();
+        }
+        if let Some(v) = part.strip_prefix("plus_trail=") {
+            plus_trail = v.parse().ok();
+        }
+        if let Some(v) = part.strip_prefix("overflow=") {
+            overflow = v.parse().ok();
+        }
+        if let Some(v) = part.strip_prefix("hints=") {
+            hints = v.parse().ok();
+        }
     }
     Some(Heartbeat {
         seq: seq?,
@@ -170,6 +200,12 @@ fn read_heartbeat(path: &PathBuf) -> Option<Heartbeat> {
         close,
         tabs,
         kern_tabs,
+        tab_close,
+        tab1,
+        selected,
+        plus_trail,
+        overflow,
+        hints,
     })
 }
 
@@ -537,7 +573,7 @@ fn t_new_tab_creates_a_kernel_leaf() {
     let mut gui = spawn_gui(&sock, &heartbeat, &[("RILL_TEST_NEW_TAB", "1")]);
     let pid = gui.id();
     let hb = wait_heartbeat(&heartbeat, pid, Duration::from_secs(8), |h| {
-        h.kern_tabs == Some(2)
+        h.kern_tabs == Some(2) && h.tabs.unwrap_or(0) >= 2
     });
     let raw = fs::read_to_string(&heartbeat).ok();
     unsafe {
@@ -553,5 +589,131 @@ fn t_new_tab_creates_a_kernel_leaf() {
     assert!(
         hb.tabs.unwrap_or(0) >= 2,
         "host must project two tab controls; heartbeat={raw:?}"
+    );
+}
+
+/// Bug: tabs had no close control, cramped chips, + in the empty middle, no ⌘1–⌘9.
+/// Mutations: `skip_tab_close`, `plus_after_tabs`, `skip_tab_index_keys`.
+#[test]
+fn t_tab_strip_has_close_trailing_plus_and_cmd_number() {
+    let sock = unique_sock();
+    let heartbeat = PathBuf::from(format!("{}.hb", sock.display()));
+    let _ = fs::remove_file(&heartbeat);
+    let mut gui = spawn_gui(
+        &sock,
+        &heartbeat,
+        &[("RILL_TEST_NEW_TAB", "1"), ("RILL_TEST_SELECT_TAB", "1")],
+    );
+    let pid = gui.id();
+    let hb = wait_heartbeat(&heartbeat, pid, Duration::from_secs(10), |h| {
+        h.tabs.unwrap_or(0) >= 2
+            && h.tab_close.unwrap_or(0) >= 2
+            && h.tab1 == Some(1)
+            && h.plus_trail == Some(1)
+            && h.selected == Some(0)
+    });
+    let raw = fs::read_to_string(&heartbeat).ok();
+    unsafe {
+        libc::kill(pid as i32, libc::SIGTERM);
+    }
+    let _ = gui.wait();
+    let hb = hb.unwrap_or_else(|| panic!("tab strip still broken; heartbeat={raw:?}"));
+    assert!(
+        hb.tab_close.unwrap_or(0) >= 2,
+        "each tab needs a close control; heartbeat={raw:?}"
+    );
+    assert_eq!(hb.plus_trail, Some(1), "+ must sit at the trailing edge; heartbeat={raw:?}");
+    assert_eq!(hb.tab1, Some(1), "⌘1 must select tab 1; heartbeat={raw:?}");
+    assert_eq!(
+        hb.selected,
+        Some(0),
+        "⌘1 / select-first must show tab 0; heartbeat={raw:?}"
+    );
+}
+
+/// Bug: extra tabs were clipped with no way to reach them.
+/// Required mutation: `clip_tabs_no_scroll`.
+#[test]
+fn t_tab_strip_scrolls_overflowing_tabs() {
+    let sock = unique_sock();
+    let heartbeat = PathBuf::from(format!("{}.hb", sock.display()));
+    let _ = fs::remove_file(&heartbeat);
+    let mut gui = spawn_gui(&sock, &heartbeat, &[("RILL_TEST_MANY_TABS", "6")]);
+    let pid = gui.id();
+    let hb = wait_heartbeat(&heartbeat, pid, Duration::from_secs(14), |h| {
+        h.tabs.unwrap_or(0) >= 6 && h.overflow == Some(1)
+    });
+    let raw = fs::read_to_string(&heartbeat).ok();
+    unsafe {
+        libc::kill(pid as i32, libc::SIGTERM);
+    }
+    let _ = gui.wait();
+    let hb = hb.unwrap_or_else(|| panic!("overflowing tabs not scrollable; heartbeat={raw:?}"));
+    assert_eq!(hb.overflow, Some(1), "tab strip must scroll; heartbeat={raw:?}");
+    assert!(hb.tabs.unwrap_or(0) >= 6, "all tab chips exist; heartbeat={raw:?}");
+}
+
+/// Bug: holding ⌘ did not preview tab/workspace chords (cmux).
+/// Must not steal first responder. Mutation: `skip_cmd_hints`.
+#[test]
+fn t_cmd_hold_shows_shortcut_badges() {
+    let sock = unique_sock();
+    let heartbeat = PathBuf::from(format!("{}.hb", sock.display()));
+    let _ = fs::remove_file(&heartbeat);
+    let mut gui = spawn_gui(
+        &sock,
+        &heartbeat,
+        &[("RILL_TEST_NEW_TAB", "1"), ("RILL_TEST_CMD_HINT", "1")],
+    );
+    let pid = gui.id();
+    let hb = wait_heartbeat(&heartbeat, pid, Duration::from_secs(10), |h| {
+        h.tabs.unwrap_or(0) >= 2 && h.hints.unwrap_or(0) >= 3
+    });
+    let raw = fs::read_to_string(&heartbeat).ok();
+    unsafe {
+        libc::kill(pid as i32, libc::SIGTERM);
+    }
+    let _ = gui.wait();
+    let hb = hb.unwrap_or_else(|| panic!("no chord badges; heartbeat={raw:?}"));
+    assert!(
+        hb.hints.unwrap_or(0) >= 3,
+        "tabs + workspace hint; heartbeat={raw:?}"
+    );
+    assert_eq!(
+        hb.first.as_deref(),
+        Some("terminal"),
+        "hints must not steal the grid; heartbeat={raw:?}"
+    );
+}
+
+/// Occasional stress: many leaves, strip still live. Not in `make gates`.
+/// Run: `make stress`
+#[test]
+#[ignore]
+fn t_chrome_stress_many_tabs() {
+    let sock = unique_sock();
+    let heartbeat = PathBuf::from(format!("{}.hb", sock.display()));
+    let _ = fs::remove_file(&heartbeat);
+    let mut gui = spawn_gui(&sock, &heartbeat, &[("RILL_TEST_MANY_TABS", "8")]);
+    let pid = gui.id();
+    let hb = wait_heartbeat(&heartbeat, pid, Duration::from_secs(25), |h| {
+        h.tabs.unwrap_or(0) >= 8 && h.overflow == Some(1) && h.seq >= 4
+    });
+    let still = alive(pid);
+    let raw = fs::read_to_string(&heartbeat).ok();
+    let seq0 = hb.as_ref().map(|h| h.seq);
+    thread::sleep(Duration::from_millis(400));
+    let seq1 = read_heartbeat(&heartbeat).map(|h| h.seq);
+    unsafe {
+        libc::kill(pid as i32, libc::SIGTERM);
+    }
+    let _ = gui.wait();
+    assert!(still, "stress must not hang the GUI; heartbeat={raw:?}");
+    let hb = hb.unwrap_or_else(|| panic!("12 tabs never appeared; heartbeat={raw:?}"));
+    assert!(hb.tabs.unwrap_or(0) >= 8, "heartbeat={raw:?}");
+    assert_eq!(hb.overflow, Some(1), "heartbeat={raw:?}");
+    assert!(
+        seq1.unwrap_or(0) >= seq0.unwrap_or(0),
+        "present must keep ticking under tab load; seq0={seq0:?} seq1={seq1:?}"
     );
 }

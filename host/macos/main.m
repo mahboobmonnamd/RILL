@@ -13,6 +13,8 @@
 #import "ChromeHost.h"
 #import "TerminalView.h"
 #include <ApplicationServices/ApplicationServices.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <spawn.h>
 #include <stdio.h>
@@ -20,9 +22,100 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/un.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 extern char **environ;
+
+/* `open App.app` can apply Info.plist LSEnvironment without HOME/SHELL.
+ * rilld then uses /var/empty and the GUI exits before any window. */
+static void rill_fill_launch_env(void) {
+    if (!getenv("HOME") || getenv("HOME")[0] == '\0') {
+        NSString *home = NSHomeDirectory();
+        if (home.length) {
+            setenv("HOME", home.fileSystemRepresentation, 1);
+        }
+    }
+    if (!getenv("SHELL") || getenv("SHELL")[0] == '\0') {
+        setenv("SHELL", "/bin/zsh", 0);
+    }
+}
+
+static NSString *rill_runtime_dir(void) {
+    const char *home = getenv("HOME");
+    if (!home || !home[0]) {
+        return nil;
+    }
+    return [NSString stringWithFormat:@"%s/Library/Application Support/RILL/run", home];
+}
+
+static NSString *rill_rilld_log_path(void) {
+    NSString *dir = rill_runtime_dir();
+    if (!dir) {
+        return nil;
+    }
+    [[NSFileManager defaultManager] createDirectoryAtPath:dir
+                              withIntermediateDirectories:YES
+                                               attributes:@{NSFilePosixPermissions : @0700}
+                                                    error:NULL];
+    return [dir stringByAppendingPathComponent:@"rilld.log"];
+}
+
+static void rill_unlink_stale_runtime_sockets(void) {
+    if (getenv("RILL_SOCKET")) {
+        return;
+    }
+    NSString *dir = rill_runtime_dir();
+    if (!dir) {
+        return;
+    }
+    NSArray<NSString *> *names = @[
+        @"attach.sock",
+        @"attach.sock.identity",
+        @"attach.sock.nav",
+        @"attach.sock.worker",
+        @"attach.sock.worker.identity",
+        @"attach.sock.worker.nav",
+    ];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    for (NSString *name in names) {
+        NSString *path = [dir stringByAppendingPathComponent:name];
+        if (![fm fileExistsAtPath:path]) {
+            continue;
+        }
+        int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+        if (fd >= 0) {
+            struct sockaddr_un addr;
+            memset(&addr, 0, sizeof(addr));
+            addr.sun_family = AF_UNIX;
+            const char *cpath = path.fileSystemRepresentation;
+            if (strlen(cpath) < sizeof(addr.sun_path)) {
+                strncpy(addr.sun_path, cpath, sizeof(addr.sun_path) - 1);
+                if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
+                    close(fd);
+                    continue;
+                }
+            }
+            close(fd);
+        }
+        [fm removeItemAtPath:path error:NULL];
+    }
+}
+
+static NSString *rill_read_log_tail(NSString *path) {
+    if (!path) {
+        return @"";
+    }
+    NSData *data = [NSData dataWithContentsOfFile:path];
+    if (!data.length) {
+        return @"";
+    }
+    NSUInteger keep = MIN((NSUInteger)1200, data.length);
+    NSData *slice = [data subdataWithRange:NSMakeRange(data.length - keep, keep)];
+    NSString *text = [[NSString alloc] initWithData:slice encoding:NSUTF8StringEncoding];
+    return text ?: @"";
+}
 
 @interface RillWindow : NSWindow
 @end
@@ -40,6 +133,7 @@ extern char **environ;
 - (void)toggleNavFromMenu:(id)sender;
 - (void)toggleInspectorFromMenu:(id)sender;
 - (void)newTabFromMenu:(id)sender;
+- (void)selectTabFromMenu:(id)sender;
 - (IBAction)closeWindowForced:(id)sender;
 @end
 @implementation RillAppDelegate
@@ -63,6 +157,12 @@ extern char **environ;
 - (void)newTabFromMenu:(id)sender {
     (void)sender;
     [[NSNotificationCenter defaultCenter] postNotificationName:@"RillNewTab" object:self];
+}
+- (void)selectTabFromMenu:(id)sender {
+    NSInteger n = [(NSMenuItem *)sender tag];
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"RillSelectTab"
+                                                        object:self
+                                                      userInfo:@{@"i" : @(n)}];
 }
 - (IBAction)closeWindowForced:(id)sender {
     [self.window performClose:sender];
@@ -185,6 +285,23 @@ static void rill_install_menus(id appDelegate) {
     viewItem.submenu = view;
     [menubar addItem:viewItem];
 
+    NSMenuItem *winItem = [[NSMenuItem alloc] init];
+    NSMenu *win = [[NSMenu alloc] initWithTitle:@"Window"];
+    if (!(mut && strcmp(mut, "skip_tab_index_keys") == 0)) {
+        for (NSInteger i = 1; i <= 9; i++) {
+            NSString *title = [NSString stringWithFormat:@"Show Tab %ld", (long)i];
+            NSString *key = [NSString stringWithFormat:@"%ld", (long)i];
+            NSMenuItem *tabKey = [[NSMenuItem alloc] initWithTitle:title
+                                                            action:@selector(selectTabFromMenu:)
+                                                     keyEquivalent:key];
+            tabKey.tag = i - 1;
+            tabKey.target = appDelegate;
+            [win addItem:tabKey];
+        }
+    }
+    winItem.submenu = win;
+    [menubar addItem:winItem];
+
     NSApp.mainMenu = menubar;
 }
 
@@ -224,10 +341,27 @@ static pid_t spawn_rilld(NSString *rilldPath) {
         flags = 0;
     }
     posix_spawnattr_setflags(&attr, flags);
+    posix_spawn_file_actions_t actions;
+    BOOL have_actions = posix_spawn_file_actions_init(&actions) == 0;
+    int logfd = -1;
+    NSString *logPath = rill_rilld_log_path();
+    if (have_actions && logPath) {
+        logfd = open(logPath.fileSystemRepresentation, O_WRONLY | O_CREAT | O_APPEND, 0600);
+        if (logfd >= 0) {
+            posix_spawn_file_actions_adddup2(&actions, logfd, STDERR_FILENO);
+            posix_spawn_file_actions_adddup2(&actions, logfd, STDOUT_FILENO);
+        }
+    }
     const char *path = [rilldPath fileSystemRepresentation];
     char *argv[] = {(char *)path, NULL};
     pid_t pid = 0;
-    int rc = posix_spawn(&pid, path, NULL, &attr, argv, environ);
+    int rc = posix_spawn(&pid, path, have_actions ? &actions : NULL, &attr, argv, environ);
+    if (have_actions) {
+        posix_spawn_file_actions_destroy(&actions);
+    }
+    if (logfd >= 0) {
+        close(logfd);
+    }
     posix_spawnattr_destroy(&attr);
     if (rc != 0) {
         fprintf(stderr, "Rill: posix_spawn(rilld) failed: %s\n", strerror(rc));
@@ -240,14 +374,15 @@ static pid_t spawn_rilld(NSString *rilldPath) {
  * bounded development/test path (SPEC-RUNTIME-SUPERVISION §1). Mutation
  * posix_spawn_unregistered skips registration and launches an unregistered
  * daemon (T-RUNTIME-GUI-INDEPENDENT). */
-static BOOL ensure_supervised_runtime(NSString *rilldPath) {
+static pid_t ensure_supervised_runtime(NSString *rilldPath) {
     const char *mut = getenv("RILL_MUTATE");
     BOOL unregistered = mut && strcmp(mut, "posix_spawn_unregistered") == 0;
     if (unregistered) {
-        return spawn_rilld(rilldPath) >= 0;
+        return spawn_rilld(rilldPath);
     }
     if (getenv("RILL_SOCKET") || getenv("RILL_DEV_DIRECT_RILLD")) {
-        return spawn_rilld(rilldPath) >= 0;
+        rill_unlink_stale_runtime_sockets();
+        return spawn_rilld(rilldPath);
     }
     if (@available(macOS 13.0, *)) {
         SMAppService *agent = [SMAppService agentServiceWithPlistName:@"dev.rill.rilld.plist"];
@@ -255,24 +390,31 @@ static BOOL ensure_supervised_runtime(NSString *rilldPath) {
         if (agent.status != SMAppServiceStatusEnabled) {
             if (![agent registerAndReturnError:&err]) {
                 fprintf(stderr, "Rill: runtime service not registered\n");
-                return NO;
+                return -1;
             }
         }
-        return YES;
+        return 0;
     }
     fprintf(stderr, "Rill: Service Management required\n");
-    return NO;
+    return -1;
 }
 
 /* Poll for readiness instead of sleeping a fixed 150ms. On a loaded machine the
  * old flat usleep opened the app dead with "connect failed" (audit S3-8f). */
-static RillClient *connect_with_retry(double timeout_seconds) {
+static RillClient *connect_with_retry(double timeout_seconds, pid_t daemon_pid) {
     const useconds_t step_us = 20 * 1000;
     double waited = 0;
     while (waited < timeout_seconds) {
         RillClient *c = rill_client_connect(NULL);
         if (c) {
             return c;
+        }
+        if (daemon_pid > 0) {
+            int st = 0;
+            pid_t w = waitpid(daemon_pid, &st, WNOHANG);
+            if (w == daemon_pid) {
+                return NULL;
+            }
         }
         usleep(step_us);
         waited += (double)step_us / 1e6;
@@ -296,6 +438,7 @@ static int parse_nfr_mode(const char *arg, RillNfrMode *out) {
 
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
+        rill_fill_launch_env();
         BOOL nfr = NO;
         RillNfrMode mode = RillNfrModeHid;
         for (int i = 1; i < argc; i++) {
@@ -312,20 +455,36 @@ int main(int argc, const char *argv[]) {
         NSString *dir = [exe stringByDeletingLastPathComponent];
         NSString *rilld = [dir stringByAppendingPathComponent:@"rilld"];
 
-        RillClient *client = rill_client_connect(NULL);
-        if (!client) {
-            if (!ensure_supervised_runtime(rilld)) {
-                return 1;
-            }
-            client = connect_with_retry(3.0);
-        }
-        if (!client) {
-            fprintf(stderr, "Rill: %s\n", rill_client_last_error() ?: "connect failed");
-            return 1;
-        }
-
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+
+        RillClient *client = rill_client_connect(NULL);
+        if (!client) {
+            pid_t daemon = ensure_supervised_runtime(rilld);
+            if (daemon < 0) {
+                return 1;
+            }
+            client = connect_with_retry(8.0, daemon);
+        }
+        if (!client) {
+            const char *why = rill_client_last_error() ?: "connect failed";
+            NSString *log = rill_read_log_tail(rill_rilld_log_path());
+            fprintf(stderr, "Rill: %s\n", why);
+            NSLog(@"Rill: %s", why);
+            if (!nfr && !getenv("RILL_SOCKET") && !getenv("RILL_TEST_HEARTBEAT")) {
+                NSAlert *alert = [[NSAlert alloc] init];
+                alert.messageText = @"Rill could not start";
+                NSMutableString *info = [NSMutableString stringWithFormat:@"%s", why];
+                if (log.length) {
+                    [info appendFormat:@"\n\n%@", log];
+                } else {
+                    [info appendString:@"\n\nNo rilld.log yet. From the repo run: make run"];
+                }
+                alert.informativeText = info;
+                [alert runModal];
+            }
+            return 1;
+        }
         RillAppDelegate *appDelegate = [RillAppDelegate new];
         [NSApp setDelegate:appDelegate];
         rill_install_menus(appDelegate);

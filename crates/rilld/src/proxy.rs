@@ -36,6 +36,9 @@ pub fn spawn_worker(attach_sock: &Path, worker_sock: &Path) -> Result<std::proce
     if let Ok(v) = std::env::var("RILL_ALLOW_NESTED") {
         cmd.env("RILL_ALLOW_NESTED", v);
     }
+    if let Ok(v) = std::env::var("HOME") {
+        cmd.env("HOME", v);
+    }
     if let Ok(v) = std::env::var("SHELL") {
         cmd.env("SHELL", v);
     }

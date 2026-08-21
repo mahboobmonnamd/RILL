@@ -1,11 +1,12 @@
 # Developer setup. Live chip is vt-engine (ADR 0054).
-.PHONY: help setup deps fast lint test gates negative-controls package run
+.PHONY: help setup deps fast lint test gates negative-controls package run stress
 
 help:
 	@echo "make setup             install rustc, cargo, Xcode CLT"
 	@echo "make lint              plane invariants (AGENTS.md §5, ADR 0002 D9)"
 	@echo "make fast              lint + codec/kernel tests"
 	@echo "make gates             full Spike 0 gate suite, writes evidence/"
+	@echo "make stress            occasional many-tab load (not in gates)"
 	@echo "make negative-controls assert each gate goes red under its own mutation"
 	@echo "make package           dist/Rill.app"
 	@echo "make run               package and launch (dev: spawn rilld from the GUI)"
@@ -30,6 +31,11 @@ gates:
 
 negative-controls:
 	. "$$HOME/.cargo/env" 2>/dev/null; sh scripts/validate-spike0.sh --negative-controls
+
+stress: package
+	. "$$HOME/.cargo/env" 2>/dev/null; \
+	env RILL_GUI_APP="$(CURDIR)/dist/Rill.app" cargo test -p rill-host --offline --test t_chrome_interact \
+	  t_chrome_stress_many_tabs -- --ignored --nocapture --test-threads=1
 
 test: gates
 
