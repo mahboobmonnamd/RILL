@@ -2,8 +2,9 @@
 
 - **Status:** Accepted — 2026-08-18
 - **Amended by:** [ADR 0053](0053-runtime-domain-content-and-client-authority.md)
-  D5–D6 and D10–D11 for host authority, disposable client mirrors, leases,
-  mobile semantics and the two distinct SSH paths.
+  D5–D6, D10–D11 and D13 for host authority, disposable client mirrors,
+  leases, mobile semantics, the two distinct SSH paths and unchanged remote
+  shell behavior in zero-footprint mode.
 - **Historical identifier:** merged as ADR 0023 in PR #278; renumbered to ADR
   0041 on 2026-08-21 to resolve a collision. Renumbering changed no decision.
 - **Tree:** this repository only
@@ -152,6 +153,16 @@ This row closes as **wontfix** rather than staying blocked forever.
 | T-REM-HOSTKEY | D4 — changed key blocks; version mismatch fails closed |
 | T-REM-RECONNECT | D5 — replay from ring; visible discontinuity |
 | T-REM-TUNNEL | D7 — no implicit tunnel |
+
+## Accepted 2026-08-21 amendment — zero-footprint preserves the remote shell
+
+ADR 0053 D11 and D13 supersede any reading that SSH may invisibly prepare a
+host. Zero-footprint is the default for a host without an explicitly approved
+enhanced plan. It runs only the requested SSH shell/command and preserves that
+host's zsh, fish, bash or other PTY-compatible shell, profiles, prompt, theme,
+plugins, aliases, completion, ANSI behavior and interactive semantics. It does
+not probe, upload, bootstrap, inspect history, edit profiles or execute hidden
+commands.
 
 ## Consequences
 

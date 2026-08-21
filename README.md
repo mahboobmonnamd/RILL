@@ -25,6 +25,8 @@ for regression. Launch the window with `make run`.
 | **Terminal core / display** | Host canonical VT plus disposable client mirrors. Chip 0 is live today; Chip 1 is isolated. The existing Metal grid remains the terminal primitive. |
 | **ContentTimeline** | Typed primary terminal/agent content and transcript under explicit retention policy. Raw replay is recovery/audit, not normal content identity. |
 | **Conversation / Task** | Structured orchestration objects attached to domain IDs. Neither is Session, TerminalExecution or transcript. |
+| **Shell compatibility** | zsh, fish, bash and other PTY-compatible shells keep their existing prompts, themes, plugins, startup files, ANSI behavior and interactive semantics. |
+| **Configuration / privacy** | One versioned TOML model covers product settings; portable copies exclude credentials. Sensitive content is minimized, policy-gated, encrypted and isolated. |
 
 ```mermaid
 flowchart LR

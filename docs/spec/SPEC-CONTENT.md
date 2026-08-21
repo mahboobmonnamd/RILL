@@ -2,7 +2,7 @@
 
 - **Status:** Red. Specification only; no implementation is authorized.
 - **Authority:** [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md)
-  D5–D8; supersedes range-only normal rendering in
+  D5–D8 and D15; supersedes range-only normal rendering in
   [ADR 0050](../adr/0050-blocks-are-a-cold-overlay.md).
 - **Lane:** `lane:kernel` for authoritative events and retention;
   `lane:host` for virtualized presentation.
@@ -98,6 +98,11 @@ When durable capture is enabled:
 
 Corporate policy may prohibit capture regardless of local encryption. RILL does
 not present encryption or redaction as permission to collect.
+
+Terminal content is sensitive by default. Retention, backup or sync MUST NOT
+cross an operating-system user, runtime, host, Workspace, Session, client or
+external-service boundary without explicit authority and the isolation gates in
+SPEC-TRUST. Credentials and secret values are never configuration or sync data.
 
 ## 6. Redaction and export
 

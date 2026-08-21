@@ -3,7 +3,8 @@
 - **Status:** Accepted — 2026-08-18
 - **Amended by:** [ADR 0037](0037-chip1-live-swap.md) for the eventual live VT
   authority and [ADR 0053](0053-runtime-domain-content-and-client-authority.md)
-  D5–D8 for host checkpoints, ContentTimeline and retention policy.
+  D5–D8 and D13 for host checkpoints, ContentTimeline, retention policy and
+  explicit shell compatibility.
 - **Historical identifier:** merged as ADR 0022 in PR #278; renumbered to ADR
   0040 on 2026-08-21 to resolve a collision. Renumbering changed no decision.
 - **Tree:** this repository only
@@ -102,6 +103,12 @@ RILL MUST NOT special-case a shell by name for correctness. Shell **integration*
 (F-097) is opt-in and additive: it improves cwd, exit code and duration when the
 user installs it. Every one of those must still degrade to a correct terminal
 without it (ADR 0013 D4 already requires cwd to fail closed with no OSC 7).
+
+ADR 0053 D13 strengthens this contract: zsh, fish, bash and every other
+PTY-compatible shell retain normal argv/environment/cwd, startup files,
+prompts, themes, plugins, line editing, completion, ANSI colour, signals and
+job control. RILL MUST NOT require a wrapper shell, inject hidden commands,
+rewrite a prompt or modify shell/profile/plugin files for correctness.
 
 Nothing in this milestone may make Block boundaries depend on shell
 integration. That coupling is ADR 0050 D2's problem and is decided there.

@@ -1,6 +1,9 @@
 # ADR 0043: One look schema, one local config file
 
 - **Status:** Accepted — 2026-08-18
+- **Amended by:** [ADR 0053](0053-runtime-domain-content-and-client-authority.md)
+  D14–D15 for canonical TOML, full settings scope, migration/export/backup,
+  secret-free optional sync and privacy boundaries.
 - **Historical identifier:** merged as ADR 0025 in PR #278; renumbered to ADR
   0043 on 2026-08-21 with its series. Renumbering changed no decision.
 - **Tree:** this repository only
@@ -162,6 +165,28 @@ offer an update that fails them.
 
 T-LOOK-FILE, T-LOOK-UNKNOWN and T-SPLIT-LOOK (ADR 0017, ADR 0018) MUST stay
 green throughout.
+
+### D10 — The canonical file is versioned TOML and is safely portable
+
+The canonical file format is TOML with an explicit schema version. The schema
+covers application and terminal themes, fonts and sizes, keybindings,
+rendering, Workspace/Session behavior, privacy/retention preferences and all
+other user settings. A named theme supplies coherent role tokens to chrome,
+terminal, structured content, editor, diffs and controls.
+
+Validation occurs before activation. An invalid file leaves the last valid
+configuration active and reports exact diagnostics. Migration is explicit,
+previewable, atomic and creates a recoverable pre-migration backup. Export and
+backup serialize the validated canonical model rather than a hidden cache.
+
+Optional sync is off by default, allowlists schema fields and cannot be a local
+prerequisite. TOML, export, backup and sync MUST exclude credentials, private
+keys, tokens, secret values, device authentication material, host credentials
+and any opaque credential-store payload. Credential references MAY name a
+platform store entry without exposing its value.
+
+Named gates T-CFG-SCHEMA-COVERAGE, T-CFG-THEME-CONSISTENCY, T-CFG-MIGRATE and
+T-CFG-PORTABLE-SECRETS remain Red until their required mutations are shown.
 
 ## Consequences
 

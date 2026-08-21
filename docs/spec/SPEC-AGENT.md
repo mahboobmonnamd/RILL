@@ -110,6 +110,10 @@ verb.
   ⌘Enter.
 - Audio MUST be opt-in, MUST show when the microphone is live, and MUST NOT be
   transmitted without that specific granted capability.
+- Agent context is an explicit privacy sink. It includes only the minimum
+  selected ContentItems/files/ranges, shows scope before transmission where
+  practical, obeys retention/redaction policy, and MUST NOT infer whole-pane,
+  Session or Workspace access from visibility.
 
 Agent product surfaces land only after domain/lifecycle, runtime workers,
 checkpoint reconciliation, ContentTimeline and compositor gates. Milestone M3

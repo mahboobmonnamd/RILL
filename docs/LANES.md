@@ -47,7 +47,7 @@ Retired slugs (GitHub renamed in place): `lane:A` â†’ `lane:kernel`, `lane:B` â†
 
 Milestone numbers do not authorize work out of dependency order:
 
-1. domain identity, visibility and lifecycle;
+1. domain identity, visibility, lifecycle, canonical configuration and privacy;
 2. supervised runtime workers and client leases;
 3. host checkpoints and mirror reconciliation;
 4. ContentTimeline, transcript and retention;

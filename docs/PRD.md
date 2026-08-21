@@ -43,7 +43,7 @@ library slices or Accepted ADRs are not product E2E proof.
 Implementation follows [ADR 0053](adr/0053-runtime-domain-content-and-client-authority.md)
 D12:
 
-1. domain identity, visibility and lifecycle;
+1. domain identity, visibility, lifecycle, canonical configuration and privacy;
 2. supervised host runtime, execution workers and client leases;
 3. host terminal checkpoints and disposable client reconciliation;
 4. ContentTimeline, transcript and retention policy;
@@ -81,6 +81,8 @@ out of scope.
 | FR-CLIENTS | Each client has identity, role, independent credit and view state. Observers cannot write, resize or affect controller flow control. |
 | FR-REMOTE | A RILL runtime on the process host is authoritative. Zero-footprint SSH performs no probing/bootstrap/history/profile/hidden commands. Enhanced bootstrap is explicit opt-in with best-effort cleanup. |
 | FR-MOBILE | Mobile attaches as a client to an awake/reachable host. Backgrounding or lease loss never terminates work; offline keystroke injection is forbidden. |
+| FR-SHELL | zsh, fish, bash and other PTY-compatible shells retain their normal startup files, prompts, themes, plugins, ANSI colours, job control and interactive behavior without RILL replacement or modification. Shell integration is optional; zero-footprint SSH is default. |
+| FR-CONFIG | One versioned TOML model governs themes, fonts/sizes, keybindings, rendering, Workspace/Session behavior, privacy/retention and other settings. It validates and migrates atomically, supports export/backup and optional allowlisted sync, and never contains credentials or secrets. |
 
 ### Non-functional
 
@@ -95,6 +97,7 @@ out of scope.
 | NFR-BOUND | Client queues, event ledgers, checkpoints, timeline materialization, images and retained history have explicit independent bounds. |
 | NFR-STATE | Checkpoint/delta reconstruction matches continuous host VT state at the same offset; a mismatch fails closed and resyncs. |
 | NFR-CAPTURE | Capture and retention obey the most restrictive applicable policy. Encryption or redaction is not authority to collect. |
+| NFR-PRIVACY | Sensitive terminal, command, transcript, clipboard, agent and diagnostic data is minimized, policy-gated, encrypted when stored/transferred, and isolated across users, hosts, Sessions, clients, agents and external services. Logs, telemetry, crash reports, config, backup and sync exclude prohibited content and credentials. |
 
 ## 6. Input and content routing
 

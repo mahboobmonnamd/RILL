@@ -5,6 +5,7 @@
 - **Authority:** [ADR 0040](../adr/0040-terminal-fidelity-is-chip0.md), amended
   by [ADR 0037](../adr/0037-chip1-live-swap.md) and
   [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md) D5–D8
+  and D13
 - **Requires:** [SPEC-CHIP0](SPEC-CHIP0.md), [SPEC-DISPLAY](SPEC-DISPLAY.md),
   [SPEC-KERNEL](SPEC-KERNEL.md), [SPEC-CWD](SPEC-CWD.md)
 - **Crates:** `crates/rill-chip0`, `crates/rill-kernel`, `host/macos/`
@@ -43,11 +44,17 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 ## 4. Shells and nested tools
 
 - TerminalExecutions are spawned by the runtime worker with the user's selected
-  shell. The
-  GUI MUST NOT `posix_spawn` the shell (NFR-SPAWN, link-level gate).
+  zsh, fish, bash or other PTY-compatible shell. The GUI MUST NOT
+  `posix_spawn` the shell (NFR-SPAWN, link-level gate).
+- Spawn MUST preserve normal PTY, argv, environment, cwd, signal, job-control,
+  TERM/capability and login/non-login semantics. Existing startup files,
+  prompts, themes, plugins, line editors, completions, ANSI colours and
+  interactive programs MUST work without RILL-specific changes.
 - RILL MUST NOT special-case a shell by name for correctness.
 - Shell integration MUST be opt-in and additive. Every behaviour it improves
   MUST degrade correctly without it (SPEC-CWD fail-closed rule).
+- RILL MUST NOT inject hidden commands, rewrite a prompt, replace a shell
+  theme/plugin, edit startup files or require a wrapper shell for correctness.
 - Block boundaries MUST NOT require shell integration
   ([SPEC-BLOCKS](SPEC-BLOCKS.md) §2).
 
@@ -95,6 +102,8 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 | T-FID-BOUNDARY | Red | §1 |
 | T-FID-CAP | Red | §2 |
 | T-FID-INPUT | Red | §3 |
+| T-FID-SHELL-COMPAT | Red | §4 |
+| T-FID-SHELL-NO-MUTATION | Red | §4 |
 | T-FID-ENV | Red | §5 |
 | T-FID-RING | Red | §6 |
 | T-FID-CONTRAST | Red | §8 |

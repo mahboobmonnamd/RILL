@@ -10,7 +10,7 @@
 - **Authority:** [ADR 0044](../adr/0044-trust-secrets-and-automation-boundary.md),
   amended by
   [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md) D4,
-  D8 and D11
+  D8, D11 and D15
 - **Requires:** [SPEC-CONFIG](SPEC-CONFIG.md), [SPEC-NAV](SPEC-NAV.md),
   [SPEC-KERNEL](SPEC-KERNEL.md)
 - **Crates:** `crates/rilld`, `crates/rill-host`, `host/macos/`
@@ -55,6 +55,10 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
 ## 4. Capture, retention and redaction
 
+- Terminal output, commands, transcript/history, clipboard data, agent context,
+  host/user/session identifiers and diagnostic metadata are sensitive by
+  default. Collection MUST be purpose-limited and minimized before redaction is
+  considered.
 - Capturing terminal output, history, transcript, conversations or task content
   requires an applicable retention policy. Durable capture MAY be disabled
   entirely. Local encryption and available redaction do not authorize capture
@@ -68,10 +72,33 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
   Destructive deletion is a separate retention operation.
 - Redaction MUST NOT be applied to the live terminal surface (NFR-BYTES).
 - Trusted project config MUST NOT weaken redaction.
+- The most restrictive applicable user, host, Workspace, Session or enterprise
+  policy wins. A local setting MUST NOT widen a parent policy.
+- Policy-authorized durable sensitive data MUST be encrypted at rest with a
+  platform-protected key. Authenticated encryption is required in transit.
+- Isolation MUST prevent data disclosure across operating-system users,
+  runtimes, hosts, Workspaces, Sessions, clients, agents and external services.
 
 The existing T-TRUST-REDACT library gate proves a derived export transform only.
 It does not prove capture authorization, complete secret detection, durable
 storage, deletion or transmission policy.
+
+### 4a. Diagnostics, clipboard, agents, backup and sync
+
+- Service logs, telemetry, analytics identifiers and crash reports MUST NOT
+  contain terminal output, commands, clipboard payloads, credentials, secrets,
+  PII or raw agent context.
+- Optional diagnostics require explicit consent after the exact fields,
+  destination and retention are shown. Collection is off when that contract is
+  unavailable.
+- Clipboard and agent context are explicit derived sinks. Scope is the minimum
+  selected payload, previewed where practical; visibility on screen never
+  authorizes a whole-pane, Session or Workspace attachment.
+- Backup and sync operate only on allowlisted data, apply encryption and
+  deletion policy, and never include credentials, host credentials, tokens,
+  private keys, device authentication material or credential-store payloads.
+- Secrets and PII MUST NOT appear in configuration, URLs, process arguments,
+  socket names or service/crash metadata.
 
 ## 5. No account
 
@@ -121,6 +148,10 @@ storage, deletion or transmission policy.
 | T-TRUST-PLUGIN | Red (not attempted) | §3 |
 | T-TRUST-REDACT | **Proven** (derived-transform library sub-gate) | §4 |
 | T-TRUST-CAPTURE-POLICY | Red | §4 capture/disable/delete authority |
+| T-PRIVACY-MINIMIZATION | Red | §§4, 4a collection and scope |
+| T-PRIVACY-BOUNDARY-ISOLATION | Red | §4 user/host/session/client/agent boundaries |
+| T-PRIVACY-DIAGNOSTICS | Red | §4a logs/telemetry/crash reports |
+| T-PRIVACY-BACKUP-SYNC | Red | §4a backup/sync allowlist and secrets |
 | T-TRUST-NOACCT | Red (not attempted) | §5 |
 | T-TRUST-UPDATE | Red (not attempted) | §6 |
 | T-TRUST-SOCKET | Red (not attempted) | §7 |
@@ -139,3 +170,5 @@ T-TRUST-NOACCT MUST be executed with the network denied.
 - Redact by rewriting the grid.
 - Ship a generic `exec` verb on the socket.
 - Mirror the grid per frame for accessibility.
+- Treat redaction or encryption as authority to collect more data.
+- Put credentials, terminal content or raw agent context in diagnostics.

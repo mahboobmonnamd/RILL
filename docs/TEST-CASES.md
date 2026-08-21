@@ -1745,6 +1745,7 @@ are failed preconditions, never green skips.
 | T-REM-IDENTITY-VERSION — changed identity or version fails before attach | Fake changed key/device and incompatible protocol receive no DATA/credential/attach frame | identity prompt defaults to trust |
 | T-REM-CHECKPOINT-RECONNECT — remote long gap is explicit and recoverable | Checkpoint+deltas match continuous VT or render named Discontinuity | missing bytes are presented as continuous |
 | T-SSH-ZERO-FOOTPRINT — compatibility SSH runs no hidden remote work | Instrumented SSH server sees only the exact user-requested session/argv and zero upload/probe/profile/history/helper operations | client runs `command -v rilld` probe |
+| T-SSH-SHELL-UNCHANGED — zero-footprint preserves remote shell configuration | zsh/fish/bash fixtures hash profiles before/after and observe the same prompt/plugin/ANSI/job-control behavior as direct SSH | connector appends a RILL profile hook |
 | T-SSH-ENHANCED-PLAN-CLEANUP — bootstrap is consented and cleanup is honest | Executed commands/artifacts equal approved plan; injected cleanup failure is reported as residue | cleanup failure is reported successful |
 | T-REM-OBSERVER-LEASE — remote observer cannot control | Remote observer DATA/RESIZE has no PTY/winsize effect; controller remains live | remote transport upgrades observer role |
 | T-REM-NFR-SEPARATE — remote latency is never NFR-KEY | Remote target refuses `--nfr-key` and report contains RTT-labelled remote metric only | reporter labels remote p95 NFR-KEY |
@@ -1790,7 +1791,23 @@ are failed preconditions, never green skips.
 | T-TASK-RUNTIME-PERSIST — Task survives GUI and daemon restart | Kill GUI and control daemon; recovered runtime returns same Task sections, decisions and queue from durable store | persistence remains an in-memory String |
 | T-TRUST-CAPTURE-POLICY — encryption/redaction never substitutes for capture permission | Capture-disabled policy produces no durable payload even with encryption key and redactor available | encrypted sink bypasses policy denial |
 
-The binding execution order is domain/lifecycle → runtime/workers/leases →
-checkpoints/reconciliation → content/retention → compositor/input/selection →
-remote/mobile → agents. Chip 1 live-swap gates remain parked until the
+### Shell, unified configuration and privacy
+
+| Gate | Downstream oracle | Required mutation |
+|---|---|---|
+| T-FID-SHELL-COMPAT — PTY-compatible shells retain native behavior | Packaged zsh/fish/bash plus another available shell match direct-PTY startup argv/env/cwd/TERM, prompt/theme/plugin/ANSI, job-control, completion and signal fixtures | runtime substitutes a RILL wrapper shell |
+| T-FID-SHELL-NO-MUTATION — RILL never modifies shell configuration | Hash startup/profile/plugin files before and after local launch/quit/reopen; hashes and contents remain identical and no hidden command reaches PTY | launcher writes a shell-integration line to profile |
+| T-CFG-SCHEMA-COVERAGE — one TOML model covers every declared setting family | Round-trip app/terminal theme, fonts/sizes, bindings, rendering, Workspace/Session and privacy settings through public reader; no shadow-store reads occur | Workspace behavior is read from a GUI-only store |
+| T-CFG-THEME-CONSISTENCY — one named theme reaches every surface | Packaged terminal, chrome, timeline, editor, diff and controls report the same theme identity and independently expected role tokens | editor falls back to a compiled unrelated palette |
+| T-CFG-MIGRATE — validation/migration is atomic and recoverable | Invalid file preserves last valid state; old fixture previews then migrates with verified pre-migration backup; injected failure restores byte-identical prior TOML | migration replaces file before validating output |
+| T-CFG-PORTABLE-SECRETS — export/backup/sync contain no credential material | Seed platform credential store and secret-like config inputs; inspect serialized/exported/backed-up/synced payloads and find only opaque references/allowlisted settings | exporter resolves credential reference into value |
+| T-PRIVACY-MINIMIZATION — every sink receives only declared minimum scope | Select one ContentItem for clipboard/agent/diagnostic fixtures; sink audit contains only that item and declared metadata | visible Session is attached wholesale |
+| T-PRIVACY-BOUNDARY-ISOLATION — data never crosses identity boundaries | Seed unique canaries across OS-user/runtime/host/Workspace/Session/client/agent stores; every unauthorized query/export returns none | cache key omits SessionId |
+| T-PRIVACY-DIAGNOSTICS — logs, telemetry and crash reports carry no sensitive payload | Emit terminal/command/clipboard/credential/PII canaries, force diagnostics/crash, and scan independent artifacts; no canary appears | crash reporter includes recent terminal bytes |
+| T-PRIVACY-BACKUP-SYNC — backup/sync obey allowlist, encryption and deletion | Inspect encrypted payload envelope and decrypted test fixture: only allowlisted non-secret config exists; deletion removes remote/local copies | sync serializes entire config directory |
+
+The binding execution order is domain/lifecycle plus configuration/privacy →
+runtime/workers/leases → checkpoints/reconciliation → content/retention →
+compositor/input/selection → remote/mobile → agents. Shell compatibility is a
+foundation gate throughout. Chip 1 live-swap gates remain parked until the
 checkpoint and mirror gates above have demonstrated red.

@@ -126,6 +126,30 @@ Durable retention is policy-controlled and may be disabled. Encryption does
 not authorize capture. Redaction is a derived sink and does not claim complete
 secret detection or silently rewrite source evidence.
 
+## Shell, configuration and privacy
+
+RILL preserves the native behavior of zsh, fish, bash and other PTY-compatible
+shells. Existing startup files, prompts, themes, plugins, completions, ANSI
+colours, job control and interactive applications run unchanged. Optional shell
+integration adds semantic marks only; it is never a correctness dependency.
+Zero-footprint SSH is the default remote compatibility path and does not touch
+remote profiles or run hidden commands.
+
+One versioned TOML model governs application/terminal themes, fonts and sizes,
+keybindings, rendering, Workspace/Session behavior, privacy/retention and other
+settings. Named themes resolve consistently across terminal and rich surfaces.
+Validation and migration are atomic and recoverable. Export, backup and
+optional allowlisted sync never include credentials, keys, tokens or secret
+values.
+
+Terminal content, commands, transcript/history, clipboard payloads, agent
+context, identifiers and diagnostics are sensitive by default. Collection is
+minimized and policy-gated; durable data is encrypted with platform-protected
+keys; transfers are authenticated and encrypted. Logs, telemetry and crash
+reports receive no terminal content, commands, clipboard data, credentials,
+PII or raw agent context. Isolation spans OS users, runtimes, hosts, Workspaces,
+Sessions, clients, agents and external services.
+
 ## Compositor and internal boundaries
 
 The existing Metal renderer remains the terminal-grid primitive inside a
@@ -170,9 +194,9 @@ No hosted relay or account is authorized.
 
 ## Binding dependency order
 
-Authority/domain/lifecycle → supervised runtime and leases → host checkpoints
-and reconciliation → content/transcript → compositor/text/input/selection →
-remote/mobile → agent product surfaces.
+Authority/domain/lifecycle plus configuration/privacy → supervised runtime and
+leases → host checkpoints and reconciliation → content/transcript →
+compositor/text/input/selection → remote/mobile → agent product surfaces.
 
 Chip 1 live swap remains parked until checkpoint compatibility and disposable
 mirror reconciliation are specified and demonstrated red.
@@ -187,5 +211,8 @@ mirror reconciliation are specified and demonstrated red.
 - raw range replay called the native content model
 - prompt-regex command boundaries
 - SSH probing in zero-footprint mode
+- shell/profile/prompt/plugin rewriting for RILL compatibility
+- multiple configuration models or secrets in TOML/export/backup/sync
+- content-bearing telemetry, crash reports or service logs
 - replacing the Metal terminal-grid renderer
 - using tmux, Herdr, Ghostty or WezTerm as RILL's internal multiplexer

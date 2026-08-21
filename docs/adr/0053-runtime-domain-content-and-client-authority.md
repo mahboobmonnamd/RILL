@@ -3,7 +3,8 @@
 - **Status:** Accepted — 2026-08-21
 - **Tree:** this repository only
 - **Decision approval:** the repository-wide architecture decision gate answered
-  by the product owner on 2026-08-21.
+  by the product owner on 2026-08-21, including the accepted shell,
+  configuration and privacy follow-up recorded in D13–D15.
 - **Implementation tracking:** none created or modified by this documentation
   decision. Each implementation slice still requires its own open GitHub issue,
   lane, milestone and evidence sequence.
@@ -17,6 +18,7 @@
   [ADR 0038](0038-session-graph-navigation-model.md),
   [ADR 0040](0040-terminal-fidelity-is-chip0.md),
   [ADR 0041](0041-remote-is-a-second-kernel.md),
+  [ADR 0043](0043-one-look-schema-one-config-file.md),
   [ADR 0044](0044-trust-secrets-and-automation-boundary.md),
   [ADR 0045](0045-one-core-native-ui-per-os.md),
   [ADR 0048](0048-task-is-the-agent-runtime-object.md), and
@@ -308,7 +310,7 @@ awake, online and reachable for live control.
 No implementation may infer authority from milestone numbers alone. Work lands
 in this dependency order:
 
-1. authority mapping and domain/lifecycle specification;
+1. authority mapping, domain/lifecycle, configuration schema and privacy policy;
 2. supervised local runtime, worker recovery and client leases;
 3. host terminal checkpoints, offsets and reconciliation;
 4. ContentTimeline, transcript and retention policy;
@@ -316,10 +318,79 @@ in this dependency order:
 6. remote/mobile transports and clients; and
 7. agent product surfaces.
 
+Shell compatibility is a foundation gate across every step. Privacy and
+configuration isolation are cross-cutting prerequisites: a feature does not
+advance merely because its functional dependency is ready if its data sinks or
+configuration migration remain unspecified.
+
 ADR 0037 remains Accepted, but Chip 1 live-swap implementation stays parked
 until D5–D6 checkpoint/state compatibility is specified and its required
 mutations have demonstrated red. The state contract must work for both Chip 0
 and Chip 1; a swap must not create a second protocol.
+
+### D13 — PTY-compatible shells remain native shell experiences
+
+RILL launches the user's selected zsh, fish, bash or other PTY-compatible shell
+with normal PTY, argv, environment, cwd, signal, job-control and terminal
+capability semantics. Existing shell startup files, prompts, themes, plugins,
+line editors, completions, ANSI colours and interactive programs MUST work
+without RILL-specific replacement, rewriting or configuration changes.
+
+Shell integration is optional and additive. Its absence may reduce semantic
+metadata, but MUST NOT reduce raw terminal correctness. RILL MUST NOT inject
+hidden commands, rewrite prompts, replace a shell theme/plugin, modify profiles
+or require a RILL shell wrapper for correctness. Zero-footprint SSH preserves
+the remote host's shell and configuration and remains the default remote path.
+
+### D14 — One versioned TOML configuration model governs the product
+
+RILL has one canonical, versioned TOML model for application and terminal
+themes, fonts and sizes, keybindings, rendering, Workspace/Session behavior,
+privacy/retention preferences and other user settings. Importers and a future
+settings UI target this model; they do not create shadow stores.
+
+A named theme resolves application chrome, terminal palette, ContentTimeline,
+editor, diffs, controls and accessibility/contrast tokens consistently. A
+surface may derive a role-specific token, but MUST NOT silently substitute an
+unrelated theme or compiled palette.
+
+Configuration loading is validated and fail-closed. Schema migration is
+versioned, previewable, atomic and recoverable from a pre-migration backup.
+Users can export and back up the canonical configuration. Optional sync is
+allowlisted, opt-in and never required for local use. Configuration, export,
+backup and sync MUST NOT contain credentials, private keys, access tokens,
+secret values, device authentication material or host credentials; such data
+uses a separately governed platform credential store and opaque references.
+
+### D15 — Privacy and PII boundaries are architectural, not cleanup work
+
+Terminal output, commands, transcripts, content, local history, clipboard
+payloads, agent context, host/user/session identifiers and diagnostic metadata
+are sensitive by default. Every collection, persistence, export, backup, sync,
+telemetry, crash-report and external-agent sink declares purpose, minimum data,
+scope, retention, encryption, access boundary, redaction and deletion behavior
+before it receives data.
+
+- Collection and transmission are minimized; unavailable data is not
+  reconstructed or collected “just in case.”
+- Policy may disable sensitive persistence entirely. The most restrictive
+  user, host, Workspace, Session or enterprise policy wins.
+- Policy-authorized durable sensitive data is encrypted at rest with
+  platform-protected keys. Network transfer is authenticated and encrypted.
+- Logs, telemetry and crash reports exclude terminal content, commands,
+  clipboard payloads, credentials, secrets and raw agent context. Optional
+  diagnostics require explicit scope disclosure and consent.
+- Clipboard and agent context are explicit derived sinks. The exact scoped
+  payload is previewed where practical, redacted under policy and never
+  expanded to a whole Session or Workspace by implication.
+- Runtime, storage, backup and sync boundaries isolate operating-system users,
+  hosts, Workspaces, Sessions, clients, agents and external services. A failure
+  or identifier collision MUST NOT disclose data across those boundaries.
+- Credentials, secrets and PII MUST NOT be placed in configuration, URLs,
+  process arguments, service logs, analytics identifiers or crash metadata.
+
+Encryption and redaction reduce exposure only after collection is authorized;
+they do not make collection safe by default or replace minimization.
 
 ## Explicit amendments
 
@@ -327,10 +398,11 @@ and Chip 1; a swap must not create a second protocol.
 |---|---|
 | ADR 0038 D1/D3/D6 | `Session` becomes the durable grouping; the current PTY-owning object is `TerminalExecution`; presentation close no longer terminates owned executions. |
 | ADR 0039 | Readers project the canonical domain while hidden; hidden UI does not constrain object existence. |
-| ADR 0040 D1/D6 | Host canonical VT/checkpoints and policy-controlled replay supersede ring-only recovery and the fixed retention assumption. |
-| ADR 0041 D1/D2/D5/D7 | Host authority, disposable mirrors, two SSH paths, leases and mobile semantics supersede SSH-forward-plus-ring-only reconnect. |
+| ADR 0040 D1/D4/D6 | Host canonical VT/checkpoints and policy-controlled replay supersede ring-only recovery; D13 makes native shell compatibility explicit. |
+| ADR 0041 D1/D2/D5/D7 | Host authority, disposable mirrors, two SSH paths, leases and mobile semantics supersede SSH-forward-plus-ring-only reconnect; zero-footprint preserves the remote shell unchanged. |
 | ADR 0042 D7 | Mobile is an attaching client; it does not receive a separate ownership model. |
-| ADR 0044 D4/D6 | Capture requires policy authority; update survival requires worker isolation and protocol compatibility. |
+| ADR 0043 D1/D2/D7 | D14 fixes TOML, complete settings scope, named-theme consistency, migration/export/backup and secret-free optional sync. |
+| ADR 0044 D4/D6 | Capture requires policy authority; update survival requires worker isolation and protocol compatibility; D15 adds end-to-end privacy and PII isolation. |
 | ADR 0045 D2/D5 | Product-required compositor/text boundaries are allowed; speculative portable widget abstraction remains rejected. |
 | ADR 0048 | Task remains distinct from Session, TerminalExecution and transcript; current library serialization is not product persistence evidence. |
 | ADR 0050 D1/D2/D4 | Range-only Block identity and replay-as-normal-rendering are superseded by D7. |
@@ -354,6 +426,12 @@ and Chip 1; a swap must not create a second protocol.
   through structured-content abstractions.
 - Remote support remains truthful: zero-footprint SSH is useful but degraded;
   enhanced bootstrap is explicit and cannot guarantee cleanup.
+- Shell users keep their real shell ecosystem; semantic enrichment must degrade
+  without changing prompts, plugins, profiles or interactive behavior.
+- Configuration portability improves, but migrations, backup and optional sync
+  become security-sensitive operations with explicit negative-data contracts.
+- Privacy gates precede every new sink, including diagnostics and agent context;
+  encryption/redaction cannot be used to waive minimization.
 
 ## Rejected alternatives
 
@@ -367,6 +445,10 @@ and Chip 1; a swap must not create a second protocol.
 - Replacing the Metal terminal renderer or raw VT path.
 - Copying another terminal's Block or compositor implementation.
 - SSH probing or hidden bootstrap in zero-footprint mode.
+- Replacing shell prompts, themes, plugins or startup files to make RILL work.
+- Multiple config formats or a GUI-only settings database.
+- Storing credentials in TOML so export, backup or sync is “complete.”
+- Content-bearing telemetry or crash reports, even when nominally redacted.
 - Claiming encryption or redaction makes capture safe by default.
 - Publishing unstable internal crates as supported libraries.
 

@@ -3,7 +3,7 @@
 - **Status:** Red. Specification only; no implementation is authorized.
 - **Authority:** [ADR 0041](../adr/0041-remote-is-a-second-kernel.md), amended
   by [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md)
-  D5–D6 and D10–D11.
+  D5–D6, D10–D11 and D13.
 - **Requires:** [SPEC-ATTACH](SPEC-ATTACH.md),
   [SPEC-RUNTIME-SUPERVISION](SPEC-RUNTIME-SUPERVISION.md),
   [SPEC-CLIENT-AUTHORITY](SPEC-CLIENT-AUTHORITY.md),
@@ -42,13 +42,19 @@ buffered for later injection.
 ## 3. Zero-footprint SSH
 
 Zero-footprint SSH is a compatibility terminal, not a RILL remote runtime. RILL
-invokes only the SSH session the user requested. It MUST NOT:
+invokes only the SSH session and remote shell/command the user requested. The
+remote shell keeps its existing profiles, prompt, theme, plugins, aliases,
+completion, ANSI behavior and interactive semantics. It MUST NOT:
 
 - probe whether RILL or another helper is installed;
 - upload, install, bootstrap or execute a helper;
 - modify shell profiles, startup files or remote configuration;
 - inspect remote terminal/session/history state; or
 - execute hidden remote commands before, during or after the session.
+
+Zero-footprint is the default for a host without an explicitly approved RILL
+runtime plan. Selecting zsh, fish, bash or another PTY-compatible remote shell
+does not opt into bootstrap or shell integration.
 
 The UI and API expose a capability downgrade before connect: no RILL-owned
 remote process persistence, canonical transcript, rich content, checkpoint
@@ -113,6 +119,7 @@ never triggers an action.
 | T-REM-IDENTITY-VERSION | Red | §2 |
 | T-REM-CHECKPOINT-RECONNECT | Red | §2 |
 | T-SSH-ZERO-FOOTPRINT | Red | §3 |
+| T-SSH-SHELL-UNCHANGED | Red | §3 |
 | T-SSH-ENHANCED-PLAN-CLEANUP | Red | §4 |
 | T-REM-OBSERVER-LEASE | Red | §5 |
 | T-MOBILE-BACKGROUND-DETACH | Red | §6 |

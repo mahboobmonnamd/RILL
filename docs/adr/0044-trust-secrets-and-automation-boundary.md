@@ -2,7 +2,8 @@
 
 - **Status:** Accepted — 2026-08-18
 - **Amended by:** [ADR 0053](0053-runtime-domain-content-and-client-authority.md)
-  D4, D8 and D11 for worker-safe updates, capture policy and SSH modes.
+  D4, D8, D11 and D15 for worker-safe updates, capture policy, SSH modes and
+  privacy/PII isolation across every sink.
 - **Historical identifier:** merged as ADR 0026 in PR #278; renumbered to ADR
   0044 on 2026-08-21 with its series. Renumbering changed no decision.
 - **Tree:** this repository only
@@ -180,6 +181,27 @@ Mutation `drop_a11y_labels` MUST turn T-TRUST-A11Y red.
 | T-TRUST-UPDATE | D6 — unsigned refused; rollback works |
 | T-TRUST-SOCKET | D7 — foreign uid refused; no eval verb |
 | T-TRUST-A11Y | D8 — keyboard-complete; labels present; cold grid read |
+
+### D10 — Privacy-by-design governs every sensitive source and sink
+
+Terminal output, commands, transcripts, history, clipboard payloads, agent
+context, identifiers and diagnostics are sensitive by default. A sink is not
+authorized merely because D4 has a redactor. Before collection or transfer it
+must declare purpose, minimal fields, actor and scope boundary, retention,
+encryption, deletion and external recipient.
+
+Content and credentials MUST NOT enter service logs, telemetry, analytics
+identifiers, crash metadata, configuration, process arguments or URLs.
+Optional diagnostics require explicit consent after showing their exact scope.
+Clipboard, agent context, backup and sync are explicit derived sinks, not
+implicit consequences of visibility or persistence.
+
+The most restrictive user, host, Workspace, Session or enterprise policy wins.
+Durable sensitive data uses platform-protected encryption at rest; transfers
+are authenticated and encrypted. Isolation MUST prevent disclosure across OS
+users, runtimes, hosts, Workspaces, Sessions, clients, agents and external
+services. Named privacy gates in TEST-CASES remain Red; existing redaction
+library evidence does not close them.
 
 ## Consequences
 
