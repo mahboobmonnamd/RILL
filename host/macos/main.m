@@ -8,6 +8,7 @@
  */
 
 #import <Cocoa/Cocoa.h>
+#import <ServiceManagement/ServiceManagement.h>
 #include "rill_ffi.h"
 #import "ChromeHost.h"
 #import "TerminalView.h"
@@ -125,6 +126,34 @@ static pid_t spawn_rilld(NSString *rilldPath) {
     return pid;
 }
 
+/* Production: per-user agent via SMAppService. Unique RILL_SOCKET is the
+ * bounded development/test path (SPEC-RUNTIME-SUPERVISION §1). Mutation
+ * posix_spawn_unregistered skips registration and launches an unregistered
+ * daemon (T-RUNTIME-GUI-INDEPENDENT). */
+static BOOL ensure_supervised_runtime(NSString *rilldPath) {
+    const char *mut = getenv("RILL_MUTATE");
+    BOOL unregistered = mut && strcmp(mut, "posix_spawn_unregistered") == 0;
+    if (unregistered) {
+        return spawn_rilld(rilldPath) >= 0;
+    }
+    if (getenv("RILL_SOCKET") || getenv("RILL_DEV_DIRECT_RILLD")) {
+        return spawn_rilld(rilldPath) >= 0;
+    }
+    if (@available(macOS 13.0, *)) {
+        SMAppService *agent = [SMAppService agentServiceWithPlistName:@"dev.rill.rilld.plist"];
+        NSError *err = nil;
+        if (agent.status != SMAppServiceStatusEnabled) {
+            if (![agent registerAndReturnError:&err]) {
+                fprintf(stderr, "Rill: runtime service not registered\n");
+                return NO;
+            }
+        }
+        return YES;
+    }
+    fprintf(stderr, "Rill: Service Management required\n");
+    return NO;
+}
+
 /* Poll for readiness instead of sleeping a fixed 150ms. On a loaded machine the
  * old flat usleep opened the app dead with "connect failed" (audit S3-8f). */
 static RillClient *connect_with_retry(double timeout_seconds) {
@@ -175,7 +204,7 @@ int main(int argc, const char *argv[]) {
 
         RillClient *client = rill_client_connect(NULL);
         if (!client) {
-            if (spawn_rilld(rilld) < 0) {
+            if (!ensure_supervised_runtime(rilld)) {
                 return 1;
             }
             client = connect_with_retry(3.0);

@@ -9,7 +9,7 @@ use crate::ring::ByteRing;
 use rill_attach::{Frame, RefuseReason};
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const RING_CAP: usize = 4 * 1024 * 1024;
 const READ_BUF: usize = 64 * 1024;
@@ -76,6 +76,9 @@ pub struct Session {
     observers: u32,
     terminated: bool,
     checkpoint: Option<StoredCheckpoint>,
+    lease_generation: u64,
+    lease_nonce: u64,
+    lease_until: Option<Instant>,
 }
 
 impl Session {
@@ -114,6 +117,9 @@ impl Session {
             observers: 0,
             terminated: false,
             checkpoint: None,
+            lease_generation: 0,
+            lease_nonce: 0,
+            lease_until: None,
         })
     }
 
@@ -364,7 +370,61 @@ impl Session {
         self.outbound.retain(|f| !matches!(f, Frame::Data(_)));
     }
 
-    // ------------------------------------------------------------------ frames
+    pub fn take_input_lease(&mut self, nonce: u64) -> u64 {
+        #[cfg(feature = "mutate")]
+        if std::env::var("RILL_MUTATE").as_deref() == Ok("both_leases_valid") {
+            if self.lease_generation == 0 {
+                self.lease_generation = 1;
+            }
+            return self.lease_generation;
+        }
+        self.lease_generation = self.lease_generation.saturating_add(1);
+        if self.lease_generation == 0 {
+            self.lease_generation = 1;
+        }
+        self.lease_nonce = nonce;
+        self.lease_until = Some(Instant::now() + lease_grace());
+        self.lease_generation
+    }
+
+    pub fn lease_generation(&self) -> Option<u64> {
+        if self.lease_generation == 0 {
+            None
+        } else {
+            Some(self.lease_generation)
+        }
+    }
+
+    pub fn expire_input_lease_if_due(&mut self) {
+        let due = self.lease_until.is_some_and(|t| Instant::now() >= t);
+        if !due {
+            return;
+        }
+        #[cfg(feature = "mutate")]
+        if std::env::var("RILL_MUTATE").as_deref() == Ok("expiry_terminates") {
+            let _ = self.terminate();
+            return;
+        }
+        self.lease_nonce = 0;
+        self.lease_until = None;
+    }
+
+    pub fn input_with_lease(&mut self, nonce: u64, bytes: Vec<u8>) -> Result<(), Error> {
+        self.expire_input_lease_if_due();
+        #[cfg(feature = "mutate")]
+        if std::env::var("RILL_MUTATE").as_deref() == Ok("both_leases_valid") {
+            return self.on_frame(Frame::Data(bytes));
+        }
+        if self.lease_nonce == 0 || self.lease_nonce != nonce {
+            return Ok(());
+        }
+        self.on_frame(Frame::Data(bytes))
+    }
+
+    fn lease_blocks_input(&mut self) -> bool {
+        self.expire_input_lease_if_due();
+        self.lease_generation > 0 && self.lease_nonce == 0
+    }
 
     /// Apply one inbound attach frame. Total; never panics.
     pub fn on_frame(&mut self, frame: Frame) -> Result<(), Error> {
@@ -387,6 +447,7 @@ impl Session {
                 }
                 self.attach_generation = Some(generation);
                 self.resync_pending = true;
+                let _ = self.take_input_lease(generation);
 
                 // Replay a death the previous client never learned about, so
                 // the reopened window does not paint a cursor over a corpse.
@@ -418,6 +479,9 @@ impl Session {
                 px_w,
                 px_h,
             } => {
+                if self.lease_blocks_input() {
+                    return Ok(());
+                }
                 // Input queued before this frame must reach the child before
                 // the new geometry does (FR-RESIZE, SPEC-KERNEL §5).
                 let resize_first = {
@@ -450,6 +514,9 @@ impl Session {
             Frame::Data(bytes) => {
                 if self.child_exit.is_some() {
                     return Err(Error::Dead);
+                }
+                if self.lease_blocks_input() {
+                    return Ok(());
                 }
                 self.last_delivery = InputDelivery::Pending;
                 self.pending_input.push_back(bytes);
@@ -552,6 +619,14 @@ impl Session {
         let seq = self.seq;
         self.journal.push_back((seq, event));
     }
+}
+
+fn lease_grace() -> Duration {
+    std::env::var("RILL_LEASE_GRACE_MS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .map(Duration::from_millis)
+        .unwrap_or(Duration::from_secs(3600))
 }
 
 impl Drop for Session {

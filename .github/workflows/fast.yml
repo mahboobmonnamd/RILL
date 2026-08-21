@@ -256,6 +256,37 @@ jobs:
           red T-RUNTIME-DAEMON-STATE blank_core t_runtime_daemon_state_recovery_matches_independent_vt
           red T-RUNTIME-UPDATE-COMPAT accept_incompatible_checkpoint t_runtime_update_compat_refuses_unknown_format
 
+      - name: T-RUNTIME journal negative controls
+        run: |
+          set -eu
+          red() {
+            name="$1"
+            mut="$2"
+            shift 2
+            if RILL_MUTATE="$mut" cargo test -p rill-kernel --features mutate --test t_runtime_journal "$@" -- --test-threads=1 --nocapture; then
+              echo "BROKEN INSTRUMENT: $name stayed green under $mut" >&2
+              exit 1
+            fi
+            echo "ok: $name went red under $mut"
+          }
+          red T-RUNTIME-HOST-SHUTDOWN-JOURNAL missing_worker_reported_running t_runtime_host_shutdown_journal_is_honest
+
+      - name: T-CLIENT lease negative controls
+        run: |
+          set -eu
+          red() {
+            name="$1"
+            mut="$2"
+            shift 2
+            if RILL_MUTATE="$mut" cargo test -p rill-kernel --features mutate --test t_client_lease "$@" -- --test-threads=1 --nocapture; then
+              echo "BROKEN INSTRUMENT: $name stayed green under $mut" >&2
+              exit 1
+            fi
+            echo "ok: $name went red under $mut"
+          }
+          red T-CLIENT-LEASE-ATOMIC both_leases_valid t_client_lease_atomic_one_generation_one_nonce
+          red T-CLIENT-LEASE-EXPIRY-DETACH expiry_terminates t_client_lease_expiry_detaches_input_not_the_process
+
       - name: T-CLIENT mirror negative controls
         run: |
           set -eu

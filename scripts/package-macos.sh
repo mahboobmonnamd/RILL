@@ -23,6 +23,8 @@ mkdir -p "$RES/themes"
 if [ -d "$ROOT/fixtures/look/themes" ]; then
   cp -R "$ROOT/fixtures/look/themes/." "$RES/themes/"
 fi
+mkdir -p "$APP/Contents/Library/LaunchAgents"
+cp host/macos/LaunchAgents/dev.rill.rilld.plist "$APP/Contents/Library/LaunchAgents/dev.rill.rilld.plist"
 cp "$TARGET_DIR/release/rilld" "$MACOS/rilld"
 
 HOST_LIB="$TARGET_DIR/release/librill_host.a"
@@ -47,7 +49,7 @@ clang -fobjc-arc -O2 -fmodules \
   "$GHOSTTY_VT" \
   -I host/macos \
   -framework Cocoa -framework Metal -framework MetalKit -framework QuartzCore -framework CoreText \
-  -framework CoreGraphics -framework ApplicationServices \
+  -framework CoreGraphics -framework ApplicationServices -framework ServiceManagement \
   -lc++ -lSystem $EXTRA_LIBS
 
 # T-SPAWN inspects imports, not exports. Surface the same information here so a

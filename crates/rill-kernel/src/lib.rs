@@ -6,6 +6,7 @@
 
 mod checkpoint;
 mod error;
+mod journal;
 mod kernel;
 mod pty;
 mod ring;
@@ -13,6 +14,7 @@ mod session;
 
 pub use checkpoint::{StoredCheckpoint, CHECKPOINT_FORMAT_VERSION};
 pub use error::Error;
+pub use journal::{reconcile_execution, TerminalOutcome};
 pub use kernel::{
     ContainerSnapshot, GraphEvent, GraphEventKind, Kernel, LeafLayout, NodeChild, NodeId, NodeKind,
     SessionId,
