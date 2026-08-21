@@ -9,7 +9,7 @@
   red-then-green under `--features mutate` (evidence below). T-CFG-OPAQUE
   (needs `NSWindow`/Metal) and T-CFG-UPDATE (needs a signed-binary updater)
   are host/platform work, not attempted here, and stay **Red**.
-- **Authority:** [ADR 0025](../adr/0025-one-look-schema-one-config-file.md)
+- **Authority:** [ADR 0043](../adr/0043-one-look-schema-one-config-file.md)
 - **Requires:** [ADR 0017](../adr/0017-ghostty-look-windowed-default.md),
   [SPEC-CHROME](SPEC-CHROME.md), [SPEC-DISPLAY](SPEC-DISPLAY.md)
 - **Files:** `host-surface.toml`, `~/.config/rill/config`, `RILL_CONFIG`

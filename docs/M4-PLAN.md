@@ -38,7 +38,7 @@ That is correct — the specs and red tests come first.
 
 ## Crate layout
 
-```
+```text
 crates/rill-vt-types/     no deps beyond core/std; Linux-clean
   src/lib.rs              PodCell, PodGrid, Color, Palette, TerminalEmulation, Error
 
@@ -229,6 +229,12 @@ of:
    ([ADR 0036](adr/0036-chip1-mode-state-channel.md), T-CHIP1-MODE [#307](https://github.com/mahboobmonnamd/RILL/pull/307)).
    [ADR 0037](adr/0037-chip1-live-swap.md) D5 names host wiring at swap time;
    host encoding MUST NOT land before the swap spec and tests exist.
+7. **Host checkpoint compatibility and disposable-mirror reconciliation are
+   specified and demonstrated red** under
+   [ADR 0053](adr/0053-runtime-domain-content-and-client-authority.md) D5–D6,
+   [SPEC-CLIENT-AUTHORITY](spec/SPEC-CLIENT-AUTHORITY.md), and the named
+   T-CLIENT-MIRROR / T-CLIENT-RING-EVICTION gates. `repaint_bytes` or a
+   byte-ring replay alone does not satisfy this precondition.
 
 ## Risks
 

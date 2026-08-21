@@ -9,7 +9,7 @@
   zero-control-plane-RPC half of T-ATT-COLD, T-ATT-UNTRUSTED (needs Chip 0's
   OSC parser), T-ATT-SOCKET (needs a running daemon) and T-ATT-HOOK are not
   attempted here and stay **Red**.
-- **Authority:** [ADR 0029](../adr/0029-attention-is-an-orchestration-queue.md)
+- **Authority:** [ADR 0047](../adr/0047-attention-is-an-orchestration-queue.md)
 - **Requires:** [SPEC-NAV](SPEC-NAV.md), [SPEC-TRUST](SPEC-TRUST.md),
   [SPEC-CHIP0](SPEC-CHIP0.md), [SPEC-REMOTE](SPEC-REMOTE.md)
 - **Milestone:** M3 — Conversations

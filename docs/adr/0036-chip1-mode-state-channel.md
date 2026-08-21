@@ -23,7 +23,7 @@ correctly after a live swap.
 
 Chip 0 already owns this for the live window: the host MUST NOT keep its own
 copy of mouse mode or keyboard-protocol flags; it queries Chip 0
-([SPEC-FIDELITY](../spec/SPEC-FIDELITY.md) §1, [ADR 0022](0022-terminal-fidelity-is-chip0.md)
+([SPEC-FIDELITY](../spec/SPEC-FIDELITY.md) §1, [ADR 0040](0040-terminal-fidelity-is-chip0.md)
 D3). Chip 1 has no equivalent channel yet. `take_replies` (ADR 0022) is the
 wrong pipe: those bytes are owed to the **child**. Mode state is owed to the
 **host encoder**.

@@ -1,4 +1,4 @@
-# SPEC-GRAPH — session graph (Milestone 1, `lane:kernel`)
+# SPEC-GRAPH — execution leaves (historically session graph; Milestone 1, `lane:kernel`)
 
 - **Status:** Accepted — first slice **Proven** 2026-08-17
   ([ADR 0014](../adr/0014-m1-first-slice-closes.md)); persist remainder
@@ -6,6 +6,12 @@
 - **Authority:** [ADR 0011](../adr/0011-session-graph.md),
   [ADR 0014](../adr/0014-m1-first-slice-closes.md),
   [ADR 0015](../adr/0015-m1-persist-remainder.md)
+- **Terminology amendment:** [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md)
+  and [SPEC-DOMAIN-LIFECYCLE](SPEC-DOMAIN-LIFECYCLE.md). Every `Session` and
+  `SessionId` in this proven historical slice names the current PTY-owning
+  implementation and therefore has `TerminalExecution` semantics. It is not
+  the new durable grouping. Renaming requires the migration gate; the proven
+  PTY behavior is preserved.
 - **Issue:** [#16](https://github.com/mahboobmonnamd/RILL/issues/16), attach naming: [#28](https://github.com/mahboobmonnamd/RILL/issues/28), terminate: [#29](https://github.com/mahboobmonnamd/RILL/issues/29), flood isolation: [#31](https://github.com/mahboobmonnamd/RILL/issues/31), persist remainder: [#69](https://github.com/mahboobmonnamd/RILL/issues/69)–[#84](https://github.com/mahboobmonnamd/RILL/issues/84), N-leaf persist: [#255](https://github.com/mahboobmonnamd/RILL/issues/255), close: [#254](https://github.com/mahboobmonnamd/RILL/issues/254)
 - **Crates:** `crates/rill-kernel`, `crates/rilld`, `crates/rill-attach`
 - **Gates:** T-GRAPH-* first slice **Proven** (ADR 0014). Persist remainder
@@ -15,9 +21,10 @@
 
 Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
-## 1. In this slice
+## 1. In this historical slice
 
-- Kernel MUST store `SessionId → Session`.
+- Kernel currently stores `SessionId → Session`; the migration target is
+  `TerminalExecutionId → TerminalExecution`.
 - `SessionId` is a `u64` allocated by the kernel. It MUST NOT be a path, a
   title, or a GUI index.
 - `Session` rules in [SPEC-KERNEL](SPEC-KERNEL.md) hold **per id** (sole writer,
@@ -62,18 +69,24 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 - Input delivery is `Pending` / `Dispatched` / `Unknown` on the session, not a
   warm frame.
 - Event ids are unique; `terminate` of a dead leaf is a no-op.
-- `RILL_EPHEMERAL=1` makes `Drop` kill that child. Default remains persist.
+- The historical `RILL_EPHEMERAL=1` test fixture makes `Drop` kill that child.
+  It is retained only as evidence for the existing library branch; it is not a
+  product preference, UI lifecycle, or authority to infer termination from
+  client loss. ADR 0053 D3 forbids automatic terminate-on-quit.
 - `layout_snapshot` is kernel state (ids, winsize, pid, cwd), not chrome.
 - A second connection MAY observe a leaf that already has a writer. A second
   writer is still `REFUSED{AlreadyAttached}`.
 
-## 6. Out of scope
+## 6. Out of scope for the proven M1 slice
 
-Conversations, agents, Chip 1 live, daemon-crash survival, reconnect tokens,
-JSON on the typing path, `SCM_RIGHTS` of the PTY master.
+Conversations, agents, Chip 1 live, daemon-crash survival and reconnect tokens
+were outside the proven slice. They are now specified, but remain Red, by
+[SPEC-RUNTIME-SUPERVISION](SPEC-RUNTIME-SUPERVISION.md) and
+[SPEC-CLIENT-AUTHORITY](SPEC-CLIENT-AUTHORITY.md). JSON on the typing path and
+`SCM_RIGHTS` of the PTY master remain forbidden.
 
 Tabs, splits, sidebar and session titles are no longer refused here. They are
-deferred to [ADR 0020](../adr/0020-session-graph-navigation-model.md) and
+deferred to [ADR 0038](../adr/0038-session-graph-navigation-model.md) and
 [SPEC-NAV](SPEC-NAV.md), which put the container tree in the kernel above these
 leaves. `layout_snapshot` (§5) grows to carry it and stays cold.
 

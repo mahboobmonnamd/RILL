@@ -6,6 +6,10 @@
   [SPEC-GRAPH](SPEC-GRAPH.md).
 - **Authority:** [ADR 0001](../adr/0001-session-operating-system.md) §3–§7,
   [ADR 0002](../adr/0002-falsifiable-evidence.md)
+- **Future amendment:** [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md)
+  and [SPEC-RUNTIME-SUPERVISION](SPEC-RUNTIME-SUPERVISION.md). `Session` below
+  is the proven legacy name for the PTY-owning `TerminalExecution`; current
+  single-daemon behavior is not worker-survival evidence.
 - **Crate:** `crates/rill-kernel`
 - **Gates:** T-BYTES, T-DROP, T-RESIZE, T-EXIT, T-KILL — **Proven**
 
@@ -28,6 +32,7 @@ impl Session {
   `rilld` MUST drive the session through this, or through a `Session`-owned
   registration API. It MUST NOT hold a raw master fd. `scripts/lint-planes.sh`
   enforces this (ADR 0002 D9).
+
 - `SCM_RIGHTS` of the master is forbidden anywhere in the tree.
 
 ## 2. Process lifetime
@@ -44,7 +49,9 @@ impl Session {
 
 ## 3. Byte history
 
-- History is a bounded byte ring. Default 4 MiB, configurable.
+- The proven Spike 0 history is a bounded byte ring with current default 4 MiB.
+  Product defaults and durable capture are not inferred from that constant;
+  SPEC-CONTENT governs offsets, checkpoints and retention policy.
 - The ring MUST store raw bytes. No UTF-8 validation, no transformation.
 - Overflow discards from the head. The ring is never used as a live pipe;
   live delivery uses credit (§4).
@@ -53,8 +60,9 @@ impl Session {
 
 ## 4. Credit and backpressure
 
-- `Session` holds a credit balance in bytes, granted by `CREDIT` frames.
-- When credit is zero the kernel MUST stop reading the master. It MUST NOT
+- The proven protocol-1 `Session` holds one client-coupled credit balance in
+  bytes. When that credit is zero the current kernel MUST stop reading the
+  master. It MUST NOT
   read-and-discard, and MUST NOT read into an unbounded buffer.
 - A single read MUST NOT exceed the remaining credit.
 - `Session` MUST expose observable counters for the gates:
@@ -67,6 +75,12 @@ pub fn resync_count(&self) -> u32;
 
   T-DROP asserts `stalled_reads > 0`; a flood that never stalls the kernel is
   an inconclusive test, not a pass (TEST-CASES T-DROP).
+
+Protocol 2 separates bounded worker PTY drain/recovery from delivery. Every
+ClientId has independent outbound credit; no client may grant or consume
+another client's window, and one stalled stream cannot stop the worker or
+another client. A client that falls behind resyncs from host authority. The
+worker still never reads-and-discards or allocates unbounded recovery state.
 
 ## 5. Frame handling
 
@@ -126,7 +140,9 @@ interactive spawn keeps the normal discipline.
 
 ## 11. Out of scope (Spike 0)
 
-Reconnect tokens and daemon-restart / logout survival remain out (ADR 0001 §7).
+Reconnect tokens and daemon-restart/logout survival were outside Spike 0. They
+remain Red and are now governed by SPEC-RUNTIME-SUPERVISION and
+SPEC-CLIENT-AUTHORITY; no existing green gate proves them.
 
 **M1:** the kernel stores `SessionId → Session` ([ADR 0011](../adr/0011-session-graph.md),
 [SPEC-GRAPH](SPEC-GRAPH.md), [ADR 0014](../adr/0014-m1-first-slice-closes.md)).

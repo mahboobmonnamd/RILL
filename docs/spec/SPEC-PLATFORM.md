@@ -6,7 +6,8 @@
   `python3 scripts/test_check_core_boundary.py`, then run against this
   workspace's real, current `cargo metadata` graph: clean. Evidence below.
   T-PLAT-FFI and T-PLAT-GATES remain **Red**.
-- **Authority:** [ADR 0027](../adr/0027-one-core-native-ui-per-os.md)
+- **Authority:** [ADR 0045](../adr/0045-one-core-native-ui-per-os.md), amended
+  by [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md) D9
 - **Requires:** [SPEC-KERNEL](SPEC-KERNEL.md), [SPEC-DISPLAY](SPEC-DISPLAY.md),
   [SPEC-ATTACH](SPEC-ATTACH.md)
 - **Crates:** all; boundary is `crates/rill-host/ffi.rs` +
@@ -30,8 +31,10 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
 - Each platform's UI MUST be native to that platform.
 - There MUST NOT be a cross-platform UI toolkit between the core and the screen.
-- The presenter MUST NOT be abstracted. No portable-presenter trait is written
-  until a second presenter exists and is measured.
+- RILL MUST NOT add a speculative cross-platform widget toolkit. The
+  product-required retained scene, text, content and terminal-surface contracts
+  in SPEC-COMPOSITOR are allowed on macOS now; they do not abstract AppKit or
+  promise that one presenter implementation is portable.
 
 ## 3. Per-platform evidence
 
@@ -55,10 +58,15 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
 Until a second platform is actually being built, this tree MUST NOT:
 
-- add a UI abstraction layer,
+- add a cross-platform widget/UI abstraction layer,
 - widen the FFI "for portability",
-- introduce a windowing or rendering trait with one implementor,
+- introduce a portable windowing trait with one implementor,
 - move macOS-specific behaviour behind a `cfg` with no other arm.
+
+This prohibition does not block the internal product boundaries in ADR 0053:
+terminal core, checkpoint codec, text shaping, ContentTimeline and retained
+scene are needed by the first client. Possible C ABI/WASM seams remain unstable
+internal options and require their own proof before public use.
 
 ## 6. Gates
 
@@ -77,7 +85,7 @@ platform-UI crate (cocoa, objc, AppKit, Metal, winit, GTK, …) from any of
 synthetic Cocoa-dependency fixture (red confirmed by temporarily emptying the
 ban-list and re-running — see PR), passing on a synthetic clean fixture, and
 then run for real against this workspace: zero violations today. This is a
-genuine full close — ADR 0027 §1 requires a build-level graph check, not
+genuine full close — ADR 0045 §1 requires a build-level graph check, not
 packaged evidence, for this specific gate.
 
 T-NFR, T-KILL, T-SPAWN remain the macOS closers and are not re-cut.

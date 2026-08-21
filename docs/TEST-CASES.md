@@ -38,7 +38,7 @@ in production code that Spike 0 did not name.
 
 **Status.** Green-unproven — F-001
 [#38](https://github.com/mahboobmonnamd/RILL/issues/38) and F-002
-[#39](https://github.com/mahboobmonnamd/RILL/issues/39), authorized by ADR 0020
+[#39](https://github.com/mahboobmonnamd/RILL/issues/39), authorized by ADR 0038
 D6 and SPEC-NAV §6. A packaged local run demonstrated the behavior-absent
 baseline red, then green, and the required mutation red on 2026-08-18. Hosted
 CI has not run this gate because the macOS runner was unavailable, so ADR 0002
@@ -940,7 +940,7 @@ distinct `child_pid` values and both ids.
 **Required mutation.** `RILL_MUTATE=omit_second_leaf`: snapshot length 1. This
 test MUST go red.
 
-### T-GRAPH-EPHEMERAL — opt-in Drop kills
+### T-GRAPH-EPHEMERAL — historical library fixture makes Drop kill
 
 **Oracle.** With `RILL_EPHEMERAL=1`, dropping a `Session` makes
 `kill(pid, 0)` fail. Default persist remains T-KILL.
@@ -949,6 +949,11 @@ test MUST go red.
 
 **Required mutation.** `RILL_MUTATE=ignore_ephemeral`: Drop is a no-op. This
 test MUST go red.
+
+**Authority boundary.** This preserves evidence for the current library test
+branch only. It is not a product preference or client-lifecycle contract. ADR
+0053 D3 forbids automatic terminate-on-quit; production termination requires
+the explicit flow in SPEC-DOMAIN-LIFECYCLE §5.
 
 ### T-GRAPH-OBSERVE — observer sees DATA and cannot write
 
@@ -1330,8 +1335,6 @@ only (SPEC-VT-CONFORMANCE §4).
 **Required mutation.** Any parser mutation above must also turn this red; if a
 mutation leaves the differential green, the corpus is too small.
 
-
-
 ---
 
 ## Milestone gates (M2–M6)
@@ -1353,47 +1356,48 @@ sub-property but cannot close it (ADR 0002 D8).
 
 | Feature | Catalog issue | Test case | Accepted scope |
 |---|---:|---|---|
-| F-003 Named sessions | [#40](https://github.com/mahboobmonnamd/RILL/issues/40) | T-NAV-NAME | ADR 0020 D6; SPEC-NAV §6 |
-| F-004 Workspaces | [#41](https://github.com/mahboobmonnamd/RILL/issues/41) | T-NAV-WORKSPACE-PROJECTION | ADR 0020 D1/D6; SPEC-NAV §§1, 6 |
+| F-003 Named sessions | [#40](https://github.com/mahboobmonnamd/RILL/issues/40) | T-NAV-NAME | ADR 0038 D6; SPEC-NAV §6 |
+| F-004 Workspaces | [#41](https://github.com/mahboobmonnamd/RILL/issues/41) | T-NAV-WORKSPACE-PROJECTION | ADR 0038 D1/D6; SPEC-NAV §§1, 6 |
 | F-005 Groups | [#42](https://github.com/mahboobmonnamd/RILL/issues/42) | Blocked | Group topology is accepted; collapse presentation is not |
-| F-006 Tabs | [#43](https://github.com/mahboobmonnamd/RILL/issues/43) | T-NAV-STACK (F-006/F-008) | ADR 0020 D2; SPEC-NAV §2 |
-| F-007 Nested splits | [#44](https://github.com/mahboobmonnamd/RILL/issues/44) | T-NAV-REPARENT (F-007/F-017/F-018) | ADR 0020 D4; SPEC-NAV §4 |
-| F-008 Surface stacks | [#45](https://github.com/mahboobmonnamd/RILL/issues/45) | T-NAV-STACK; T-SURF-BROWSER blocked | ADR 0020 D2; SPEC-NAV §2 |
-| F-009 Close | [#46](https://github.com/mahboobmonnamd/RILL/issues/46) | T-NAV-CLOSE | ADR 0020 D3; SPEC-NAV §3 |
-| F-010 Dashboard | [#47](https://github.com/mahboobmonnamd/RILL/issues/47) | T-INV-SELECT (F-010/F-012/F-013/F-014) | ADR 0021 D1/D2; SPEC-NAV §7 |
-| F-011 Agent dashboard | [#48](https://github.com/mahboobmonnamd/RILL/issues/48) | T-INV-AGENT-EMPTY | ADR 0021 D4; SPEC-NAV §7 |
-| F-012 Session/process switcher | [#49](https://github.com/mahboobmonnamd/RILL/issues/49) | T-INV-SELECT | ADR 0021 D1/D2/D4; SPEC-NAV §7 |
-| F-013 Command palette | [#50](https://github.com/mahboobmonnamd/RILL/issues/50) | T-INV-SELECT | ADR 0021 D2; SPEC-NAV §7; SPEC-TRUST §§1, 7 |
-| F-014 Quick switcher | [#51](https://github.com/mahboobmonnamd/RILL/issues/51) | T-INV-SELECT | ADR 0021 D2; SPEC-NAV §7 |
-| F-015 Focus history | [#52](https://github.com/mahboobmonnamd/RILL/issues/52) | T-INV-HISTORY | ADR 0021 D3; SPEC-NAV §8 |
-| F-016 Reopen closed | [#53](https://github.com/mahboobmonnamd/RILL/issues/53) | T-INV-REOPEN | ADR 0021 D3; SPEC-NAV §8 |
-| F-017 Drag rearrange | [#54](https://github.com/mahboobmonnamd/RILL/issues/54) | T-NAV-REPARENT | ADR 0020 D4; SPEC-NAV §4 |
-| F-018 Zoom/equalize | [#55](https://github.com/mahboobmonnamd/RILL/issues/55) | T-NAV-REPARENT | ADR 0020 D4; SPEC-NAV §4 |
-| F-019 Layout templates | [#56](https://github.com/mahboobmonnamd/RILL/issues/56) | T-NAV-TEMPLATE | ADR 0020 D4; SPEC-NAV §4 |
-| F-020 Sidebar visibility | [#57](https://github.com/mahboobmonnamd/RILL/issues/57) | T-NAV-VIEWSTATE | ADR 0020 D5; SPEC-NAV §5 |
+| F-006 Tabs | [#43](https://github.com/mahboobmonnamd/RILL/issues/43) | T-NAV-STACK (F-006/F-008) | ADR 0038 D2; SPEC-NAV §2 |
+| F-007 Nested splits | [#44](https://github.com/mahboobmonnamd/RILL/issues/44) | T-NAV-REPARENT (F-007/F-017/F-018) | ADR 0038 D4; SPEC-NAV §4 |
+| F-008 Surface stacks | [#45](https://github.com/mahboobmonnamd/RILL/issues/45) | T-NAV-STACK; T-SURF-BROWSER blocked | ADR 0038 D2; SPEC-NAV §2 |
+| F-009 Close | [#46](https://github.com/mahboobmonnamd/RILL/issues/46) | T-NAV-CLOSE | ADR 0038 D3; SPEC-NAV §3 |
+| F-010 Dashboard | [#47](https://github.com/mahboobmonnamd/RILL/issues/47) | T-INV-SELECT (F-010/F-012/F-013/F-014) | ADR 0039 D1/D2; SPEC-NAV §7 |
+| F-011 Agent dashboard | [#48](https://github.com/mahboobmonnamd/RILL/issues/48) | T-INV-AGENT-EMPTY | ADR 0039 D4; SPEC-NAV §7 |
+| F-012 Session/process switcher | [#49](https://github.com/mahboobmonnamd/RILL/issues/49) | T-INV-SELECT | ADR 0039 D1/D2/D4; SPEC-NAV §7 |
+| F-013 Command palette | [#50](https://github.com/mahboobmonnamd/RILL/issues/50) | T-INV-SELECT | ADR 0039 D2; SPEC-NAV §7; SPEC-TRUST §§1, 7 |
+| F-014 Quick switcher | [#51](https://github.com/mahboobmonnamd/RILL/issues/51) | T-INV-SELECT | ADR 0039 D2; SPEC-NAV §7 |
+| F-015 Focus history | [#52](https://github.com/mahboobmonnamd/RILL/issues/52) | T-INV-HISTORY | ADR 0039 D3; SPEC-NAV §8 |
+| F-016 Reopen closed | [#53](https://github.com/mahboobmonnamd/RILL/issues/53) | T-INV-REOPEN | ADR 0039 D3; SPEC-NAV §8 |
+| F-017 Drag rearrange | [#54](https://github.com/mahboobmonnamd/RILL/issues/54) | T-NAV-REPARENT | ADR 0038 D4; SPEC-NAV §4 |
+| F-018 Zoom/equalize | [#55](https://github.com/mahboobmonnamd/RILL/issues/55) | T-NAV-REPARENT | ADR 0038 D4; SPEC-NAV §4 |
+| F-019 Layout templates | [#56](https://github.com/mahboobmonnamd/RILL/issues/56) | T-NAV-TEMPLATE | ADR 0038 D4; SPEC-NAV §4 |
+| F-020 Sidebar visibility | [#57](https://github.com/mahboobmonnamd/RILL/issues/57) | T-NAV-VIEWSTATE | ADR 0038 D5; SPEC-NAV §5 |
 
-#### T-NAV-NAME — a Workspace label is kernel-owned and never an attach id
+#### T-NAV-NAME — a Session label is runtime-owned and never an execution id
 
 **Feature.** F-003.
 
-**Oracle.** A packaged host renders the cold snapshot's Workspace label, while
-the independently observed attach request remains the default 8-byte `ATTACH`
-or a `SessionId`; the label itself never addresses a leaf.
+**Oracle.** A packaged host renders the cold snapshot's durable Session label,
+while the independently observed attach request addresses the selected
+`TerminalExecutionId`; neither the Session label nor `SessionId` addresses a
+leaf.
 
-**Procedure.** Create two named kernel Workspaces and their leaves, read the
-cold snapshot, render it, then attach the default leaf through the normal host
+**Procedure.** Create two named durable Sessions with distinct executions, read
+the cold snapshot, render it, then attach one execution through the normal host
 path.
 
-**Required mutation.** `workspace_label_from_chrome_cache`: render a host-local
+**Required mutation.** `session_label_from_chrome_cache`: render a host-local
 label rather than the cold kernel snapshot.
 
 **Negative control.** Manual until the accepted kernel label API and packaged
 host wiring exist; the reviewer applies the mutation and records the red
 packaged result.
 
-**Precondition.** A packaged app, a daemon with two Workspace nodes, and the
-accepted kernel-owned Workspace-label API must exist. Their absence fails this
-gate; it does not permit a fabricated chrome label.
+**Precondition.** A packaged app, a runtime with two durable Session objects,
+and the accepted runtime-owned Session-label API must exist. Their absence
+fails this gate; it does not permit a fabricated chrome label.
 
 #### T-NAV-WORKSPACE-PROJECTION — chrome projects the kernel Workspace tree
 
@@ -1419,7 +1423,7 @@ for the kernel snapshot.
 
 **Feature.** F-005.
 
-**Oracle.** Blocked: ADR 0020 and SPEC-NAV §1 authorize kernel `Group` nodes,
+**Oracle.** Blocked: ADR 0038 and SPEC-NAV §1 authorize kernel `Group` nodes,
 but do not specify collapsible-group view state, persistence, or an observable
 collapse result.
 
@@ -1454,12 +1458,13 @@ placement is not specified and is not claimed by this test.
 
 #### T-NAV-REPARENT — rearrangement preserves leaf identity and the warm path
 
-**Features.** F-007, F-017, and F-018 share ADR 0020 D4's one atomic
+**Features.** F-007, F-017, and F-018 share ADR 0038 D4's one atomic
 reparent/resize invariant.
 
 **Oracle.** A cold snapshot shows the intended changed parentage or geometry,
-while independently observed `SessionId` values and child pids survive. The
-warm-frame trace contains no new attach/spawn; only in-band `RESIZE` is allowed.
+while independently observed `SessionId`, `TerminalExecutionId` and child pids
+survive. The warm-frame trace contains no new attach/spawn; only in-band
+`RESIZE` is allowed.
 
 **Procedure.** In a packaged app with multiple real leaves, split, drag, zoom,
 and equalize. Compare pre/post cold snapshots, pids, ids, and warm-frame trace.
@@ -1492,23 +1497,26 @@ surface-specific contract.
 **Precondition.** A packaged browser-surface implementation authorized by
 SPEC-SURFACES must exist. Until then F-008 does not authorize browser behavior.
 
-#### T-NAV-CLOSE — close resolves inward and window close preserves leaves
+#### T-NAV-CLOSE — presentation close resolves inward and preserves executions
 
 **Feature.** F-009.
 
-**Oracle.** A packaged `⌘W` sequence closes surface, pane, tab, then Workspace;
-`kill(pid, 0)` proves only leaves owned by the closed subtree die. Closing the
-window leaves every child alive and packaged T-KILL remains green.
+**Oracle.** A packaged `⌘W` sequence hides surface, pane, tab, Session
+presentation, then Workspace presentation without changing the durable
+identities. After every step, `kill(pid, 0)` proves every TerminalExecution is
+still alive. Closing the window also leaves every child alive and packaged
+T-KILL remains green.
 
-**Procedure.** Launch multiple real leaves arranged in nested containers. Close
-each focused layer in turn, recording pids and the cold snapshot after each
-operation; then close the window.
+**Procedure.** Launch multiple real executions arranged in nested containers.
+Close each focused presentation layer in turn, recording pids, domain ids and
+the cold snapshot after each operation; then close the window and reattach the
+same Session.
 
-**Required mutation.** `close_window_terminates_leaves`.
+**Required mutation.** `close_presentation_terminates_execution`.
 
-**Negative control.** Manual packaged control. The existing
-`close_node_terminates_all_leaves` library mutation remains supporting evidence
-only.
+**Negative control.** Manual packaged control. The historical
+`close_node_terminates_all_leaves` library mutation tests a superseded product
+oracle and is not supporting evidence for this gate.
 
 **Precondition.** Packaged app, nested kernel containers, multiple real child
 pids, and packaged T-KILL must all run. Missing any one is a failed
@@ -1591,24 +1599,26 @@ then traverse history while reading the resulting focus from the kernel.
 focus heartbeat are required. The existing reopen gate cannot substitute for
 this bounded-history oracle.
 
-#### T-INV-REOPEN — reopen restores a template by honestly spawning new leaves
+#### T-INV-REOPEN — reopen reattaches the same live Session
 
 **Feature.** F-016.
 
-**Oracle.** Reopening a closed template creates a child with a new pid and
-reports that it spawned; no old scrollback or old pid is claimed. A second
-process observes the old pid dead and the new child emitting its startup token.
+**Oracle.** Reopening a UI-hidden Session resolves the same `SessionId`,
+`TerminalExecutionId` and child pid, then initializes a disposable mirror from
+the host checkpoint and subsequent deltas. No spawn occurs and retained
+content is unchanged.
 
-**Procedure.** Save and close a template in the packaged app, record old pid
-and output, reopen it, then independently check pid and output.
+**Procedure.** Hide a live Session presentation in the packaged app, record its
+ids, pid, output offset and spawn counter, continue producing output, then
+reopen and compare all observations.
 
-**Required mutation.** `reopen_reuses_old_pid`.
+**Required mutation.** `reopen_spawns_replacement_execution`.
 
-**Negative control.** Manual until template serialization and host wiring exist.
+**Negative control.** Manual until durable Session and host reopen wiring exist.
 
-**Precondition.** Packaged app, a template fixture, and real old/new child
-processes are required. No template implementation means this gate is Red, not
-skipped.
+**Precondition.** Packaged app, a live durable Session, checkpoint/delta
+instrumentation and independent pid/spawn probes are required. Absence fails;
+a template-restore test cannot substitute for this gate.
 
 #### T-NAV-TEMPLATE — templates serialize only the accepted durable shape
 
@@ -1631,17 +1641,17 @@ exists.
 real child pid probes must exist. No test may inspect private chrome state or
 claim scrollback restoration.
 
-#### T-NAV-VIEWSTATE — sidebar visibility never reaches the kernel
+#### T-NAV-VIEWSTATE — hidden chrome changes only per-client view state
 
 **Feature.** F-020.
 
-**Oracle.** Toggling the sidebar leaves kernel-call and warm-frame counters at
-zero, while the attached leaf's pid, winsize, and attach state remain unchanged
-as it continues emitting tokens.
+**Oracle.** Toggling Workspace UI, Session UI, sidebar and vertical tabs leaves
+domain-mutation and warm-frame counters at zero, while the same object ids,
+child pid, winsize and attach state remain unchanged as output continues.
 
-**Procedure.** In a packaged app with a live emitting child, toggle the sidebar
-visible/hidden repeatedly and independently record kernel calls, attach frames,
-pid, winsize, and output.
+**Procedure.** In a packaged app with a live emitting child, toggle each chrome
+region visible/hidden repeatedly and independently record domain calls, attach
+frames, ids, pid, winsize and output; then deep-link to the hidden Session.
 
 **Required mutation.** `hide_sidebar_detaches`.
 
@@ -1654,20 +1664,133 @@ green skip.
 
 | Spec | Authority | Milestone |
 |---|---|---|
-| [SPEC-NAV](spec/SPEC-NAV.md) | ADR 0020, ADR 0021 | M2 (container-tree kernel plane Proven at library level; chrome wiring open) |
-| [SPEC-FIDELITY](spec/SPEC-FIDELITY.md) | ADR 0022 | M2 |
-| [SPEC-REMOTE](spec/SPEC-REMOTE.md) | ADR 0023 | M2 |
-| [SPEC-SURFACES](spec/SPEC-SURFACES.md) | ADR 0024, ADR 0028 | M2 |
-| [SPEC-CONFIG](spec/SPEC-CONFIG.md) | ADR 0025 | M2 (resolution engine Proven at library level; look/appearance/updater host work open) |
-| [SPEC-TRUST](spec/SPEC-TRUST.md) | ADR 0026 | M2 (project trust + redaction Proven at library level; plugins/socket/a11y open) |
-| [SPEC-PLATFORM](spec/SPEC-PLATFORM.md) | ADR 0027 | M2 (T-PLAT-CORE fully Proven — dependency-graph check; FFI/per-platform gates open) |
-| [SPEC-ATTENTION](spec/SPEC-ATTENTION.md) | ADR 0029 | M3 (queue/rollup/read-clearing Proven at library level; OSC/socket/hooks open) |
-| [SPEC-TASK](spec/SPEC-TASK.md) | ADR 0030 | M3 (Task object fully Proven at library level except checkpoint, which needs git) |
-| [SPEC-AGENT](spec/SPEC-AGENT.md) | ADR 0031 | M3 |
-| [SPEC-BLOCKS](spec/SPEC-BLOCKS.md) | ADR 0032 | M6 |
-| [SPEC-INPUT](spec/SPEC-INPUT.md) | ADR 0033 | M6 |
-| [SPEC-MOUSE](spec/SPEC-MOUSE.md) | ADR 0034 | M6 |
+| [SPEC-NAV](spec/SPEC-NAV.md) | ADR 0038, ADR 0039 | M2 (container-tree kernel plane Proven at library level; chrome wiring open) |
+| [SPEC-FIDELITY](spec/SPEC-FIDELITY.md) | ADR 0040 | M2 |
+| [SPEC-REMOTE](spec/SPEC-REMOTE.md) | ADR 0041 | M2 |
+| [SPEC-SURFACES](spec/SPEC-SURFACES.md) | ADR 0042, ADR 0046 | M2 |
+| [SPEC-CONFIG](spec/SPEC-CONFIG.md) | ADR 0043 | M2 (resolution engine Proven at library level; look/appearance/updater host work open) |
+| [SPEC-TRUST](spec/SPEC-TRUST.md) | ADR 0044 | M2 (project trust + redaction Proven at library level; plugins/socket/a11y open) |
+| [SPEC-PLATFORM](spec/SPEC-PLATFORM.md) | ADR 0045 | M2 (T-PLAT-CORE fully Proven — dependency-graph check; FFI/per-platform gates open) |
+| [SPEC-ATTENTION](spec/SPEC-ATTENTION.md) | ADR 0047 | M3 (queue/rollup/read-clearing Proven at library level; OSC/socket/hooks open) |
+| [SPEC-TASK](spec/SPEC-TASK.md) | ADR 0048, ADR 0053 | M3 library mechanics partly Proven; complete object and runtime persistence Red |
+| [SPEC-AGENT](spec/SPEC-AGENT.md) | ADR 0049 | M3 |
+| [SPEC-BLOCKS](spec/SPEC-BLOCKS.md) | ADR 0050 | M6 |
+| [SPEC-INPUT](spec/SPEC-INPUT.md) | ADR 0051 | M6 |
+| [SPEC-MOUSE](spec/SPEC-MOUSE.md) | ADR 0052 | M6 |
+| [SPEC-DOMAIN-LIFECYCLE](spec/SPEC-DOMAIN-LIFECYCLE.md) | ADR 0053 | foundation, Red |
+| [SPEC-RUNTIME-SUPERVISION](spec/SPEC-RUNTIME-SUPERVISION.md) | ADR 0053 | foundation, Red |
+| [SPEC-CLIENT-AUTHORITY](spec/SPEC-CLIENT-AUTHORITY.md) | ADR 0053 | foundation, Red |
+| [SPEC-CONTENT](spec/SPEC-CONTENT.md) | ADR 0053 | after runtime/checkpoints, Red |
+| [SPEC-COMPOSITOR](spec/SPEC-COMPOSITOR.md) | ADR 0053 | after content/checkpoints, Red |
 
 T-NFR, T-KILL, T-SPAWN, T-DROP, T-BYTES and the T-GRAPH / T-LOOK families are
 not re-cut by any of these. A milestone gate that would require modifying a
 Proven Spike 0 gate is rejected (ADR 0002).
+
+## Architecture foundation — runtime, content and clients (Red)
+
+Authority: [ADR 0053](adr/0053-runtime-domain-content-and-client-authority.md).
+All gates in this section are **Red**. The tables specify future tests; they do
+not authorize implementation and are not evidence until the exact required
+mutation has been demonstrated to turn the named test red. Each implemented
+test MUST carry a doc comment naming the defect/gap recorded here. Missing
+platform services, packaged apps, credentials, devices or network conditions
+are failed preconditions, never green skips.
+
+### Domain, visibility and lifecycle
+
+| Gate | Downstream oracle | Required mutation |
+|---|---|---|
+| T-DOMAIN-IDENTITY-MIGRATION — Session is durable grouping and TerminalExecution owns the PTY | Persist and restore both IDs; attach/terminate resolves only TerminalExecutionId; labels cannot address either | deserialize legacy SessionId as new durable SessionId |
+| T-WORKSPACE-HIDDEN-IDENTITY — hiding Workspace UI preserves identity | Deep link and second client resolve the same WorkspaceId before/after hide/reveal; tab/pane/history hashes unchanged | hide creates a replacement default Workspace |
+| T-SESSION-HIDDEN-IDENTITY — hiding Session UI preserves identity | Same SessionId, child pid, tabs, transcript root and attachments after hide/reveal | hide detaches or recreates Session |
+| T-LIFECYCLE-UNINTENTIONAL-DETACH — unintended client loss never terminates | Original child pid survives window close, GUI SIGKILL, network cut, sleep/resume, mobile background and lease expiry | lease expiry calls terminate |
+| T-TERMINATE-OTHER-CONTROLLER — another controller blocks ordinary termination | Runtime returns refusal naming the other controller; child pid remains responsive | observers/controllers list is ignored |
+| T-TERMINATE-FORCE-IMPACT — owner/admin force binds to shown impact | Changed controller set invalidates confirmation; unchanged second confirmation terminates only named executions | confirmation token omits impact hash |
+| T-TERMINATE-JOURNAL — explicit termination escalates and records final state | Process-group signal observer plus durable journal records actor, stages, exit and final content offset | journal write occurs after first signal |
+| T-ALT-SAME-EXECUTION — alternate screen reuses pane, execution and PTY | IDs, PTY device and child pid remain identical across enter/exit while primary restores | alt entry allocates another execution |
+
+### Supervised runtime and failure isolation
+
+| Gate | Downstream oracle | Required mutation |
+|---|---|---|
+| T-RUNTIME-GUI-INDEPENDENT — packaged GUI uses the registered per-user service | Service-manager state and original worker/child identity survive all GUI processes exiting | packaged path directly spawns an unregistered daemon |
+| T-RUNTIME-DAEMON-RESTART — daemon restart preserves worker-owned PTY | Kill control daemon, restart it, reconcile worker, then exchange a nonce with the original child pid | worker exits when daemon channel closes |
+| T-RUNTIME-DAEMON-STATE — output produced while daemon is absent remains host-authoritative | Child emits numbered VT/mode changes during daemon outage; restarted daemon exports worker checkpoint+deltas matching an independent continuous VT at the same offset/hash | restarted daemon initializes a blank terminal core |
+| T-RUNTIME-UPDATE-COMPAT — compatible daemon update preserves workers | N/N-1 fixture reconnects to original worker; incompatible fixture refuses before replacement | version check accepts incompatible checkpoint format |
+| T-RUNTIME-MALFORMED-CLIENT-ISOLATION — malformed client cannot kill runtime | Send oversized/unknown/truncated frames; second valid client and unrelated child continue | decoder error escapes connection task into daemon run loop |
+| T-RUNTIME-PROTECTED-ENDPOINT — local endpoint verifies owner and peer | Foreign-uid fixture is refused before ATTACH; endpoint parent is user-owned and non-world-writable | peer credential check returns constant success |
+| T-RUNTIME-HOST-SHUTDOWN-JOURNAL — restart reports host-caused process loss honestly | Simulated shutdown marker plus missing worker restores graph/transcript and explicit `host_terminated`, never a live pid | missing worker is reported running |
+
+### Host authority, mirrors and clients
+
+| Gate | Downstream oracle | Required mutation |
+|---|---|---|
+| T-CLIENT-MIRROR-DISPOSABLE — deleting a client mirror loses no state | Destroy/recreate mirror from host checkpoint+deltas and compare independent VT state/hash | host reads state back from client mirror |
+| T-CLIENT-MIRROR-RECONCILE — mirror divergence fails closed and resyncs | Corrupt one mirror cell/mode; hash mismatch stops input/presentation and requests checkpoint | mismatch is logged but mirror keeps presenting |
+| T-CLIENT-RING-EVICTION-RESYNC — long disconnect uses checkpoint plus deltas | Disconnect beyond hot-ring eviction, reconnect and match continuous independent VT oracle | reconnect starts replay at retained ring base without checkpoint |
+| T-CLIENT-OBSERVER-ISOLATION — observer cannot write or resize | Attempt DATA/RESIZE; PTY bytes and winsize remain unchanged while controller continues | observer RESIZE is accepted |
+| T-CLIENT-CREDIT-ISOLATION — one client's credit cannot gate worker drain or peers | Hold observer credit at zero during numbered output; host offset and controller stream advance without gaps, observer later resyncs | minimum client credit gates PTY read |
+| T-CLIENT-UNATTACHED-REFUSAL — unattached frames cannot target a default pane | DATA/RESIZE before ATTACH closes only attacker connection; all child histories unchanged | missing attachment falls back to default ID |
+| T-CLIENT-LEASE-ATOMIC — exactly one input/resize lease exists | Racing takeover requests yield one generation/owner; only its nonce reaches PTY | both contenders retain valid generation |
+| T-CLIENT-LEASE-EXPIRY-DETACH — lease expiry releases input but keeps process | After grace, writes are refused and another client takes lease; original child pid remains | expiry calls session cleanup |
+| T-CLIENT-VIEWPORT-AUTHORITY — controller alone sets canonical geometry | Observer viewport changes leave child `TIOCGWINSZ` unchanged; controller resize changes it | largest observer wins geometry |
+| T-MOBILE-BACKGROUND-DETACH — mobile suspension is not termination | Background mobile fixture loses lease/connection; desktop reconnects to original pid/state | app background callback terminates Session |
+
+### SSH and remote
+
+| Gate | Downstream oracle | Required mutation |
+|---|---|---|
+| T-REM-HOST-AUTHORITY — remote process host owns canonical state | Two clients discard/rebuild mirrors and converge on remote checkpoint while remote child continues | client snapshot overwrites host state |
+| T-REM-IDENTITY-VERSION — changed identity or version fails before attach | Fake changed key/device and incompatible protocol receive no DATA/credential/attach frame | identity prompt defaults to trust |
+| T-REM-CHECKPOINT-RECONNECT — remote long gap is explicit and recoverable | Checkpoint+deltas match continuous VT or render named Discontinuity | missing bytes are presented as continuous |
+| T-SSH-ZERO-FOOTPRINT — compatibility SSH runs no hidden remote work | Instrumented SSH server sees only the exact user-requested session/argv and zero upload/probe/profile/history/helper operations | client runs `command -v rilld` probe |
+| T-SSH-ENHANCED-PLAN-CLEANUP — bootstrap is consented and cleanup is honest | Executed commands/artifacts equal approved plan; injected cleanup failure is reported as residue | cleanup failure is reported successful |
+| T-REM-OBSERVER-LEASE — remote observer cannot control | Remote observer DATA/RESIZE has no PTY/winsize effect; controller remains live | remote transport upgrades observer role |
+| T-REM-NFR-SEPARATE — remote latency is never NFR-KEY | Remote target refuses `--nfr-key` and report contains RTT-labelled remote metric only | reporter labels remote p95 NFR-KEY |
+
+### Content, retention and recovery
+
+| Gate | Downstream oracle | Required mutation |
+|---|---|---|
+| T-CONTENT-MONOTONIC-OFFSETS — eviction never renumbers retained bytes | Append/evict/append ranges retain absolute offsets and generation; readers detect old base | ring reports snapshot-relative offsets |
+| T-CONTENT-RANGE-REQUIRES-STATE — arbitrary range is not renderable without prior VT state | Slice beginning mid-sequence is refused without compatible checkpoint and succeeds from checkpoint against independent VT | renderer always resets VT before slice |
+| T-CONTENT-SURVIVES-RING-EVICTION — retained timeline content outlives hot ring | Materialized content remains identical after source eviction when policy retained it | timeline reads moving ring on every render |
+| T-CONTENT-NO-PROMPT-HEURISTIC — command boundaries require explicit events | Prompt-shaped output without mark remains terminal region; explicit submission/mark creates boundary | regex matching the dollar-space prompt creates command |
+| T-CONTENT-ALT-SAME-PTY — full-screen TUI stays one mutable terminal surface | PTY/device/TerminalExecution unchanged; no timeline Block for live alternate grid | alt grid copied into new Block each frame |
+| T-CONTENT-RETENTION-DISABLED — durable capture can be entirely disabled | Run/output/restart leaves no durable raw/transcript/history/task payload while bounded live reconnect works | disabled policy still writes transcript segment |
+| T-CONTENT-RETENTION-RESTRICTIVE-WINS — corporate/session policy cannot be widened locally | More restrictive parent rule wins resolution and blocks capture/export | closest Workspace setting always wins |
+| T-CONTENT-REDACTION-DERIVED — redaction does not rewrite source or claim capture authority | Export is transformed and labelled; canonical hash unchanged; capture-disabled source was never stored | redactor mutates canonical record |
+| T-CONTENT-TRUNCATION-VISIBLE — deleted/evicted sources remain honest | Referring item becomes explicit tombstone/discontinuity with range/reason | UI omits gap marker |
+| T-CONTENT-BOUNDED-RECOVERY — logs/checkpoints/materialization stay bounded | Long-output/restart fixture remains within declared byte/item bounds and reconstructs or names discontinuity | checkpoint created for every frame |
+| T-BLOCK-CONTENT-IDENTITY — Block groups stable ContentItems, not only ring offsets | Evict hot ring and retain policy content; Block identity/output remains stable | Block stores only `(start,end)` |
+| T-BLOCK-RERUN — rerun fills input and never executes | Child receives no bytes until separate submit; exact retained command visible | rerun action writes directly to PTY |
+
+### Compositor, text, editor and library seams
+
+| Gate | Downstream oracle | Required mutation |
+|---|---|---|
+| T-COMPOSITOR-PRESERVES-METAL-GRID — existing grid remains the terminal primitive | Packaged raw/TUI fixture uses Metal grid and keeps T-NFR/T-ALT behavior | terminal content rendered through generic text nodes |
+| T-COMPOSITOR-VIRTUALIZED-CONTENT — offscreen content is not fully materialized | Million-item fixture keeps scene/item/glyph counts within declared viewport+overscan bounds | compositor builds every timeline item |
+| T-COMPOSITOR-NO-DOMAIN-OWNERSHIP — scene teardown cannot delete domain state | Destroy/rebuild scene; Workspace/Session/Task/Content IDs and worker pid unchanged | scene-node drop closes Session |
+| T-TEXT-CLUSTER-SHAPING — text shaping operates on clusters/runs | Ligature, combining, emoji-ZWJ and fallback fixtures match platform shaping oracle | shaper maps only the first scalar |
+| T-EDITOR-RAW-BYPASS — raw mode never invokes structured editor | Instrumented TUI receives byte-identical keys with editor counters zero | raw input first inserts into editor buffer |
+| T-SELECTION-SURFACE-ANCHORS — selection survives surface-specific updates | Terminal, timeline and editor anchors produce ordered copy after unrelated reflow | all anchors use screen row/column |
+| T-A11Y-VIRTUALIZED-BOUNDS — accessibility is semantic and bounded | VoiceOver fixture reaches visible terminal/content/actions; offscreen node count stays bounded | full transcript rebuilt each frame |
+| T-COMPOSITOR-WARM-PATH-BOUNDARY — rich scene adds no warm control RPC/string cells | NFR trace has only allowed DATA/CREDIT and zero per-cell String allocations with content enabled | key event serializes ContentItem JSON |
+| T-LIBRARY-NO-UI-DEPENDENCY — internal core boundaries do not depend on app UI | Resolved dependency graph catches an injected AppKit/host dependency | checker examines filenames only |
+| T-LIBRARY-WASM-PROOF-BEFORE-PUBLIC — no public/WASM promise without all gates | Release manifest refuses public stability absent conformance, fuzz, security, WASM and two RILL-client proofs | manifest trusts crate version alone |
+
+### Task and capture evidence corrections
+
+| Gate | Downstream oracle | Required mutation |
+|---|---|---|
+| T-TASK-SERIALIZE — existing `t_task_persist...` is a library serialization sub-gate | In-process text round-trip preserves current sections, decisions and queue only; it makes no disk/restart claim | `skip_persisting_queue` |
+| T-TASK-COMPLETE-OBJECT — Task contains required identity and targets | Durable round-trip preserves status/cwd/host/label and exact domain IDs | target is reconstructed from display label |
+| T-TASK-RUNTIME-PERSIST — Task survives GUI and daemon restart | Kill GUI and control daemon; recovered runtime returns same Task sections, decisions and queue from durable store | persistence remains an in-memory String |
+| T-TRUST-CAPTURE-POLICY — encryption/redaction never substitutes for capture permission | Capture-disabled policy produces no durable payload even with encryption key and redactor available | encrypted sink bypasses policy denial |
+
+The binding execution order is domain/lifecycle → runtime/workers/leases →
+checkpoints/reconciliation → content/retention → compositor/input/selection →
+remote/mobile → agents. Chip 1 live-swap gates remain parked until the
+checkpoint and mirror gates above have demonstrated red.

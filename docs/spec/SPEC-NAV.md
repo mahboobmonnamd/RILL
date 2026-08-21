@@ -2,31 +2,37 @@
 
 - **Status:** Accepted — 2026-08-18. `crates/rill-kernel` now implements §1's
   container tree (`NodeId`, `NodeKind`, `create_node`, `attach_leaf`,
-  `reparent_node`, `close_node`, `container_snapshot`). Three kernel-plane
-  sub-gates are **Proven at the library level** —
+  `reparent_node`, `close_node`, `container_snapshot`). Two kernel-plane
+  sub-gates remain **Proven at the library level** —
   `cargo test -p rill-kernel --test nav_gates`, red-then-green demonstrated
   under `--features mutate` (evidence below). The full gates in §11's table
   remain **Red**: each also names a chrome-renders-from-it or
   window-close-terminates-nothing half that needs `host/macos/` wiring and a
-  packaged `Rill.app` e2e (ADR 0020 D7, ADR 0002 D8). A kernel-plane library
+  packaged `Rill.app` e2e (ADR 0038 D7, ADR 0002 D8). A kernel-plane library
   test does not close a gate whose oracle names packaged behaviour — it only
   proves the layer under it is sound.
-- **Authority:** [ADR 0020](../adr/0020-session-graph-navigation-model.md),
-  [ADR 0021](../adr/0021-inventories-are-cold-readers.md)
+- **Authority:** [ADR 0038](../adr/0038-session-graph-navigation-model.md),
+  [ADR 0039](../adr/0039-inventories-are-cold-readers.md), amended by
+  [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md) D1–D3
 - **Requires:** [SPEC-GRAPH](SPEC-GRAPH.md), [SPEC-KERNEL](SPEC-KERNEL.md),
-  [SPEC-CHROME](SPEC-CHROME.md)
+  [SPEC-CHROME](SPEC-CHROME.md),
+  [SPEC-DOMAIN-LIFECYCLE](SPEC-DOMAIN-LIFECYCLE.md)
 - **Crates:** `crates/rill-kernel`, `crates/rilld`, `crates/rill-host`,
   `host/macos/`
 - **Milestone:** M2 — Chrome
 
 Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
-## 1. Container tree
+## 1. Durable hierarchy and existing container tree
 
-- The kernel MUST store container nodes above leaves: `Workspace`, `Group`,
-  `Tab`, `Split`.
-- `NodeId` is a kernel-allocated `u64`, disjoint from `SessionId`, and MUST NOT
-  be reused while the node is live.
+- The target durable hierarchy is `Workspace → Session → Tab → Split tree →
+  TerminalPane → TerminalExecution?`.
+- The existing `Workspace`, `Group`, `Tab`, `Split` node slice is preserved as
+  implementation evidence, not declared equal to the target hierarchy.
+- `Group` is an optional non-owning organizational projection under Workspace;
+  it MUST NOT become a lifecycle owner between Workspace and Session.
+- `NodeId` is disjoint from durable `SessionId` and `TerminalExecutionId` and
+  MUST NOT be reused while its node is live.
 - `NodeId` MUST NOT be a path, a title, or a GUI index (same rule SPEC-GRAPH §1
   sets for `SessionId`).
 - `layout_snapshot` MUST carry the container tree. It stays cold. It MUST NOT
@@ -35,46 +41,56 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
   MUST re-read on disagreement.
 - A node chrome invented and the kernel does not have MUST NOT render.
 
-## 2. Pane slots and surface stacks
+## 2. Terminal panes and surface stacks
 
-- A pane slot holds an ordered list of surfaces and displays one.
+- A TerminalPane holds an ordered presentation stack and displays one surface.
+- Its terminal surface references zero or one TerminalExecution. Rich surfaces
+  and inspectors own no PTY.
 - Hiding a surface MUST detach only the presenter.
-- The kernel MUST keep the hidden leaf alive and MUST keep draining its PTY into
-  its ring. Hidden panes MUST NOT stall the child (PRD NFR-DROP).
-- Re-showing MUST resync once through the existing cold per-leaf path
-  (FR-RESYNC). It MUST NOT respawn and MUST NOT change the pid.
-- Each terminal surface is its own leaf with its own attach. A stack MUST NOT
-  multiplex several leaves onto one attach (FR-ONE, ADR 0011 D3).
+- The runtime MUST keep a hidden TerminalExecution alive and drain its PTY under
+  bounded recovery policy. Hidden panes MUST NOT stall the child.
+- Re-showing initializes a disposable client mirror from the host checkpoint
+  and deltas. It MUST NOT respawn or change the child pid.
+- A stack MUST NOT multiplex several TerminalExecutions onto one terminal
+  attach or assign a PTY to a non-terminal surface.
 
 ## 3. Close
 
-- ⌘W MUST resolve innermost-first: surface → pane → tab → workspace → window.
-- Closing a container MUST terminate its leaves by explicit
-  `Kernel::terminate(id)`. `Drop` MUST NOT kill a child.
-- Closing the **window** MUST NOT terminate any leaf. Packaged T-KILL is the
-  closer and MUST stay green.
+- ⌘W resolves innermost-first as a per-client presentation close: surface →
+  terminal pane → tab → Session presentation → Workspace presentation → window.
+- Each step hides that client's presentation while preserving the same domain
+  IDs and any TerminalPane-to-TerminalExecution binding. It MUST NOT infer
+  Session or TerminalExecution termination or remove an object from the shared
+  layout. A later remove-from-layout action requires its own Accepted domain
+  transition. A destructive terminate action invokes SPEC-DOMAIN-LIFECYCLE §5
+  with the exact affected identities and attached clients shown.
+- Closing the window MUST NOT terminate any TerminalExecution. Packaged T-KILL
+  remains binding.
 
 ## 4. Rearrange, zoom, templates
 
 - Drag, split, unsplit, zoom and equalize MUST be reparent/resize operations.
-- They MUST NOT change a `SessionId`, MUST NOT `posix_spawn` a shell, and MUST
-  NOT detach and re-attach a visible leaf.
+- They MUST NOT change a durable `SessionId` or `TerminalExecutionId`, MUST NOT
+  `posix_spawn` a shell, and MUST NOT recreate a visible execution.
 - The only warm-path frame they may cause is the in-band `RESIZE` (FR-RESIZE).
-- Layout templates MUST serialize the container tree, per-leaf cwd, and startup
-  command. They MUST NOT serialize scrollback and MUST NOT claim to restore a
-  live child. Restoring spawns new leaves and MUST say so.
+- Layout templates serialize only declared template state. Reattaching a live
+  Session resolves the existing IDs. Starting from a template is a separate
+  action that spawns new TerminalExecutions and MUST say so. A template MUST
+  NOT claim that it restored a live process or transcript.
 
 ## 5. View state
 
-- Sidebar hide and vertical workspace tabs MUST NOT detach, terminate, resize a
-  leaf, or reach the kernel.
+- Workspace UI, Session UI, sidebar and vertical-tab visibility are per-client
+  view state. Toggling them MUST NOT create, delete, migrate, detach, terminate
+  or resize domain objects. Explicit deep links still resolve hidden objects.
 
 ## 6. Identity
 
-- The default leaf remains the 8-byte ATTACH target (SPEC-GRAPH §2).
-- A session name is a cold kernel-owned label on a `Workspace`. A name MUST NOT
-  be used to address a leaf on the attach path.
-- The host indicator MUST read the leaf's kernel identity cold. In M2 it MUST
+- The current default execution remains the legacy 8-byte ATTACH target only
+  until the versioned ClientId/TerminalExecutionId protocol migration.
+- Workspace and Session labels are cold runtime-owned properties of their own
+  objects. A label MUST NOT address an execution on the attach path.
+- The host indicator MUST read the execution's verified host identity cold. In M2 it MUST
   render `local`. Remote identity is [SPEC-REMOTE](SPEC-REMOTE.md) §4 and MUST
   be the verified identity, never a user-supplied label.
 
@@ -91,15 +107,16 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
   confirmation, never a side effect of selection.
 - The resource view MUST attribute to the kernel-owned child pid and MUST NOT
   walk the full process table on the sample path.
-- The agent inventory MUST render empty until ADR 0030's `Task` exists. It MUST
+- The agent inventory MUST render empty until ADR 0048's `Task` exists. It MUST
   NOT show fabricated rows.
 
 ## 8. Focus history and reopen
 
 - Focus history is a bounded host-side ring, capacity **64**.
 - Entries whose node no longer exists MUST be skipped, not resurrected.
-- Reopen-closed MUST restore a layout template and spawn a new leaf. It MUST NOT
-  claim the old pid and MUST NOT resurrect ring-dropped scrollback.
+- Reopen of a still-live Session reattaches its existing identities. Restore
+  from a template explicitly spawns new executions. Neither may fabricate a
+  dead pid, missing transcript or evicted recovery data.
 
 ## 9. Global summon and deep links
 
@@ -129,7 +146,7 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 |---|---|---|
 | T-NAV-TOPOLOGY | Red (kernel-plane half Proven, library) | §1 |
 | T-NAV-STACK | Red | §2 |
-| T-NAV-CLOSE | Red (kernel-plane half Proven, library) | §3 |
+| T-NAV-CLOSE | Red | §3 |
 | T-NAV-REPARENT | Red (kernel-plane half Proven, library) | §4 |
 | T-NAV-VIEWSTATE | Red | §5 |
 | T-INV-COLD | Red | §7 |
@@ -148,23 +165,28 @@ demonstrates three sub-properties red-then-green, `--test-threads=1`, real
 | Test | Green | Required mutation | Demonstrated red |
 |---|---|---|---|
 | `t_nav_topology_snapshot_reflects_created_nodes_and_leaves` | `cargo test -p rill-kernel --test nav_gates` | `RILL_MUTATE=omit_node_children` | `cargo test -p rill-kernel --features mutate --test nav_gates` |
-| `t_nav_close_terminates_only_the_closed_subtrees_leaves` | same | `RILL_MUTATE=close_node_terminates_all_leaves` | same |
+| `t_nav_close_terminates_only_the_closed_subtrees_leaves` | historical only; superseded by ADR 0053 D3 | `RILL_MUTATE=close_node_terminates_all_leaves` | same |
 | `t_nav_reparent_preserves_session_identity` | same | `RILL_MUTATE=reparent_recreates_node` | same |
 
-Each mutation was confirmed to turn **only** its own test red, with the other
-two staying green (ADR 0002 D3's isolation requirement) and the full
-pre-existing `rill-kernel` suite (23 Spike-0/M1 gates + 2 unit tests)
-unaffected. This closes the data-structure prerequisite for T-NAV-TOPOLOGY,
-T-NAV-CLOSE and T-NAV-REPARENT. It does **not** close those gates: none of
-this has a window yet. `host/macos/ChromeHost` does not call `create_node`,
-`reparent_node`, or `close_node`, and no packaged e2e has run. That wiring is
-open work — see [#260](https://github.com/mahboobmonnamd/RILL/issues/260)'s
-lane for the host side.
+The three mutations were historically confirmed to turn **only** their own
+test red, with the other two staying green (ADR 0002 D3's isolation
+requirement) and the full pre-existing `rill-kernel` suite (23 Spike-0/M1 gates
+and 2 unit tests) unaffected. ADR 0053 D3 supersedes the close test's product
+oracle: presentation close no longer owns or terminates executions. That test
+preserves decision history but is not evidence for the current T-NAV-CLOSE and
+its behavior MUST NOT be wired into chrome. The topology and reparent tests
+close only their data-structure prerequisites. None of the full gates has a
+window yet: `host/macos/ChromeHost` does not call `create_node`, `reparent_node`
+or `close_node`, and no packaged e2e has run. That wiring is open work — see
+[#260](https://github.com/mahboobmonnamd/RILL/issues/260)'s lane for the host
+side.
 
 ## 12. Out of scope
 
-Blocks, agents, conversations, Chip 1 live, remote hosts, non-terminal surfaces,
-a second window, a second VT, JSON or cells on the warm path.
+The proven M2 library slice does not implement ContentTimeline, agents,
+conversations, Chip 1 live, remote hosts, non-terminal surfaces or a second
+window. Those items are governed by later specs. JSON or cells on the warm path
+remain forbidden.
 
 ## 13. What we will not do
 

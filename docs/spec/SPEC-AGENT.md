@@ -2,7 +2,10 @@
 
 - **Status:** Accepted — 2026-08-18. Gates **Red** until demonstrated
   red-then-green (ADR 0002 D2).
-- **Authority:** [ADR 0031](../adr/0031-agent-adapters-and-lifecycle-authority.md)
+- **Authority:** [ADR 0049](../adr/0049-agent-adapters-and-lifecycle-authority.md),
+  constrained by
+  [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md) D1,
+  D7, D10 and D12
 - **Requires:** [SPEC-TASK](SPEC-TASK.md), [SPEC-TRUST](SPEC-TRUST.md),
   [SPEC-ATTENTION](SPEC-ATTENTION.md), [SPEC-FIDELITY](SPEC-FIDELITY.md)
 - **Milestone:** M3 — Conversations
@@ -46,12 +49,13 @@ There MUST be exactly one code path that writes bytes a human did not type
 (direct attach, CLI orchestration, agent-drives-TUI). It MUST:
 
 - require an explicit granted capability (§5),
-- be the leaf's single writer or not write (FR-ONE),
+- hold the TerminalExecution's current input lease or not write,
 - be visibly attributed while it holds the write,
 - refuse when the target is not the task's declared target `NodeId`.
 
-Agent-drives-TUI MUST additionally be per-session opt-in, never a default, and
-interruptible by any user keystroke — the human's key wins.
+Agent-drives-TUI MUST additionally be per-Session opt-in, never a default, and
+interruptible by explicit human lease takeover. No automated client can retain
+or reacquire input merely because it had it before a disconnect.
 
 CLI verbs live on the daemon socket under SPEC-TRUST §7. There is no `exec`
 verb.
@@ -98,13 +102,18 @@ verb.
 
 ## 9. Input routing and voice
 
-- Enter → PTY. ⌘Enter → conversation (PRD §6).
+- Raw terminal mode routes input to the leased PTY. Structured submissions
+  create explicit Conversation/Task/ContentTimeline events (PRD §6).
 - There MUST NOT be a natural-language classifier on the input path — no PATH
   heuristic, no English heuristic, no local model.
 - Voice is transcription into the input field; the user still presses Enter or
   ⌘Enter.
 - Audio MUST be opt-in, MUST show when the microphone is live, and MUST NOT be
   transmitted without that specific granted capability.
+
+Agent product surfaces land only after domain/lifecycle, runtime workers,
+checkpoint reconciliation, ContentTimeline and compositor gates. Milestone M3
+does not override ADR 0053 D12's dependency order.
 
 ## 10. Computer and browser use
 

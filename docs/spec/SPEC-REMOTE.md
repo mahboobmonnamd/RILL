@@ -1,97 +1,134 @@
-# SPEC-REMOTE — remote kernels and transports (`lane:kernel`)
+# SPEC-REMOTE — remote runtimes, SSH compatibility and mobile clients
 
-- **Status:** Accepted — 2026-08-18. Gates **Red** until demonstrated
-  red-then-green (ADR 0002 D2).
-- **Authority:** [ADR 0023](../adr/0023-remote-is-a-second-kernel.md)
-- **Requires:** [SPEC-ATTACH](SPEC-ATTACH.md), [SPEC-KERNEL](SPEC-KERNEL.md),
-  [SPEC-GRAPH](SPEC-GRAPH.md), [SPEC-CWD](SPEC-CWD.md)
-- **Crates:** `crates/rill-attach`, `crates/rill-kernel`, `crates/rilld`
-- **Milestone:** M2 — Chrome
+- **Status:** Red. Specification only; no implementation is authorized.
+- **Authority:** [ADR 0041](../adr/0041-remote-is-a-second-kernel.md), amended
+  by [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md)
+  D5–D6 and D10–D11.
+- **Requires:** [SPEC-ATTACH](SPEC-ATTACH.md),
+  [SPEC-RUNTIME-SUPERVISION](SPEC-RUNTIME-SUPERVISION.md),
+  [SPEC-CLIENT-AUTHORITY](SPEC-CLIENT-AUTHORITY.md),
+  [SPEC-DOMAIN-LIFECYCLE](SPEC-DOMAIN-LIFECYCLE.md).
+- **Lane:** `lane:kernel` for runtime/transport and native client lanes for
+  presentation.
 
-Normative keywords: MUST, MUST NOT, SHOULD, MAY.
+## 1. Process-host authority
 
-## 1. One protocol
+For a local Mac, another user-owned Mac/Linux machine, or a user-owned VPS/VM,
+the RILL runtime on the machine where the PTY and process run is authoritative.
+It owns canonical terminal state, checkpoints, transcript, graph, tasks and
+leases. A client does not become authority by being local to the display.
 
-- A remote host is `rilld` on that machine, reached by the **same** frame codec
-  over a transport.
-- There MUST be exactly one attach protocol. There MUST NOT be a remote-specific
-  frame, resync, or Chip 0.
-- Chip 0 runs **locally**, fed bytes that arrived over the transport.
-- Processes and credentials MUST stay on the remote machine. The client MUST NOT
-  ship keys anywhere and MUST NOT proxy PTY bytes through a third party.
+There is one versioned RILL product protocol across local and remote transports.
+Transport-specific setup does not create a second domain, resync or display
+model. PTY bytes never pass through a RILL-hosted third-party relay under this
+authority.
 
-## 2. Transports
+## 2. RILL-installed remote hosts
 
-- SSH and Mosh implement one `Transport` abstraction: framed, ordered,
-  reliable-or-explicitly-broken.
-- A transport MUST NOT reinterpret frames, MUST NOT redeliver `DATA` it already
-  delivered, and MUST fail closed on ambiguous state (PRD NFR-FAIL).
-- SSH remains the control and authentication channel when Mosh carries the PTY.
-- The thin client is the local host process with a remote transport: local
-  keybindings, local clipboard, remote leaf. It MUST NOT be a second UI.
+Local Unix transport lands first. SSH may carry an explicitly selected RILL
+protocol stream to an installed runtime. A later direct mutually authenticated
+transport remains behind the same boundary and requires a separate threat
+model, device-pairing/revocation contract and spike.
 
-## 3. Measurement
+Before attach, the client verifies host/device identity, runtime protocol,
+checkpoint version and granted role. Identity changes and unsupported versions
+fail closed with both sides named; no silent downgrade is permitted.
 
-- `--nfr-key` MUST refuse to run against a remote leaf.
-- A remote latency number MUST NOT be reported as NFR-KEY.
-- Remote echo latency is its own named budget, reported with transport RTT
-  alongside.
+Reconnect attaches the same TerminalExecutionId, initializes a disposable VT
+mirror from a compatible host checkpoint, applies ordered deltas and verifies
+offset/hash. Missing data is a visible Discontinuity. Offline input is never
+buffered for later injection.
 
-## 4. Identity
+## 3. Zero-footprint SSH
 
-- Host key verification MUST complete before any byte is written to the remote
-  and before any credential is offered.
-- A changed host key MUST stop and require explicit user action. It MUST NOT be
-  a dismissible toast. There MUST NOT be an "always trust" default.
-- Protocol version mismatch MUST fail closed with both versions named. It MUST
-  NOT negotiate down silently.
-- The host indicator (SPEC-NAV §6) MUST show the verified identity.
+Zero-footprint SSH is a compatibility terminal, not a RILL remote runtime. RILL
+invokes only the SSH session the user requested. It MUST NOT:
 
-## 5. Reconnect
+- probe whether RILL or another helper is installed;
+- upload, install, bootstrap or execute a helper;
+- modify shell profiles, startup files or remote configuration;
+- inspect remote terminal/session/history state; or
+- execute hidden remote commands before, during or after the session.
 
-- Reconnect MUST use bounded exponential backoff and MUST re-attach the same
-  `SessionId`.
-- Replay comes from the remote kernel's ring (FR-HISTORY), resynced cold, once,
-  like any attach (FR-RESYNC).
-- A gap larger than the ring MUST render as a visible discontinuity. Partial
-  scrollback MUST NOT be presented as continuous.
-- While disconnected the pane MUST render disconnected and MUST NOT buffer input
-  for a blind flush.
+The UI and API expose a capability downgrade before connect: no RILL-owned
+remote process persistence, canonical transcript, rich content, checkpoint
+reconnect or multi-client lease semantics. Ordinary raw SSH/tmux behavior
+inside the requested session remains compatible.
 
-## 6. Conveniences
+## 4. Optional enhanced bootstrap
 
-- Remote attention events travel as orchestration on the same connection, carry
-  the verified host identity, and MUST NOT claim to be local
-  ([SPEC-ATTENTION](SPEC-ATTENTION.md) §4).
-- File drop MUST show the destination path and confirm. It MUST NOT overwrite
-  without asking. Remote cwd reads the remote cold tap.
-- A tunnel for remote browsing MUST be explicit, confirmed, and scoped to a
-  named port. RILL MUST NOT open a tunnel because a pane mentioned a port.
+Enhanced bootstrap is a separate explicit action. It runs only when local and
+remote policy permit. Before execution it presents:
 
-## 7. Refused
+- every remote command;
+- artifact identity, size, source and destination;
+- required permissions and expected lifetime;
+- runtime/protocol compatibility; and
+- cleanup plan and known residue risks.
 
-- Adopting a foreign tmux server as native panes. A mirrored pane has no
-  `SessionId`, no ring, no sole-writer guarantee, and no `terminate`.
-- Running tmux **inside** a leaf remains supported (SPEC-NAV §10).
+Consent is bound to that unchanged plan. A changed plan requires new consent.
+Cleanup is best effort. RILL reports and journals success, residue or
+unverifiable cleanup; it never promises that remote artifacts were removed.
+Enhanced bootstrap MUST NOT modify profiles unless a later separately approved
+feature names that exact change.
+
+## 5. Multi-client and geometry
+
+Every remote client follows SPEC-CLIENT-AUTHORITY. One ClientId holds the
+input/resize lease; observers cannot write, resize or affect another client's
+credit. The lease owner determines canonical PTY geometry. Other clients crop,
+pan or letterbox the live terminal and may reflow immutable structured content.
+
+Transport loss starts lease grace and detaches presentation. It does not
+terminate Session or TerminalExecution. A takeover is explicit, atomic and
+attributed to all clients.
+
+## 6. Mobile
+
+iPhone/iPad attaches as a client to an existing awake, online and reachable
+runtime. Mobile v1 prioritizes viewing, attention, approvals, questions,
+diff/change review and deliberate input-lease takeover. Backgrounding,
+suspension or network loss releases presentation/lease according to policy and
+never expresses process-termination intent.
+
+Mobile does not own a Mac/Linux/VPS PTY, maintain an authoritative VT, or queue
+offline keystrokes. Its local VT mirror is disposable and uses the same
+checkpoint/reconciliation contract as desktop.
+
+## 7. Measurement and conveniences
+
+NFR-KEY is a local terminal-path gate. Remote latency is reported separately
+with transport RTT and MUST NOT be presented as NFR-KEY.
+
+Remote attention, file transfer, port forwarding and browsing are explicit
+capabilities attributed to verified host identity. File destination and tunnel
+ports are shown and confirmed. Mentioning a path or port in terminal output
+never triggers an action.
 
 ## 8. Gates
 
 | ID | Status | Closes |
 |---|---|---|
-| T-REM-CODEC | Red | §1 |
-| T-REM-NFR | Red | §3 |
-| T-REM-HOSTKEY | Red | §4 |
-| T-REM-RECONNECT | Red | §5 |
-| T-REM-TUNNEL | Red | §6 |
+| T-REM-HOST-AUTHORITY | Red | §§1–2 |
+| T-REM-IDENTITY-VERSION | Red | §2 |
+| T-REM-CHECKPOINT-RECONNECT | Red | §2 |
+| T-SSH-ZERO-FOOTPRINT | Red | §3 |
+| T-SSH-ENHANCED-PLAN-CLEANUP | Red | §4 |
+| T-REM-OBSERVER-LEASE | Red | §5 |
+| T-MOBILE-BACKGROUND-DETACH | Red | §6 |
+| T-REM-NFR-SEPARATE | Red | §7 |
 
 ## 9. Out of scope
 
-An account, a control plane, cloud relay of PTY bytes, agents over SSH, remote
-Blocks, bundling `ssh`.
+A RILL account, hosted control plane, relay, bundled SSH implementation, direct
+transport selection, invisible helper installation and foreign tmux adoption
+as native panes. Nested tmux remains supported as an ordinary child.
 
 ## 10. What we will not do
 
-- Marshal cells or JSON over the wire.
-- Run Chip 0 on the remote and stream frames.
-- Report remote latency as NFR-KEY.
-- Default to trusting a changed host key.
+- Claim SSH alone provides RILL persistence or transcript semantics.
+- Probe or bootstrap in zero-footprint mode.
+- Promise enhanced-bootstrap cleanup.
+- Stream host-rendered per-frame cells or JSON.
+- Trust a changed host identity or silently downgrade protocol.
+- Buffer input while disconnected.

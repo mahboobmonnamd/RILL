@@ -2,7 +2,9 @@
 
 - **Status:** Accepted — 2026-08-18. Gates below are **Red** until demonstrated
   red-then-green (ADR 0002 D2).
-- **Authority:** [ADR 0022](../adr/0022-terminal-fidelity-is-chip0.md)
+- **Authority:** [ADR 0040](../adr/0040-terminal-fidelity-is-chip0.md), amended
+  by [ADR 0037](../adr/0037-chip1-live-swap.md) and
+  [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md) D5–D8
 - **Requires:** [SPEC-CHIP0](SPEC-CHIP0.md), [SPEC-DISPLAY](SPEC-DISPLAY.md),
   [SPEC-KERNEL](SPEC-KERNEL.md), [SPEC-CWD](SPEC-CWD.md)
 - **Crates:** `crates/rill-chip0`, `crates/rill-kernel`, `host/macos/`
@@ -12,12 +14,15 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
 ## 1. Parsing boundary
 
-- Escape sequences MUST be interpreted only inside the Chip 0 adapter.
-- The host MUST NOT parse escape sequences.
-- The host MUST NOT keep its own copy of mouse mode, alternate-screen state, or
-  keyboard-protocol flags. It queries Chip 0.
-- Alternate screen, mouse reporting modes, the Kitty keyboard protocol, Unicode
-  width and grapheme clustering, and graphics protocols are Chip 0's.
+- Escape sequences MUST be interpreted only inside the selected terminal-core
+  implementation: Chip 0 now and Chip 1 only after its live gates.
+- Host application/UI code MUST NOT grow an escape parser. The authoritative
+  host terminal core owns screen, modes, cursor and canonical geometry; a
+  disposable client mirror maintains the same state for warm rendering and
+  reconciles with host checkpoints/hashes.
+- Alternate screen, mouse reporting modes, keyboard protocols, Unicode width,
+  grapheme clustering and graphics protocols belong to terminal core, not the
+  compositor or ContentTimeline.
 
 ## 2. Capability reporting
 
@@ -37,7 +42,8 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
 ## 4. Shells and nested tools
 
-- Leaves are spawned by `Kernel::spawn_leaf` with the user's login shell. The
+- TerminalExecutions are spawned by the runtime worker with the user's selected
+  shell. The
   GUI MUST NOT `posix_spawn` the shell (NFR-SPAWN, link-level gate).
 - RILL MUST NOT special-case a shell by name for correctness.
 - Shell integration MUST be opt-in and additive. Every behaviour it improves
@@ -48,20 +54,24 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 ## 5. Startup env and cwd
 
 - Working-directory policy (home / previous / custom) and startup shell and env
-  MUST be resolved **before** `spawn_leaf`, by the kernel, from config and the
-  container node.
+  MUST be resolved before spawning TerminalExecution, by the runtime, from
+  config and the owning Session/terminal-pane context.
 - They MUST NOT be applied by writing `cd` or `export` into the PTY after spawn.
 - "Previous" reads the cold cwd tap (SPEC-CWD). With no answer, policy falls
   back to home and MUST NOT block the spawn.
 
-## 6. Scrollback ring
+## 6. Hot recovery ring and retained content
 
-- The bound is **bytes per leaf**, configurable, default **8 MiB**. It MUST NOT
-  be expressed in lines.
+- The hot bound is **bytes per TerminalExecution**, configurable and expressed
+  in bytes, not lines. The Accepted product default remains 8 MiB until a later
+  ADR changes it; the current 4 MiB code constant is therefore a Red mismatch,
+  not authority.
 - Hidden panes MUST keep draining ([SPEC-NAV](SPEC-NAV.md) §2). Memory is
   controlled by the ring, never by refusing to read.
-- What a resync replays MUST match what the ring holds. Bytes the ring dropped
-  MUST NOT be implied to still exist.
+- Ring offsets are monotonic and eviction advances an explicit retained base.
+  Reconnect uses a host checkpoint plus retained deltas. Bytes or durable
+  content that policy deleted MUST NOT be implied to exist. Durable capture is
+  separately policy-controlled by SPEC-CONTENT and may be disabled.
 
 ## 7. Config import
 
@@ -93,8 +103,10 @@ T-NFR MUST NOT be re-cut. T-LOOK-FILE, T-LOOK-ANSI, T-LOOK-UNKNOWN stay green.
 
 ## 10. Out of scope
 
-Chip 1 as the live chip, a second VT, Blocks, replacing `libghostty-vt`, GUI
-spawn of the user shell.
+Chip 1 as the live chip, structured content, replacing `libghostty-vt`, and GUI
+spawn of the user shell remain outside the currently proven fidelity slice.
+One authoritative host VT plus disposable client mirrors is not permission for
+competing authoritative parsers.
 
 ## 11. What we will not do
 

@@ -1,19 +1,27 @@
-# SPEC-INPUT — the Blocks input field (`lane:host`)
+# SPEC-INPUT — structured editor and raw terminal routing (`lane:host`)
 
 - **Status:** Accepted — 2026-08-18. Gates **Red** until demonstrated
   red-then-green (ADR 0002 D2).
-- **Authority:** [ADR 0033](../adr/0033-input-editor-history-and-completion.md)
+- **Authority:** [ADR 0051](../adr/0051-input-editor-history-and-completion.md),
+  amended by
+  [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md) D7–D10
 - **Requires:** [SPEC-BLOCKS](SPEC-BLOCKS.md), [SPEC-FIDELITY](SPEC-FIDELITY.md),
-  [SPEC-CONFIG](SPEC-CONFIG.md), [SPEC-TRUST](SPEC-TRUST.md)
-- **Milestone:** M6 — Blocks
+  [SPEC-CONFIG](SPEC-CONFIG.md), [SPEC-TRUST](SPEC-TRUST.md),
+  [SPEC-CONTENT](SPEC-CONTENT.md), [SPEC-COMPOSITOR](SPEC-COMPOSITOR.md),
+  [SPEC-CLIENT-AUTHORITY](SPEC-CLIENT-AUTHORITY.md)
+- **Milestone:** after content, compositor and lease foundations; historical M6
+  numbering does not override ADR 0053 D12.
 
 Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
 ## 1. Mode
 
-- With Blocks off, keys go to the PTY and every feature here is inert. RILL MUST
-  NOT intercept, echo, or buffer keys in raw mode.
-- With Blocks on, the field composes a line and submits on Enter (PRD §6).
+- In raw terminal/TUI mode, keys go through the current input lease to the PTY
+  and every structured-editor feature is inert. RILL MUST NOT intercept, echo,
+  rewrite or buffer keys in raw mode.
+- In structured mode, `rill-editor` composes content and emits an explicit
+  submission into ContentTimeline, Conversation/Task routing, or the leased
+  PTY according to the visible selected action. No classifier chooses.
 - The field MUST NOT reimplement shell semantics: no glob expansion, no `$VAR`
   resolution, no word splitting. What the user sees is what the shell receives,
   byte for byte.
@@ -38,11 +46,12 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
 ## 4. History
 
-- History records command, cwd, exit status, duration — per session, merged for
+- History records command, cwd, exit status, duration — per Session, merged for
   search.
-- It is a local user-owned file. It MUST NOT be uploaded, synced by default, or
-  shared.
-- Redaction applies; history is a persisting sink.
+- Durable history is local and policy-controlled and MAY be disabled entirely.
+  It MUST NOT be uploaded, synced by default, or shared.
+- Capture obeys SPEC-CONTENT. Redaction applies to derived export/transmission
+  sinks and is not authority to collect.
 - A command the user's shell would not record (leading space under
   `HIST_IGNORE_SPACE`) MUST NOT be recorded here.
 
@@ -74,6 +83,9 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
   change.
 - It MUST NOT be the default for any pane set, and disabling MUST be reachable
   by keyboard (SPEC-TRUST §8).
+- The controlling ClientId MUST hold a valid input lease for every target
+  TerminalExecution. Failure to obtain one target lease aborts the whole send;
+  partial synchronized input is forbidden.
 
 ## 8. Workflows
 
