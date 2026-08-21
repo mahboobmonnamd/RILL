@@ -10,7 +10,7 @@ labels: []
 kernel | attach | display | orchestration
 
 ### Lane
-`lane:kernel` | `lane:attach` | `lane:chip0-ghostty-vt` (live: libghostty-vt + Metal) | `lane:host` | `lane:chip1-vt-engine` (isolated own VT; not live until M7)
+`lane:kernel` | `lane:attach` | `lane:host` | `lane:chip1-vt-engine`
 
 ### ADR
 

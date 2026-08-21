@@ -9,8 +9,6 @@ DerivedData/
 # Secrets
 .env
 *.pem
-# Vendored emulator (fetched, not committed)
-/third_party/ghostty
 # Packaged app
 /dist
 *.app

@@ -1,4 +1,4 @@
-# Spike 0 gates. Requires macOS, Zig, a display, and the pinned libghostty-vt.
+# Packaged macOS gates. No Zig. Live chip is vt-engine (ADR 0054).
 #
 # ADR 0002 D8: a gate that has never run in CI is not evidence, whatever a
 # laptop printed. Until a self-hosted macOS runner exists this is
@@ -18,17 +18,12 @@ on:
       - "crates/**"
       - "host/**"
       - "scripts/**"
-      - "third_party/ghostty.pin"
 
 permissions:
   contents: read
 
 jobs:
   gates:
-    # A GitHub-hosted macOS runner has no physical display, no battery, no
-    # Spaces, and a 1× backing scale, so it cannot close T-NFR, T-FS-EXIT, or
-    # T-GLYPH-SCALE. Library gates and the other packaged tests still fail the
-    # job. T-NFR in `app` mode is diagnostic only (ADR 0003 D7, ADR 0009 D4).
     runs-on: macos-14
     timeout-minutes: 90
 
@@ -38,12 +33,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
-      - name: Install zig
-        run: brew install zig
-
-      - name: Build libghostty-vt at the pin
-        run: sh scripts/fetch-libghostty-vt.sh
-
       - name: Package Rill.app
         run: sh scripts/package-macos.sh
 
@@ -51,28 +40,13 @@ jobs:
         env:
           RILL_NFR_MODE: app
           RILL_NFR_OPTIONAL: "1"
-          # Bound: hosted macos-14 has no panel; nextDrawable can block
-          # forever. Do not use open -W (ADR 0009 D4).
           RILL_NFR_TIMEOUT_SEC: "45"
-        # --negative-controls already runs the unmutated gates first.
-        # Always: a gate that stays green under mutation is a broken instrument
-        # (ADR 0002 D3). workflow_dispatch can still set the input false.
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.negative_controls }}" = "false" ]; then
             sh scripts/validate-spike0.sh
           else
             sh scripts/validate-spike0.sh --negative-controls
           fi
-
-      - name: ASan over the byte fixtures
-        # SPEC-CHIP0 §5. Isolated target dir so instrumented objects never
-        # land in the rust-cache used by later jobs.
-        env:
-          RILL_ASAN: "1"
-          CARGO_TARGET_DIR: ${{ runner.temp }}/asan-target
-        run: |
-          cargo test -p rill-chip0 t_bytes -- --nocapture
-          cargo test -p rill-chip0 t_chip0_c1 -- --nocapture
 
       - uses: actions/upload-artifact@v4
         if: always()

@@ -4,10 +4,8 @@ A persistent host runtime and native content system for terminals. macOS first.
 MIT OR Apache-2.0.
 
 **Spike 0 is GREEN** ([ADR 0010](docs/adr/0010-spike-0-closes.md)). Kernel,
-attach, Chip 0, and a packaged `Rill.app` exist. Every named gate is Proven:
-library suite in [run 31993832263](https://github.com/mahboobmonnamd/RILL/actions/runs/31993832263),
-T-NFR on packaged battery hid. The 2026-08-16 marks remain withdrawn; the
-[audit](docs/SPIKE-0-AUDIT.md) is that day's defect list, closed by ADR 0010.
+attach, Chip 1 (`vt-engine`), and a packaged `Rill.app` exist. Chip 0 /
+libghostty-vt is retired ([ADR 0054](docs/adr/0054-chip0-retired.md)).
 
 Milestone 1 first slice is **Proven** ([ADR 0014](docs/adr/0014-m1-first-slice-closes.md)).
 Persist remainder is [ADR 0015](docs/adr/0015-m1-persist-remainder.md).
@@ -22,7 +20,7 @@ for regression. Launch the window with `make run`.
 | **Workspace / Session** | Stable durable grouping. The objects remain real when their management UI is hidden. Session is not a PTY. |
 | **Terminal pane / execution** | A terminal pane owns at most one TerminalExecution. That execution worker owns one PTY and child process group. `Leaf` is internal tree terminology. |
 | **Attach plane** | Versioned framed bytes, checkpoints, credit and leases between clients and the runtime. The warm path is not JSON or cells. |
-| **Terminal core / display** | Host canonical VT plus disposable client mirrors. Chip 0 is live today; Chip 1 is isolated. The existing Metal grid remains the terminal primitive. |
+| **Terminal core / display** | Host canonical VT (`vt-engine`) plus disposable client mirrors. Metal remains the terminal primitive. |
 | **ContentTimeline** | Typed primary terminal/agent content and transcript under explicit retention policy. Raw replay is recovery/audit, not normal content identity. |
 | **Conversation / Task** | Structured orchestration objects attached to domain IDs. Neither is Session, TerminalExecution or transcript. |
 | **Shell compatibility** | zsh, fish, bash and other PTY-compatible shells keep their existing prompts, themes, plugins, startup files, ANSI behavior and interactive semantics. |
@@ -49,7 +47,7 @@ make setup
 make run
 ```
 
-Installs or checks Rust (`rustc` ≥ 1.85), Zig (≥ 0.16, for Chip 0 / `libghostty-vt` only), and Xcode Command Line Tools. Then fetches Ghostty source as a build-time dep and builds the VT library — not Ghostty.app. `third_party/ghostty` is gitignored.
+Installs or checks Rust (`rustc` ≥ 1.85) and Xcode Command Line Tools. No Zig.
 
 ## Start here
 

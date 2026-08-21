@@ -11,16 +11,17 @@
 //! reported 32 microseconds (docs/SPIKE-0-AUDIT.md S1-2).
 
 use rill_attach::{cold_identity_socket_path, Decoder, Frame};
-use rill_chip0::{
-    apply_theme, load_resolved_surface, Chip0, HostSurface, PodGrid, TerminalEmulation,
-};
+use rill_look::{load_resolved_surface, HostSurface, ThemeColors};
+use rill_vt_types::{PodGrid, Rgb, TerminalEmulation, TerminalModeState, ATTR_WIDE_TAIL};
 use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
+use vt_engine::{Palette, VtEngine};
 
 mod error;
 pub use error::Error;
+pub use rill_look::chrome_surface_rgba;
 
 /// Initial credit window. Not `u32::MAX`: the client replenishes as it feeds,
 /// so the kernel can actually apply backpressure (SPEC-ATTACH §5, audit S3-5).
@@ -29,7 +30,7 @@ const CREDIT_WINDOW: u32 = 256 * 1024;
 pub struct Client {
     stream: UnixStream,
     decoder: Decoder,
-    chip: Chip0,
+    chip: VtEngine,
     surface: HostSurface,
     host_identity: String,
     alive: bool,
@@ -47,6 +48,7 @@ pub struct Client {
     /// Last VT extract. `cell_codepoint` / `cursor` must not calloc a new grid
     /// on every probe (quality audit Q4).
     cached: Option<PodGrid>,
+    modes: TerminalModeState,
 }
 
 impl Client {
@@ -54,9 +56,9 @@ impl Client {
         let host_identity = cold_host_identity(socket.as_ref())?;
         let stream = UnixStream::connect(socket.as_ref())?;
         stream.set_nonblocking(true)?;
-        let mut chip = Chip0::new(surface.cols, surface.rows)?;
+        let mut chip = VtEngine::new(surface.cols, surface.rows)?;
         if let Some(ref colors) = surface.colors {
-            chip.apply_look(colors)?;
+            chip.set_palette(palette_from_theme(colors))?;
         }
         let mut client = Self {
             stream,
@@ -71,6 +73,7 @@ impl Client {
             warm_path_violations: 0,
             auditing: false,
             cached: None,
+            modes: TerminalModeState::default(),
         };
         client.send(Frame::attach(1, None))?;
         client.grant_credit(CREDIT_WINDOW)?;
@@ -203,6 +206,11 @@ impl Client {
                             Frame::Data(bytes) => {
                                 fed += bytes.len();
                                 self.chip.feed(&bytes)?;
+                                let replies = self.chip.take_replies()?;
+                                if !replies.is_empty() {
+                                    self.send(Frame::Data(replies))?;
+                                }
+                                self.modes = self.chip.mode_state();
                                 self.cached = None;
                             }
                             Frame::Exit { status } => {
@@ -243,15 +251,16 @@ impl Client {
         self.send(Frame::Credit(n))
     }
 
-    pub fn snapshot(&mut self) -> Result<&PodGrid, rill_chip0::Error> {
+    pub fn snapshot(&mut self) -> Result<&PodGrid, rill_vt_types::Error> {
         if self.cached.is_none() {
-            let mut grid = self.chip.snapshot()?;
-            apply_theme(&mut grid, &self.surface);
+            // Chip 1 materialises the look-file palette in snapshot().
+            // apply_theme is a second full-grid walk and is not needed.
+            let grid = self.chip.snapshot()?;
             self.cached = Some(grid);
         }
         self.cached
             .as_ref()
-            .ok_or(rill_chip0::Error::Vt("snapshot cache"))
+            .ok_or(rill_vt_types::Error::Vt("snapshot cache"))
     }
 
     pub fn cell_codepoint(&mut self, col: u16, row: u16) -> u32 {
@@ -261,9 +270,22 @@ impl Client {
             .unwrap_or(0)
     }
 
-    pub fn cursor_cell(&mut self) -> Result<(u16, u16), rill_chip0::Error> {
+    pub fn cursor_cell(&mut self) -> Result<(u16, u16), rill_vt_types::Error> {
         let g = self.snapshot()?;
         Ok((g.cursor_col, g.cursor_row))
+    }
+
+    pub fn mode_state(&self) -> TerminalModeState {
+        self.modes
+    }
+
+    /// Cursor keys from Chip 1 DECCKM, not a host CSI parser (ADR 0037 D5).
+    pub fn encode_arrow(&self, letter: u8) -> [u8; 3] {
+        encode_arrow(self.modes.application_cursor_keys, letter)
+    }
+
+    pub fn wrap_paste(&self, body: &[u8]) -> Vec<u8> {
+        wrap_paste(self.modes.bracketed_paste, body)
     }
 
     /// Non-blocking. A partial write is queued and completed on the next pump;
@@ -334,7 +356,7 @@ fn cold_host_identity(attach_socket: &Path) -> Result<String, Error> {
     }
 }
 
-pub fn load_surface() -> Result<HostSurface, rill_chip0::Error> {
+pub fn load_surface() -> Result<HostSurface, rill_vt_types::Error> {
     let mut paths = vec![PathBuf::from("host-surface.toml")];
     if let Ok(configured) = std::env::var("RILL_HOST_SURFACE") {
         if !configured.is_empty() {
@@ -354,6 +376,63 @@ pub fn load_surface() -> Result<HostSurface, rill_chip0::Error> {
         }
     }
     load_resolved_surface("host-surface.toml")
+}
+
+fn u32_to_rgb(v: u32) -> Rgb {
+    Rgb {
+        r: ((v >> 24) & 0xff) as u8,
+        g: ((v >> 16) & 0xff) as u8,
+        b: ((v >> 8) & 0xff) as u8,
+    }
+}
+
+fn palette_from_theme(colors: &ThemeColors) -> Palette {
+    let mut p = Palette::vt_default();
+    p.foreground = u32_to_rgb(colors.foreground);
+    p.background = u32_to_rgb(colors.background);
+    p.cursor = u32_to_rgb(colors.cursor);
+    if let Some(ansi) = colors.ansi {
+        for (i, v) in ansi.iter().enumerate() {
+            p.ansi[i] = u32_to_rgb(*v);
+        }
+    }
+    p
+}
+
+/// Metal must not place a glyph on a wide tail (ADR 0035 D7).
+pub fn should_paint_cell(attrs: u16) -> bool {
+    #[cfg(feature = "mutate")]
+    if std::env::var("RILL_MUTATE").as_deref() == Ok("ignore_wide_bits") {
+        return true;
+    }
+    attrs & ATTR_WIDE_TAIL == 0
+}
+
+/// `letter` is `b'A'`..`b'D'` (up/down/right/left).
+pub fn encode_arrow(application_cursor_keys: bool, letter: u8) -> [u8; 3] {
+    #[cfg(feature = "mutate")]
+    if std::env::var("RILL_MUTATE").as_deref() == Ok("ignore_decckm") {
+        return [0x1b, b'[', letter];
+    }
+    if application_cursor_keys {
+        [0x1b, b'O', letter]
+    } else {
+        [0x1b, b'[', letter]
+    }
+}
+
+pub fn wrap_paste(bracketed: bool, body: &[u8]) -> Vec<u8> {
+    #[cfg(feature = "mutate")]
+    if std::env::var("RILL_MUTATE").as_deref() == Ok("skip_bracketed_paste") {
+        return body.to_vec();
+    }
+    if !bracketed {
+        return body.to_vec();
+    }
+    let mut out = b"\x1b[200~".to_vec();
+    out.extend_from_slice(body);
+    out.extend_from_slice(b"\x1b[201~");
+    out
 }
 
 /// Percentile over an already-sorted slice, 0-indexed and without the
@@ -392,5 +471,17 @@ mod tests {
     #[test]
     fn percentile_of_one_sample_is_that_sample() {
         assert_eq!(percentile(&[7.0], 0.95), 7.0);
+    }
+
+    #[test]
+    fn t_host_encodes_application_cursor_keys_from_mode() {
+        assert_eq!(encode_arrow(false, b'A'), [0x1b, b'[', b'A']);
+        assert_eq!(encode_arrow(true, b'A'), [0x1b, b'O', b'A']);
+    }
+
+    #[test]
+    fn t_host_wraps_bracketed_paste_from_mode() {
+        assert_eq!(wrap_paste(false, b"hi"), b"hi");
+        assert_eq!(wrap_paste(true, b"hi"), b"\x1b[200~hi\x1b[201~".to_vec());
     }
 }

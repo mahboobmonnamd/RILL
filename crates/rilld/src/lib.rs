@@ -5,8 +5,8 @@ mod error;
 mod proxy;
 
 use rill_attach::{cold_identity_socket_path, Decoder, Frame, PROTOCOL_2, PROTOCOL_VERSION};
-use rill_chip0::{Chip0, PodGrid, TerminalEmulation};
 use rill_kernel::{Kernel, Session, SessionId, Winsize};
+use rill_vt_types::{PodGrid, TerminalEmulation};
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -15,6 +15,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use vt_engine::VtEngine;
 
 pub use endpoint::{authorize_peer, default_runtime_dir, ensure_protected_parent, peer_uid};
 pub use error::Error;
@@ -31,7 +32,7 @@ pub struct Daemon {
     /// One connection per attach claim. A second connection MAY attach a
     /// different id (ADR 0011 D3). FR-ONE is per leaf, not per daemon.
     clients: Vec<Client>,
-    chip: Chip0,
+    chip: VtEngine,
 }
 
 struct Client {
@@ -124,7 +125,7 @@ impl Daemon {
                 std::fs::write(path, format!("{pid}\n"))?;
             }
         }
-        let chip = Chip0::new(size.cols, size.rows)?;
+        let chip = VtEngine::new(size.cols, size.rows)?;
         Ok(Self {
             listener,
             socket_path,
@@ -737,7 +738,7 @@ impl Daemon {
             Some(s) => (s.history(), s.bytes_delivered(), id.as_u64()),
             None => return Ok(()),
         };
-        self.chip.reset();
+        self.chip.reset()?;
         if !hist.is_empty() {
             self.chip.feed(&hist)?;
         }

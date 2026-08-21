@@ -16,10 +16,11 @@ path = "src/main.rs"
 [features]
 # Negative-control mutations (ADR 0002 D3). Propagates to the crates whose
 # behaviour the mutations change. No shipping build enables this.
-mutate = ["rill-kernel/mutate", "rill-chip0/mutate"]
+mutate = ["rill-kernel/mutate", "vt-engine/mutate"]
 
 [dependencies]
 rill-attach.workspace = true
 rill-kernel.workspace = true
-rill-chip0.workspace = true
+vt-engine.workspace = true
+rill-vt-types.workspace = true
 libc.workspace = true

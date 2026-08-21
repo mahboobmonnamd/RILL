@@ -4,7 +4,7 @@ use std::fmt;
 pub enum Error {
     Io(std::io::Error),
     Attach(rill_attach::Error),
-    Chip(rill_chip0::Error),
+    Chip(rill_vt_types::Error),
     Dead,
     Refused,
     InvalidHostIdentity,
@@ -46,8 +46,8 @@ impl From<rill_attach::Error> for Error {
     }
 }
 
-impl From<rill_chip0::Error> for Error {
-    fn from(value: rill_chip0::Error) -> Self {
+impl From<rill_vt_types::Error> for Error {
+    fn from(value: rill_vt_types::Error) -> Self {
         Self::Chip(value)
     }
 }

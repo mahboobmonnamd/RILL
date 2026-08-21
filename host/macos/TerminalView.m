@@ -813,6 +813,12 @@ static unsigned rill_view_bg_rgb(NSView *v) {
                 continue;
             }
             RillPodCell cell = grid.cells[i];
+            if ((cell.attrs & (1u << 4)) != 0) {
+                const char *wmut = getenv("RILL_MUTATE");
+                if (!(wmut && strcmp(wmut, "ignore_wide_bits") == 0)) {
+                    continue;
+                }
+            }
             BOOL bold = (cell.attrs & 1u) != 0;
             BOOL inverse = (cell.attrs & 4u) != 0;
 
@@ -1163,10 +1169,30 @@ static unsigned rill_view_bg_rgb(NSView *v) {
         case 51: { uint8_t b = 0x7f; [self sendBytes:&b length:1]; return; }
         case 53: { uint8_t b = 0x1b; [self sendBytes:&b length:1]; return; }
         case 48: { uint8_t b = '\t'; [self sendBytes:&b length:1]; return; }
-        case 126: { const uint8_t s[] = {0x1b, '[', 'A'}; [self sendBytes:s length:3]; return; }
-        case 125: { const uint8_t s[] = {0x1b, '[', 'B'}; [self sendBytes:s length:3]; return; }
-        case 124: { const uint8_t s[] = {0x1b, '[', 'C'}; [self sendBytes:s length:3]; return; }
-        case 123: { const uint8_t s[] = {0x1b, '[', 'D'}; [self sendBytes:s length:3]; return; }
+        case 126: {
+            uint8_t s[3];
+            rill_client_encode_arrow(_client, (uint8_t)'A', s);
+            [self sendBytes:s length:3];
+            return;
+        }
+        case 125: {
+            uint8_t s[3];
+            rill_client_encode_arrow(_client, (uint8_t)'B', s);
+            [self sendBytes:s length:3];
+            return;
+        }
+        case 124: {
+            uint8_t s[3];
+            rill_client_encode_arrow(_client, (uint8_t)'C', s);
+            [self sendBytes:s length:3];
+            return;
+        }
+        case 123: {
+            uint8_t s[3];
+            rill_client_encode_arrow(_client, (uint8_t)'D', s);
+            [self sendBytes:s length:3];
+            return;
+        }
         default: break;
     }
 

@@ -1,8 +1,9 @@
-# SPEC-CHIP0 — Chip 0 live emulator (libghostty-vt + Metal, `lane:chip0-ghostty-vt`)
+# SPEC-CHIP0 — retired
 
-- **Status:** Accepted for Spike 0 Proven clauses — 2026-08-17
-  ([ADR 0010](../adr/0010-spike-0-closes.md)). Written 2026-08-16 as the
-  remediation draft.
+- **Status:** **Retired 2026-08-21** ([ADR 0054](../adr/0054-chip0-retired.md)).
+  The crate `crates/rill-chip0` and `libghostty-vt` are gone. Live emulator:
+  [SPEC-CHIP1](SPEC-CHIP1.md) / [SPEC-VT-LIVE-SWAP](SPEC-VT-LIVE-SWAP.md).
+  This page is historical.
 - **Authority:** [ADR 0001](../adr/0001-session-operating-system.md) §1, §3,
   [ADR 0003](../adr/0003-display-pipeline.md)
 - **Crate:** `crates/rill-chip0`

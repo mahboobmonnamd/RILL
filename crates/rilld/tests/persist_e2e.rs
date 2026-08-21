@@ -6,7 +6,6 @@
 //! `POSIX_SPAWN_SETSID` in `main.m`. Socket-only tests do not close T-KILL.
 
 use rill_attach::{Decoder, Frame};
-use rill_chip0::{Chip0, TerminalEmulation};
 use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixStream;
@@ -15,6 +14,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
+use vt_engine::{TerminalEmulation, VtEngine};
 
 fn unique_sock() -> PathBuf {
     let n = std::time::SystemTime::now()
@@ -184,7 +184,7 @@ fn t_kill_gui_process_group_child_pid_survives_and_reattach_shows_prior_output()
             Err(_) => thread::sleep(Duration::from_millis(10)),
         }
     }
-    let mut chip = Chip0::new(80, 24).expect("chip");
+    let mut chip = VtEngine::new(80, 24).expect("chip");
     chip.feed(&raw).ok();
     let text: String = chip
         .snapshot()

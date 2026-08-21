@@ -102,26 +102,13 @@ require() {
 
 # ---------------------------------------------------------------- preconditions
 echo "== preconditions =="
-require "third_party/ghostty.pin exists" test -f third_party/ghostty.pin
-GHOSTTY_SHA="$(sed -n 's/^sha *= *//p' third_party/ghostty.pin | tr -d '[:space:]')"
-GHOSTTY_DIR="${RILL_GHOSTTY_DIR:-$ROOT/third_party/ghostty}"
-require "libghostty-vt built at the pin (run scripts/fetch-libghostty-vt.sh)" \
-  test -f "$GHOSTTY_DIR/.rill-built-sha"
-require "libghostty-vt provenance matches the pin" \
-  test "$(cat "$GHOSTTY_DIR/.rill-built-sha")" = "$GHOSTTY_SHA"
-echo "libghostty-vt: $GHOSTTY_SHA"
+echo "live chip: vt-engine (ADR 0054)"
 
 echo "== plane lints =="
 run_gate "LINT-PLANES" sh scripts/lint-planes.sh
 
 # ------------------------------------------------------------------ library tier
-run_gate "T-BYTES-chip"   cargo test -p rill-chip0 --offline t_bytes -- --nocapture
-run_gate "T-CHIP0-C1"     cargo test -p rill-chip0 --offline t_chip0_c1 -- --nocapture
-run_gate "T-LOOK"         cargo test -p rill-chip0 --offline t_ghostty_look -- --nocapture
-# Isolate ASan: instrumented C objects in the default target dir break later
-# rilld / persist_e2e links (rustc -nodefaultlibs does not pull clang_rt).
-run_gate "T-BYTES-asan"   env CARGO_TARGET_DIR="$TMP/asan-target" RILL_ASAN=1 \
-  cargo test -p rill-chip0 --offline t_bytes -- --nocapture
+run_gate "T-LOOK"         cargo test -p rill-host --offline --test t_look_file -- --nocapture
 run_gate "T-BYTES-kernel" cargo test -p rill-kernel --offline t_bytes -- --nocapture
 run_gate "T-DROP"         cargo test -p rill-kernel --offline t_drop -- --test-threads=1 --nocapture
 run_gate "T-RESIZE"       cargo test -p rill-kernel --offline t_resize -- --nocapture
@@ -266,20 +253,16 @@ if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
   # no mutation code at all (ADR 0002 D3). Pass `--features` and `mutate` as
   # separate argv words: a single `--features mutate` token is a cargo error
   # (zsh does not split `$MUT`, and that red is not a demonstrated mutation).
-  run_control "T-BYTES-chip" drop_high_bytes \
-    cargo test -p rill-chip0 --offline --features mutate t_bytes
-  run_control "T-CHIP0-C1" c1_as_control \
-    cargo test -p rill-chip0 --offline --features mutate t_chip0_c1
-  run_control "T-LOOK-OVERLAY" skip_ghostty_overlay \
-    cargo test -p rill-chip0 --offline --features mutate t_ghostty_look_overlay -- --nocapture
+  run_control "T-LOOK-OVERLAY" skip_look_overlay \
+    cargo test -p rill-host --offline --features mutate --test t_look_file t_look_overlay -- --nocapture
   run_control "T-LOOK-UNKNOWN" unknown_theme_wipes \
-    cargo test -p rill-chip0 --offline --features mutate t_ghostty_look_unknown -- --nocapture
-  run_control "T-LOOK-CELL" skip_theme_apply \
-    cargo test -p rill-chip0 --offline --features mutate t_ghostty_look_themed_empty -- --nocapture
+    cargo test -p rill-host --offline --features mutate --test t_look_file t_look_unknown -- --nocapture
+  run_control "T-LOOK-CELL" skip_file_palette \
+    cargo test -p rill-host --offline --features mutate --test t_look_file t_look_themed_empty -- --nocapture
   run_control "T-LOOK-FILE" invent_theme_rgb \
-    cargo test -p rill-chip0 --offline --features mutate t_ghostty_look_theme_file -- --nocapture
-  run_control "T-LOOK-ANSI" skip_vt_look_colors \
-    cargo test -p rill-chip0 --offline --features mutate t_ghostty_look_sgr_green -- --nocapture
+    cargo test -p rill-host --offline --features mutate --test t_look_file t_look_theme_file -- --nocapture
+  run_control "T-LOOK-ANSI" skip_file_palette \
+    cargo test -p rill-host --offline --features mutate --test t_look_file t_look_sgr_green -- --nocapture
   run_control "T-DROP" drop_on_full \
     cargo test -p rill-kernel --offline --features mutate t_drop -- --test-threads=1
   run_control "T-RESIZE" resize_before_data \
@@ -400,7 +383,7 @@ REFRESH="$(system_profiler SPDisplaysDataType 2>/dev/null \
   printf '  "utc": "%s",\n' "$UTC"
   printf '  "git_sha": "%s",\n' "$(git rev-parse HEAD 2>/dev/null || echo unknown)"
   printf '  "git_dirty": %s,\n' "$([ -n "$(git status --porcelain 2>/dev/null)" ] && echo true || echo false)"
-  printf '  "ghostty_sha": "%s",\n' "$GHOSTTY_SHA"
+  printf '  "chip": "vt-engine",\n'
   printf '  "host": {"model": "%s", "macos": "%s", "power": "%s", "refresh_hz": %s},\n' \
     "$(sysctl -n hw.model 2>/dev/null || uname -m)" \
     "$(sw_vers -productVersion 2>/dev/null || uname -sr)" \
@@ -423,7 +406,7 @@ python3 - "$EVIDENCE" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))
 print(f"git {d['git_sha'][:12]}{' (dirty)' if d['git_dirty'] else ''}  "
-      f"ghostty {d['ghostty_sha'][:12]}  power={d['host']['power']}  "
+      f"chip={d.get('chip','?')}  power={d['host']['power']}  "
       f"refresh={d['host']['refresh_hz']}Hz  nfr_mode={d['nfr_mode']}")
 print()
 for g in d["gates"]:
