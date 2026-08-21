@@ -10,11 +10,12 @@
   [ADR 0019](../adr/0019-dock-reopen-shows-window.md), amended for the future
   product surface by
   [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md) D4–D6
-  and D9
+  and D9/D22
 - **Future contract:** [SPEC-RUNTIME-SUPERVISION](SPEC-RUNTIME-SUPERVISION.md),
   [SPEC-CLIENT-AUTHORITY](SPEC-CLIENT-AUTHORITY.md), and
-  [SPEC-COMPOSITOR](SPEC-COMPOSITOR.md). Existing Spike 0 clauses remain
-  evidence for that slice only.
+  [SPEC-COMPOSITOR](SPEC-COMPOSITOR.md), governed by
+  [SPEC-TERMINAL-PERFORMANCE](SPEC-TERMINAL-PERFORMANCE.md). Existing Spike 0
+  clauses remain evidence for that slice only.
 - **Code:** `host/macos/`, `crates/rill-host`
 - **Gates:** T-NFR, T-SPAWN, T-KILL, T-RESIZE — **Proven**. T-FS-EXIT
   ([#257](https://github.com/mahboobmonnamd/RILL/issues/257)). T-LOOK /
@@ -54,6 +55,9 @@ not be claimed from `POSIX_SPAWN_SETSID`.
 
 - Event-driven feed. A `DISPATCH_SOURCE_TYPE_READ` on the attach socket drives
   read → feed → damaged-instance rebuild (ADR 0003 D2).
+- This is the presentation end of the protected terminal path. Transcript,
+  Flow, persistence, inspector, attention, artifact, rich-layout, observer and
+  diagnostic work MUST NOT run synchronously before feed, damage or present.
 - The window is titled, closable, resizable. `collectionBehavior` is
   `FullScreenPrimary`. Default `make run` is **windowed** (ADR 0017 D1). It
   MUST NOT call `toggleFullScreen:` on launch. `--nfr-key` still enters a
@@ -159,6 +163,14 @@ For T-NFR (ADR 0003 D5–D8), the view exposes:
 
 These hooks are compiled into the shipped binary. A measurement path that only
 exists in a test build is not measuring the shipped app.
+
+Future product surfaces also expose the measurement inventory required by
+SPEC-TERMINAL-PERFORMANCE §6: PTY-drain progress, byte sequence gaps/reordering,
+frame/missed-frame timing, CPU, memory, bounded-queue high-water/overflow,
+Raw-fallback time, cross-pane/client interference, protected-path control RPCs
+and callback allocations where tooling permits. Missing instrumentation fails
+the corresponding Red gate; it does not weaken historical T-NFR or change its
+Proven Spike 0 evidence.
 
 ## 9. Out of scope for Spike 0
 

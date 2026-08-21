@@ -2,8 +2,9 @@
 
 - **Status:** Red. Specification only; no implementation is authorized.
 - **Authority:** [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md)
-  D5–D8 and D15; supersedes range-only normal rendering in
+  D5–D8, D15 and D22; supersedes range-only normal rendering in
   [ADR 0050](../adr/0050-blocks-are-a-cold-overlay.md).
+- **Requires:** [SPEC-TERMINAL-PERFORMANCE](SPEC-TERMINAL-PERFORMANCE.md).
 - **Lane:** `lane:kernel` for authoritative events and retention;
   `lane:host` for virtualized presentation.
 
@@ -49,6 +50,7 @@ The timeline is a virtualizable ordered collection. Initial item variants are:
 - `DiffResult`
 - `LifecycleEvent`
 - `Discontinuity`
+- `Unstructured`
 
 Each item has a stable ContentItemId, ordering key, owning SessionId, optional
 TerminalPaneId/TerminalExecutionId/TaskId/ConversationId, timestamps, retention
@@ -102,7 +104,10 @@ cannot be derived reliably.
 Command boundaries derive only from explicit shell/protocol marks or a known
 RILL structured-input submission. Prompt regex, English/code classifiers and
 cursor-position guesses are forbidden. Without a boundary, RILL creates an
-honest terminal-output region.
+honest terminal-output or `Unstructured` region. Displayed timestamps, command
+text, duration, exit status, test results, diffs, agent status, cwd, branch and
+approvals MUST use the source table in SPEC-TERMINAL-PERFORMANCE §3. Terminal
+cells are never scraped to create those fields.
 
 Full-screen alternate mode remains a mutable VT grid for the same terminal pane
 and PTY. Entering alternate screen does not create a timeline Block. Leaving it
@@ -185,6 +190,10 @@ completion.
 - T-TRANSCRIPT-BYTE-EVENT-ORDER
 - T-FLOW-RAW-SEMANTIC-FAILURE
 - T-ACTIVITY-DERIVED-NOT-AUTHORITY
+- T-CONTENT-SOURCE-AUTHORITY
+- T-PERF-PTY-DRAIN-INDEPENDENT
+- T-PERF-SEMANTIC-DEGRADATION
+- T-PERF-BYTE-FIDELITY
 
 ## 9. Out of scope
 

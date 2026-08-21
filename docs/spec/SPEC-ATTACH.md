@@ -7,9 +7,11 @@
   [ADR 0015](../adr/0015-m1-persist-remainder.md) (protocol + observe), amended
   for future versions by
   [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md)
-- **Future contract:** [SPEC-CLIENT-AUTHORITY](SPEC-CLIENT-AUTHORITY.md). The
-  existing protocol-1 clauses remain historical evidence; they do not prove
-  roles, independent observer flow control, leases or checkpoints.
+- **Future contract:** [SPEC-CLIENT-AUTHORITY](SPEC-CLIENT-AUTHORITY.md) and
+  [SPEC-TERMINAL-PERFORMANCE](SPEC-TERMINAL-PERFORMANCE.md). The existing
+  protocol-1 clauses remain historical evidence; they do not prove roles,
+  independent observer flow control, leases, checkpoints or semantic-channel
+  isolation.
 - **Crate:** `crates/rill-attach`
 - **Gates:** T-ATTACH, T-EXIT, T-RESIZE, T-DROP, T-NFR (control-RPC clause) —
   **Proven**. T-ATTACH-PROTO, T-GRAPH-OBSERVE — persist remainder.
@@ -80,6 +82,10 @@ flags u8 (bit 0 = observe). Packaged host still sends 8-byte.
   delivery credit. Each client's credit governs only that client's outbound
   stream. A stalled observer or controller may lose deltas and resync; it cannot
   stall the worker's bounded PTY drain, another client or another pane.
+- Semantic/content channel credit and queue capacity are separate from terminal
+  DATA, checkpoint/delta and input credit. Semantic overflow produces an honest
+  offset-correlated degradation record; it never pauses PTY read or
+  drops/reorders terminal DATA.
 
 ## 6. Attach identity
 
@@ -133,6 +139,12 @@ The warm path is `DATA` and `CREDIT` only. During a T-NFR measurement window
 (audit S1-3). The property is asserted at the client's single `send`
 chokepoint, not by inspecting bytes for JSON substrings.
 
+Protocol 2 preserves the same prohibition across typed channels: terminal DATA,
+credit needed by the terminal channel and the measured input/present path do
+not wait for topology, semantic, content, Task, attention, artifact, policy or
+control-plane serialization. A shared blocking outbound queue violates
+T-PROTOCOL-SEMANTIC-INDEPENDENCE and T-PERF-PTY-DRAIN-INDEPENDENT.
+
 ## 9. Fuzzing
 
 `cargo-fuzz` target over `Decoder::push` with arbitrary byte splits. Must
@@ -140,3 +152,11 @@ survive: truncated headers, declared lengths at and beyond `MAX_FRAME`, unknown
 tags, payload lengths that disagree with the tag's fixed size, and interleaved
 partial frames. No panic, no unbounded allocation. Runs in `fast.yml` for a
 bounded corpus and nightly for longer.
+
+## 10. Future performance gates
+
+T-CLIENT-CREDIT-ISOLATION, T-PROTOCOL-SEMANTIC-INDEPENDENCE,
+T-PROTOCOL-SLOW-CLIENT-CHANNEL-ISOLATION,
+T-PERF-PTY-DRAIN-INDEPENDENT, T-PERF-CLIENT-ISOLATION and
+T-PERF-BYTE-FIDELITY are all mandatory for Protocol 2 product acceptance. They
+supplement rather than replace protocol-1 T-ATTACH/T-DROP/T-NFR evidence.

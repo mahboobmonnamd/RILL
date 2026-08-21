@@ -1682,6 +1682,7 @@ green skip.
 | [SPEC-CLIENT-AUTHORITY](spec/SPEC-CLIENT-AUTHORITY.md) | ADR 0053 | foundation, Red |
 | [SPEC-CONTENT](spec/SPEC-CONTENT.md) | ADR 0053 | after runtime/checkpoints, Red |
 | [SPEC-COMPOSITOR](spec/SPEC-COMPOSITOR.md) | ADR 0053 | after content/checkpoints, Red |
+| [SPEC-TERMINAL-PERFORMANCE](spec/SPEC-TERMINAL-PERFORMANCE.md) | ADR 0053 D22 | cross-cutting; Red until each named T-PERF gate has demonstrated-red evidence |
 
 T-NFR, T-KILL, T-SPAWN, T-DROP, T-BYTES and the T-GRAPH / T-LOOK families are
 not re-cut by any of these. A milestone gate that would require modifying a
@@ -1758,6 +1759,7 @@ are failed preconditions, never green skips.
 | T-CONTENT-RANGE-REQUIRES-STATE — arbitrary range is not renderable without prior VT state | Slice beginning mid-sequence is refused without compatible checkpoint and succeeds from checkpoint against independent VT | renderer always resets VT before slice |
 | T-CONTENT-SURVIVES-RING-EVICTION — retained timeline content outlives hot ring | Materialized content remains identical after source eviction when policy retained it | timeline reads moving ring on every render |
 | T-CONTENT-NO-PROMPT-HEURISTIC — command boundaries require explicit events | Prompt-shaped output without mark remains terminal region; explicit submission/mark creates boundary | regex matching the dollar-space prompt creates command |
+| T-CONTENT-SOURCE-AUTHORITY — enhanced fields require named producers | See terminal-performance section; cells/timing/regex cannot fabricate command, tests, duration, branch, cwd, approval or agent status | scrape_cells_for_command_and_pass_count |
 | T-CONTENT-ALT-SAME-PTY — full-screen TUI stays one mutable terminal surface | PTY/device/TerminalExecution unchanged; no timeline Block for live alternate grid | alt grid copied into new Block each frame |
 | T-CONTENT-RETENTION-DISABLED — durable capture can be entirely disabled | Run/output/restart leaves no durable raw/transcript/history/task payload while bounded live reconnect works | disabled policy still writes transcript segment |
 | T-CONTENT-RETENTION-RESTRICTIVE-WINS — corporate/session policy cannot be widened locally | More restrictive parent rule wins resolution and blocks capture/export | closest Workspace setting always wins |
@@ -1835,3 +1837,113 @@ optional activity timeline. Compositor/input/selection and remote/mobile enter
 only after their consumed authority exists. Shell compatibility is a foundation
 gate throughout. Chip 1 live-swap gates remain parked until checkpoint and
 mirror gates have demonstrated red.
+
+## Terminal performance invariant (Red)
+
+Authority: [ADR 0053](adr/0053-runtime-domain-content-and-client-authority.md)
+D22 and [SPEC-TERMINAL-PERFORMANCE](spec/SPEC-TERMINAL-PERFORMANCE.md).
+
+These gates **supplement** Proven T-NFR, T-DROP, T-BYTES, T-RESIZE, T-SPAWN,
+T-KILL, T-ATTACH and later T-GRAPH / T-CLIENT / T-CONTENT / T-COMPOSITOR /
+T-PROTOCOL gates. They do not rename, replace or relax them. Documentation
+acceptance is not Proven. A test that would have passed before the protected
+asynchronous wiring exists is not evidence.
+
+Packaged macOS application runs are required for every user-visible latency,
+isolation and Raw-fallback row. Real PTYs and downstream process or display
+oracles are required where mocks cannot observe drain, byte order or present.
+Missing instrumentation, display, battery, Accessibility trust or PTY
+preconditions fail the gate.
+
+Primary numeric boundary remains T-NFR (ADR 0003): packaged HID, battery,
+n ≥ 1000, discards ≤ 2%, p95 below one actual refresh interval, zero
+control-plane RPCs. NFR-DROP / T-DROP and NFR-BYTES / T-BYTES remain zero
+dropped or reordered bytes. Secondary metrics (p50/p99, drain throughput, frame
+time, CPU, memory, queue depth, Raw-fallback time, allocations) are paired
+baseline comparisons until one later consolidated product decision authorizes
+numeric tolerances. No gate here invents a millisecond budget.
+
+### Named T-PERF gates
+
+| Gate | Downstream oracle | Required mutation |
+|---|---|---|
+| T-PERF-BASELINE-PARITY — enhancements do not regress T-NFR beyond measurement noise | Same packaged build, machine class, power/display, viewport, HID instrument, n and workload: enhancements-disabled T-NFR remains Proven; each enabled configuration in the matrix reports p50/p95/p99, zero control RPCs, and no defensible key-to-present regression beyond repeated interleaved-run noise | `nfr_with_blocks_uses_easier_budget` (or equivalent: change T-NFR threshold or skip HID when Flow/inspector/attention is on) |
+| T-PERF-PTY-DRAIN-INDEPENDENT — PTY drain does not wait for transcript or persistence | Numbered real-PTY output continues within existing T-DROP bounds while a semantic processor and durable sink are stalled; independent byte capture matches child output; worker offset advances | `pty_read_awaits_transcript_ack` |
+| T-PERF-PRESENT-INDEPENDENT — present does not wait for persistence or semantic classification | Packaged present timestamps continue while the transcript store is delayed/unavailable; first echoed glyph still uses ADR 0003 `presentedTime`; Raw remains interactive | `present_waits_for_db_commit` |
+| T-PERF-SEMANTIC-DEGRADATION — semantic stall/crash cannot block raw | Kill or hang the semantic processor; DATA/CREDIT, input and Metal grid continue; UI shows `Unstructured` or honest Flow degradation, never fabricated commands | `semantic_backpressure_pauses_pty` |
+| T-PERF-PANE-ISOLATION — one pane or agent flood cannot stall another | Two real PTYs; flood one; the other exchanges a nonce and meets its drain/present bounds; per-pane queue high-water stays within declared limits | `shared_pump_starves_second_pane` |
+| T-PERF-CLIENT-ISOLATION — a slow observer cannot stall the worker or controller | Hold mobile/observer credit at zero during numbered output; host offset and controller stream have no gaps; slow client later resyncs or is required to snapshot | `min_client_credit_gates_pty_read` |
+| T-PERF-BOUNDED-RESOURCES — queues, transcript projection, glyphs, images and offscreen layout stay bounded | Prolonged output plus large retained transcript, visible large diff/Markdown, and virtualized scroll keep item/glyph/image/queue counts within declared viewport+overscan and queue capacities; overflow increments a counter rather than growing without bound | `layout_entire_offscreen_timeline` |
+| T-PERF-BYTE-FIDELITY — semantic pressure never drops or reorders PTY bytes | Independent capture of child bytes equals host journal and controller DATA under semantic overload, inspector/timeline load and persistence failure; reorder/gap counters stay zero | `drop_pty_bytes_when_semantic_queue_full` |
+| T-PERF-RAW-TUI-BYPASS — Vim/Neovim, nested tmux and alternate screen bypass Flow/composer | Real TUI/tmux fixtures: same PTY/execution; composer and Flow counters stay zero on the input path; grid remains Chip 0/Metal | `raw_keys_insert_into_composer_first` |
+| T-PERF-RECOVERY-ISOLATION — hash/checkpoint failure stops only the divergent mirror | Corrupt one client hash; that pane stops presenting/accepting input; worker and a second healthy raw client continue; recovery is checkpoint/deltas or explicit discontinuity — no silent sync work on the present path | `divergent_mirror_keeps_presenting` |
+| T-CONTENT-SOURCE-AUTHORITY — enhanced fields require named producers | Prompt-shaped text, cursor motion and timing without marks remain `Unstructured`/raw; command, duration, exit, tests, branch, cwd, approval and agent status appear only when the SPEC-TERMINAL-PERFORMANCE source table producers emit them | `scrape_cells_for_command_and_pass_count` |
+
+### Required mutations that every closer must detect
+
+In addition to the per-gate mutations above, a closer for this section MUST
+include automated (or recorded manual) reds for:
+
+| Mutation | Must turn red |
+|---|---|
+| `pty_read_awaits_transcript_ack` | T-PERF-PTY-DRAIN-INDEPENDENT, T-FLOW-RAW-SEMANTIC-FAILURE |
+| `present_waits_for_db_commit` | T-PERF-PRESENT-INDEPENDENT |
+| `semantic_backpressure_pauses_pty` | T-PERF-SEMANTIC-DEGRADATION, T-PROTOCOL-SEMANTIC-INDEPENDENCE |
+| `min_client_credit_gates_pty_read` | T-PERF-CLIENT-ISOLATION, T-CLIENT-CREDIT-ISOLATION |
+| `layout_entire_offscreen_timeline` | T-PERF-BOUNDED-RESOURCES, T-COMPOSITOR-VIRTUALIZED-CONTENT |
+| `scrape_cells_for_command_and_pass_count` | T-CONTENT-SOURCE-AUTHORITY, T-CONTENT-NO-PROMPT-HEURISTIC |
+| `drop_pty_bytes_when_semantic_queue_full` | T-PERF-BYTE-FIDELITY, T-DROP |
+
+### Failure-case coverage
+
+Each row uses real PTY drain plus a second-pane or second-client isolation
+check. Honest UI degradation is part of the oracle.
+
+| Failure | Existing overlapping gates | New/required closer |
+|---|---|---|
+| Semantic processor stalls | T-FLOW-RAW-SEMANTIC-FAILURE | T-PERF-SEMANTIC-DEGRADATION |
+| Semantic processor crashes | T-FLOW-RAW-SEMANTIC-FAILURE | T-PERF-SEMANTIC-DEGRADATION |
+| Transcript store slow | T-CONTENT-BOUNDED-RECOVERY | T-PERF-PRESENT-INDEPENDENT |
+| Transcript store unavailable | T-CONTENT-RETENTION-DISABLED | T-PERF-PRESENT-INDEPENDENT |
+| Disk full | T-CONTENT-BOUNDED-RECOVERY | T-PERF-PRESENT-INDEPENDENT (fail closed, no present-path retry) |
+| Retention disabled | T-CONTENT-RETENTION-DISABLED | T-PERF-BYTE-FIDELITY |
+| Flow projection fails | T-FLOW-RAW-SEMANTIC-FAILURE | T-PERF-SEMANTIC-DEGRADATION |
+| Rich-content renderer fails | T-COMPOSITOR-PRESERVES-METAL-GRID | T-PERF-PRESENT-INDEPENDENT |
+| Inspector/timeline slow | T-COMPOSITOR-WARM-PATH-BOUNDARY | T-PERF-PRESENT-INDEPENDENT |
+| Agent excessive output | T-PERF-PANE-ISOLATION | T-PERF-BYTE-FIDELITY |
+| Mobile/observer stops credit | T-CLIENT-CREDIT-ISOLATION, T-PROTOCOL-SLOW-CLIENT-CHANNEL-ISOLATION | T-PERF-CLIENT-ISOLATION |
+| One pane unlimited output | T-GRAPH isolation / starve mutations | T-PERF-PANE-ISOLATION |
+| State-hash/checkpoint reconcile fails | T-CLIENT-MIRROR-RECONCILE | T-PERF-RECOVERY-ISOLATION |
+
+### 20-workload measurement matrix
+
+Every enabled row records the SPEC-TERMINAL-PERFORMANCE §6 inventory. Disabled
+baseline is workload 1. Enabled rows compare to that same-build baseline; they
+do not substitute a new T-NFR instrument.
+
+| # | Workload | Existing mandatory gates | Additional Red closer |
+|---|---|---|---|
+| 1 | Raw terminal, enhancements disabled | T-NFR, T-DROP, T-BYTES, T-SPAWN, T-KILL | T-PERF-BASELINE-PARITY (disabled arm) |
+| 2 | Flow enabled, idle | T-NFR (enabled), T-BLOCK-WARM-BOUNDARY, T-COMPOSITOR-WARM-PATH-BOUNDARY | T-PERF-BASELINE-PARITY |
+| 3 | Flow, normal shell commands | T-CONTENT-NO-PROMPT-HEURISTIC, T-TRANSCRIPT-BYTE-EVENT-ORDER, T-FID-SHELL-COMPAT | T-PERF-BASELINE-PARITY, T-CONTENT-SOURCE-AUTHORITY |
+| 4 | Sustained high-volume output | T-DROP | T-PERF-BYTE-FIDELITY, T-PERF-BOUNDED-RESOURCES |
+| 5 | Multiple simultaneously active panes | T-GRAPH starve / NFR-DROP multi-pane | T-PERF-PANE-ISOLATION |
+| 6 | Multiple agents concurrent output | T-TASK-WORKTREE-ISOLATION, T-AGENT-COLD | T-PERF-PANE-ISOLATION |
+| 7 | Very large retained transcript, virtualized scroll | T-COMPOSITOR-VIRTUALIZED-CONTENT, T-A11Y-VIRTUALIZED-BOUNDS | T-PERF-BOUNDED-RESOURCES |
+| 8 | Large visible diff and Markdown | T-COMPOSITOR-VIRTUALIZED-CONTENT | T-PERF-BOUNDED-RESOURCES |
+| 9 | Inspector and attention enabled | T-ATT-STRUCTURED-IDENTITY, T-COMPOSITOR-WARM-PATH-BOUNDARY | T-PERF-PRESENT-INDEPENDENT |
+| 10 | Optional activity timeline open | T-ACTIVITY-DERIVED-NOT-AUTHORITY | T-PERF-PRESENT-INDEPENDENT |
+| 11 | Slow semantic consumer | T-FLOW-RAW-SEMANTIC-FAILURE, T-PROTOCOL-SEMANTIC-INDEPENDENCE | T-PERF-SEMANTIC-DEGRADATION |
+| 12 | Slow or failed persistence | T-CONTENT-RETENTION-DISABLED | T-PERF-PRESENT-INDEPENDENT |
+| 13 | Slow mobile observer | T-CLIENT-CREDIT-ISOLATION, T-PROTOCOL-SLOW-CLIENT-CHANNEL-ISOLATION, T-MOBILE-BACKGROUND-DETACH | T-PERF-CLIENT-ISOLATION |
+| 14 | Alternate-screen TUI (Vim/Neovim) | T-CONTENT-ALT-SAME-PTY, T-EDITOR-RAW-BYPASS, T-INPUT-MODE-TRANSITION | T-PERF-RAW-TUI-BYPASS |
+| 15 | Nested tmux | T-FID-SHELL-COMPAT, T-CONTENT-ALT-SAME-PTY | T-PERF-RAW-TUI-BYPASS |
+| 16 | Unicode, grapheme shaping and IME | T-BYTES, T-TEXT-CLUSTER-SHAPING; T-NFR is **not** recut for IME | T-PERF-BYTE-FIDELITY (ordering); IME present-path uses existing host input once specified, still under T-NFR when those keys are HID-measurable |
+| 17 | Resize storms | T-RESIZE, T-CLIENT-VIEWPORT-AUTHORITY | T-PERF-BYTE-FIDELITY (no drop/reorder across SIGWINCH) |
+| 18 | Reconnect / checkpoint reconciliation | T-CLIENT-RING-EVICTION-RESYNC, T-CLIENT-MIRROR-RECONCILE, T-REM-CHECKPOINT-RECONNECT | T-PERF-RECOVERY-ISOLATION |
+| 19 | Semantic channel disconnect, terminal channel healthy | T-PROTOCOL-SEMANTIC-INDEPENDENCE | T-PERF-SEMANTIC-DEGRADATION |
+| 20 | Memory and queue bounds during prolonged execution | T-CONTENT-BOUNDED-RECOVERY | T-PERF-BOUNDED-RESOURCES |
+
+`make fast`, `make gates`, packaged-app tests, real-PTY tests, mutation jobs
+and required CI remain mandatory in addition to these Red closers. Hosted
+`macos-14` T-NFR timeout is still not the closer (ADR 0009).
