@@ -6,7 +6,8 @@
 - **Authority:** ADR 0053 and [SPEC-CONTENT](SPEC-CONTENT.md).
 - **Requires:** [SPEC-DISPLAY](SPEC-DISPLAY.md),
   [SPEC-FIDELITY](SPEC-FIDELITY.md), [SPEC-TRUST](SPEC-TRUST.md),
-  [SPEC-COMPOSITOR](SPEC-COMPOSITOR.md).
+  [SPEC-COMPOSITOR](SPEC-COMPOSITOR.md),
+  [SPEC-TERMINAL-PERFORMANCE](SPEC-TERMINAL-PERFORMANCE.md).
 - **Milestone:** after ContentTimeline and checkpoint/retention gates; historical
   M6 numbering does not override that dependency.
 
@@ -88,7 +89,7 @@ different output from a moving ring.
 |---|---|---|
 | T-BLOCK-CONTENT-IDENTITY | Red | §1 |
 | T-BLOCK-BOUNDARY | Red | §2 |
-| T-BLOCK-WARM-BOUNDARY | Red | §3 |
+| T-BLOCK-WARM-BOUNDARY | Red | §3; paired with T-PERF-BASELINE-PARITY |
 | T-BLOCK-RAW | Red | §4 |
 | T-BLOCK-RERUN | Red | §5 |
 | T-BLOCK-RETENTION | Red | §7 |

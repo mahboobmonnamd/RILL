@@ -100,6 +100,22 @@ to the terminal-grid presenter. JSON, control-plane RPC and per-cell Strings are
 forbidden on that path. Checkpoints are cold, compact, versioned binary state;
 they are not per-frame cell IPC.
 
+### Protected terminal invariant
+
+No product feature may slow, block, reorder or reduce the fidelity of the path
+from keyboard/input through binary attach, PTY, TerminalExecution worker/core,
+client mirror and POD damage to the Metal terminal-grid presenter. Semantic
+transcript, Flow, content, Tasks, attention, artifacts, rich rendering,
+persistence, search, observers/mobile and diagnostics are bounded asynchronous
+consumers. Their failure reduces enhancement to honest Raw/`Unstructured`
+content; it does not reduce terminal correctness.
+
+The complete source-authority table, overflow/failure behavior, paired
+disabled/enabled measurement method and 20-workload Red gate matrix are in
+[SPEC-TERMINAL-PERFORMANCE](spec/SPEC-TERMINAL-PERFORMANCE.md). ADR 0003's
+T-NFR boundary, zero warm control RPCs and zero dropped/reordered terminal bytes
+remain unchanged.
+
 ## Planes
 
 | Plane | Owns | Must not |
@@ -225,6 +241,7 @@ lease. Composer drafts are sensitive client-local non-durable state by default.
 - [SPEC-CLIENT-AUTHORITY](spec/SPEC-CLIENT-AUTHORITY.md)
 - [SPEC-CONTENT](spec/SPEC-CONTENT.md)
 - [SPEC-COMPOSITOR](spec/SPEC-COMPOSITOR.md)
+- [SPEC-TERMINAL-PERFORMANCE](spec/SPEC-TERMINAL-PERFORMANCE.md)
 - [SPEC-ATTACH](spec/SPEC-ATTACH.md)
 - [SPEC-CHIP1](spec/SPEC-CHIP1.md)
 - [SPEC-REMOTE](spec/SPEC-REMOTE.md)
@@ -248,6 +265,8 @@ mirror reconciliation are specified and demonstrated red.
 - crash, disconnect or lease expiry interpreted as termination
 - raw range replay called the native content model
 - semantic-channel failure blocking raw terminal traffic
+- semantic, persistence, observer or rich-rendering work synchronously gating
+  input, PTY drain, VT feed or Metal-grid presentation
 - terminal-cell scraping used for product state or actionable requests
 - renderer-owned inspector, timeline, approval, Task or artifact state
 - prompt-regex command boundaries

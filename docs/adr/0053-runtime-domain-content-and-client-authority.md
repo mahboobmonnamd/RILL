@@ -5,7 +5,9 @@
 - **Decision approval:** the repository-wide architecture decision gate answered
   by the product owner on 2026-08-21, including the accepted shell,
   configuration and privacy follow-up recorded in D13–D15, and the
-  UI/workflow concept reconciliation recorded in D16–D21.
+  UI/workflow concept reconciliation recorded in D16–D21. D22 records the
+  product owner's 2026-08-21 terminal-performance invariant without changing
+  ADR 0003's latency oracle or boundary.
 - **Implementation tracking:** none created or modified by this documentation
   decision. Each implementation slice still requires its own open GitHub issue,
   lane, milestone and evidence sequence.
@@ -13,6 +15,7 @@
 - **Requires:** [ADR 0001](0001-session-operating-system.md),
   [ADR 0002](0002-falsifiable-evidence.md),
   [ADR 0003](0003-display-pipeline.md),
+  [ADR 0009](0009-direct-to-display-echo.md),
   [ADR 0011](0011-session-graph.md),
   [ADR 0014](0014-m1-first-slice-closes.md),
   [ADR 0037](0037-chip1-live-swap.md),
@@ -528,6 +531,58 @@ or resync requirements; one failing semantic channel cannot stall PTY drain,
 raw input or another client. Protocol/checkpoint/content versions negotiate
 explicitly and fail closed when no compatible recovery path exists.
 
+### D22 — Terminal performance and fidelity are a product invariant
+
+No product feature may slow, block, reorder or reduce the fidelity of raw
+terminal input, PTY draining, terminal-core/VT processing or terminal-grid
+presentation. The protected path is:
+
+```text
+keyboard/input → binary attach path → PTY → TerminalExecution worker and
+terminal core → client terminal mirror → POD damage → Metal terminal-grid
+presenter
+```
+
+Semantic transcript, ContentTimeline, Flow Blocks, workspace activity,
+inspector, navigation badges, agent state, attention, approvals, artifacts,
+diffs, rich-text/Markdown/image work, persistence, databases, search,
+redaction/export, mobile/observer delivery, telemetry, diagnostics, crash
+reporting, JSON serialization and control-plane RPC MUST NOT be synchronous
+dependencies of that path. Raw terminal operation continues when any of them
+is slow, unavailable, overloaded, disconnected or crashed.
+
+PTY drain and terminal presentation are independently scheduled from semantic
+and persistence consumers. Semantic work uses bounded asynchronous queues with
+declared overflow/recovery behavior. Overflow may reduce enhancement to an
+honest `Unstructured` range or explicit `Discontinuity`; it MUST NOT block,
+drop, fabricate, reorder or delay terminal bytes. Persistence is asynchronous,
+batched and policy-controlled. Rich surfaces are virtualized and have separate
+bounded work/resource budgets. Hidden inspector, timeline and attention
+surfaces are event-driven/cold, never terminal scans or per-frame polls. Raw and
+alternate-screen TUI modes bypass Flow, rich content and the native composer.
+
+Enhanced views use authoritative runtime, shell/protocol, Task,
+StructuredRequest, test-reporter and Git/tool events. Terminal cells, prompt
+regex, language classification, cursor position, geometry and timing are not
+product-state sources. Missing structured metadata yields honest raw or
+unstructured output; it never yields an inferred command, success, duration,
+test result, branch, artifact, agent state or approval.
+
+ADR 0003's T-NFR definition and actual-refresh p95 boundary remain the primary
+latency gate. The same packaged build, machine class, power/display state,
+workload, viewport and instrumentation compare enhancements disabled and
+enabled. Enabled product features may not introduce a defensible key-to-present
+regression beyond measurement noise, add a control-plane RPC, or drop/reorder a
+PTY byte. No new millisecond tolerance is authorized here. Metrics without an
+existing numeric boundary remain paired baseline comparisons and require one
+later consolidated product decision before a numeric tolerance is accepted.
+
+[SPEC-TERMINAL-PERFORMANCE](../spec/SPEC-TERMINAL-PERFORMANCE.md) defines the
+bounded architecture, authoritative field sources, failure behavior,
+measurement inventory and Red performance matrix. Its gates supplement rather
+than replace every existing mandatory test, mutation, packaged-app run, real-PTY
+test, `make fast`, `make gates` or CI requirement.
+
 ## Explicit amendments
 
 | Prior authority | Amendment |
@@ -549,6 +604,8 @@ explicitly and fail closed when no compatible recovery path exists.
 | ADR 0048/0049 | Task forks gain durable parentage, hidden-by-default navigation, explicit propagation, isolation and conflict events. |
 | ADR 0050 | Flow is the default normal-shell presentation over the authoritative transcript; Raw/TUI remain the exact independently operable fallback. |
 | ADR 0051/0052 | Input modes and transitions are explicit; composer drafts default to client-local, sensitive and non-durable. |
+| ADR 0050 D3 | The Blocks-on/off comparison generalizes to every product enhancement; T-NFR's oracle and boundary remain unchanged. |
+| ADR 0042/0047–0052 | Cold panes, attention, Tasks, content, input and selection are also bounded asynchronous consumers of the D22 protected path; their feature contracts cannot waive terminal isolation. |
 
 ## Consequences
 
@@ -576,6 +633,9 @@ explicitly and fail closed when no compatible recovery path exists.
   without runtime identity or protocol migration.
 - Typed semantic channels add protocol complexity but cannot become a
   dependency of raw terminal availability.
+- Every enhanced surface carries paired terminal-performance evidence. Missing
+  secondary numeric thresholds remain visible Red decisions rather than
+  invented tolerances or reasons to weaken NFR-KEY.
 
 ## Rejected alternatives
 
@@ -599,6 +659,10 @@ explicitly and fail closed when no compatible recovery path exists.
   runtime state or public API.
 - Encoding approvals, agent state or actionable requests only in terminal cells.
 - Making the activity timeline authoritative or mandatory for navigation.
+- Allowing semantic accuracy, persistence durability or rich presentation to
+  consume terminal latency, byte fidelity or cross-pane/client isolation.
+- Scraping terminal cells to fabricate commands, results, lifecycle state or
+  actionable requests.
 
 ## Evidence gates
 
