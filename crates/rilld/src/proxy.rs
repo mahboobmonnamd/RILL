@@ -3,6 +3,7 @@
 use crate::endpoint::{authorize_peer, ensure_protected_parent};
 use crate::error::Error;
 use rill_attach::{cold_identity_socket_path, worker_socket_path};
+use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::PermissionsExt;
@@ -53,6 +54,8 @@ pub fn spawn_worker(attach_sock: &Path, worker_sock: &Path) -> Result<std::proce
 struct Pipe {
     a: UnixStream,
     b: UnixStream,
+    a_to_b: VecDeque<u8>,
+    b_to_a: VecDeque<u8>,
 }
 
 pub fn run_control(attach_sock: &Path) -> Result<(), Error> {
@@ -109,6 +112,8 @@ pub fn run_control(attach_sock: &Path) -> Result<(), Error> {
                     pipes.push(Pipe {
                         a: stream,
                         b: worker,
+                        a_to_b: VecDeque::new(),
+                        b_to_a: VecDeque::new(),
                     });
                 }
             }
@@ -152,14 +157,22 @@ pub fn run_control(attach_sock: &Path) -> Result<(), Error> {
             },
         ];
         for p in &pipes {
+            let mut ev_a = libc::POLLIN;
+            if !p.b_to_a.is_empty() {
+                ev_a |= libc::POLLOUT;
+            }
+            let mut ev_b = libc::POLLIN;
+            if !p.a_to_b.is_empty() {
+                ev_b |= libc::POLLOUT;
+            }
             fds.push(libc::pollfd {
                 fd: p.a.as_raw_fd(),
-                events: libc::POLLIN | libc::POLLOUT,
+                events: ev_a,
                 revents: 0,
             });
             fds.push(libc::pollfd {
                 fd: p.b.as_raw_fd(),
-                events: libc::POLLIN | libc::POLLOUT,
+                events: ev_b,
                 revents: 0,
             });
         }
@@ -170,21 +183,98 @@ pub fn run_control(attach_sock: &Path) -> Result<(), Error> {
 }
 
 fn splice(p: &mut Pipe) -> Result<(), Error> {
-    copy_nb(&mut p.a, &mut p.b)?;
-    copy_nb(&mut p.b, &mut p.a)?;
+    read_into(&mut p.a, &mut p.a_to_b)?;
+    read_into(&mut p.b, &mut p.b_to_a)?;
+    crate::write_outbox(&mut p.b, &mut p.a_to_b)?;
+    crate::write_outbox(&mut p.a, &mut p.b_to_a)?;
     Ok(())
 }
 
-fn copy_nb(from: &mut UnixStream, to: &mut UnixStream) -> Result<(), Error> {
+/// Read available bytes into `outbox`. Never discards a successful read
+/// because the peer is not writable ([#334](https://github.com/mahboobmonnamd/RILL/issues/334)).
+fn read_into(from: &mut UnixStream, outbox: &mut VecDeque<u8>) -> Result<(), Error> {
     let mut buf = [0u8; 8192];
     match from.read(&mut buf) {
-        Ok(0) => return Err(Error::PeerRefused),
-        Ok(n) => match to.write(&buf[..n]) {
-            Ok(_) => Ok(()),
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(()),
-            Err(e) => Err(e.into()),
-        },
+        Ok(0) => Err(Error::PeerRefused),
+        Ok(n) => {
+            #[cfg(feature = "mutate")]
+            if std::env::var("RILL_MUTATE").as_deref() == Ok("lossy_splice") {
+                return Ok(());
+            }
+            outbox.extend(buf[..n].iter().copied());
+            Ok(())
+        }
         Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(()),
         Err(e) => Err(e.into()),
+    }
+}
+
+#[cfg(test)]
+mod splice_q1 {
+    use super::*;
+    use std::io::ErrorKind;
+    use std::os::fd::AsRawFd;
+
+    fn tiny_buf(fd: std::os::fd::RawFd, send: bool) {
+        let n: libc::c_int = 2048;
+        let opt = if send {
+            libc::SO_SNDBUF
+        } else {
+            libc::SO_RCVBUF
+        };
+        unsafe {
+            libc::setsockopt(
+                fd,
+                libc::SOL_SOCKET,
+                opt,
+                &n as *const _ as *const libc::c_void,
+                std::mem::size_of_val(&n) as libc::socklen_t,
+            );
+        }
+    }
+
+    /// T-PROXY-SPLICE — a blocked destination must not drop already-read bytes.
+    ///
+    /// Bug: `copy_nb` returned `Ok(())` on `WouldBlock` after `read` succeeded.
+    /// Required mutation: `RILL_MUTATE=lossy_splice` (feature `mutate`).
+    #[test]
+    fn t_proxy_splice_does_not_drop_bytes_on_wouldblock() {
+        let (mut from_w, mut from_r) = UnixStream::pair().expect("from");
+        let (mut to_w, mut to_r) = UnixStream::pair().expect("to");
+        from_r.set_nonblocking(true).expect("from nb");
+        to_w.set_nonblocking(true).expect("to nb");
+        to_r.set_nonblocking(true).expect("to r nb");
+        tiny_buf(to_w.as_raw_fd(), true);
+        tiny_buf(to_r.as_raw_fd(), false);
+        let src: Vec<u8> = (0..80_000).map(|i| (i % 251) as u8).collect();
+        let writer = std::thread::spawn({
+            let src = src.clone();
+            move || {
+                from_w.write_all(&src).expect("fill");
+                drop(from_w);
+            }
+        });
+        let mut outbox = VecDeque::new();
+        let mut got = Vec::new();
+        let mut buf = [0u8; 4096];
+        for _ in 0..50_000 {
+            match read_into(&mut from_r, &mut outbox) {
+                Ok(()) => {}
+                Err(Error::PeerRefused) => {}
+                Err(e) => panic!("read_into: {e}"),
+            }
+            crate::write_outbox(&mut to_w, &mut outbox).expect("flush");
+            match to_r.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => got.extend_from_slice(&buf[..n]),
+                Err(e) if e.kind() == ErrorKind::WouldBlock => {}
+                Err(e) => panic!("read: {e}"),
+            }
+            if got.len() == src.len() && outbox.is_empty() {
+                break;
+            }
+        }
+        writer.join().expect("writer");
+        assert_eq!(got, src, "proxy splice dropped or desynced bytes");
     }
 }

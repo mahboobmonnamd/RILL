@@ -344,12 +344,11 @@ fn t_bind_does_not_steal_a_live_socket() {
     drop(first);
 }
 
-/// T-NFR regression lock: a live attach must not `poll` with a sleep.
+/// T-ATTACHED-POLL: attached with an empty outbox must not busy-loop (`poll` timeout 0).
 ///
-/// Required mutation: `RILL_MUTATE=idle_poll_while_attached` (feature `mutate`).
-/// Packaged hid p95 is the vsync oracle; this asserts the timeout `run` uses.
+/// Required mutation: `RILL_MUTATE=spin_poll_while_attached` (feature `mutate`).
 #[test]
-fn t_attached_session_poll_does_not_sleep() {
+fn t_attached_session_poll_does_not_busy_loop() {
     let sock = temp_sock("nfr-poll");
     let mut daemon = Daemon::bind(
         &sock,
@@ -368,14 +367,10 @@ fn t_attached_session_poll_does_not_sleep() {
     send(&mut gui, Frame::Credit(256 * 1024));
     for _ in 0..30 {
         let _ = daemon.step(5);
-        if daemon.step_timeout_ms() == 0 {
-            break;
-        }
     }
-    assert_eq!(
-        daemon.step_timeout_ms(),
-        0,
-        "attached poll slept; T-NFR hid p95 missed vsync after Q5"
+    assert!(
+        daemon.step_timeout_ms() > 0,
+        "attached poll with empty outbox busy-looped (timeout 0); burns a core at idle"
     );
 }
 

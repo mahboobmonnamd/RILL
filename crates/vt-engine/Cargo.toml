@@ -3,7 +3,7 @@ name = "vt-engine"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Chip 1 isolated VT engine: bytes in, POD snapshots out. Not live until M7."
+description = "Chip 1 VT engine: bytes in, POD snapshots out (ADR 0054 live chip)."
 
 [features]
 # Negative-control mutations (ADR 0002 D3). No shipping build enables this.

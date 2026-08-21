@@ -64,6 +64,40 @@ fn t_chip1_mode_tracks_host_encoder_flags() {
     assert!(vt.mode_state().cursor_visible);
 }
 
+/// T-CHIP1-RESIZE-ALT — resize must not leave the alternate screen.
+///
+/// Bug: `Screen::resize` cleared `in_alt` and `saved_grid`.
+/// Required mutation: `RILL_MUTATE=resize_clears_alt`.
+#[test]
+fn t_chip1_resize_preserves_alternate_screen() {
+    let mut vt = engine();
+    vt.feed(b"P").expect("primary");
+    vt.feed(b"\x1b[?1049h").expect("alt on");
+    vt.feed(b"A").expect("alt marker");
+    assert!(
+        vt.mode_state().alternate_screen,
+        "fixture did not enter alt screen"
+    );
+    vt.resize(100, 30, 8, 16).expect("resize");
+    assert!(
+        vt.mode_state().alternate_screen,
+        "resize left the alternate screen (SPEC-VT-SCREEN §5)"
+    );
+    let alt = vt.snapshot().expect("alt snap");
+    assert_eq!(
+        alt.cell(0, 0).expect("cell").codepoint,
+        u32::from(b'A'),
+        "alt marker lost on resize"
+    );
+    vt.feed(b"\x1b[?1049l").expect("alt off");
+    let primary = vt.snapshot().expect("primary snap");
+    assert_eq!(
+        primary.cell(0, 0).expect("cell").codepoint,
+        u32::from(b'P'),
+        "primary buffer was discarded on resize"
+    );
+}
+
 /// `reset()` restores encoder defaults.
 #[test]
 fn t_chip1_mode_reset_restores_defaults() {

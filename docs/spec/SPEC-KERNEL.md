@@ -81,6 +81,13 @@ pub fn resync_count(&self) -> u32;
   T-DROP asserts `stalled_reads > 0`; a flood that never stalls the kernel is
   an inconclusive test, not a pass (TEST-CASES T-DROP).
 
+The shipped worker path (`RILL_WORKER=1`) plus protocol-1 GUI MUST apply the
+same stall: do not read more than remaining writer credit, and do not send a
+truncated `DATA`/`DELTA` prefix
+([#335](https://github.com/mahboobmonnamd/RILL/issues/335)). Protocol 2's
+independent drain (observers must not stall the ring) remains for the deferred
+protocol-2 GUI ([DEFERRED](../DEFERRED.md)).
+
 Protocol 2 separates bounded worker PTY drain/recovery from delivery. Every
 ClientId has independent outbound credit; no client may grant or consume
 another client's window, and one stalled stream cannot stop the worker or

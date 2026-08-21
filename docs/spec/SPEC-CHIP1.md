@@ -8,17 +8,16 @@
   [0023](../adr/0023-chip1-v0-defers-character-width.md) after
   [S-VT #21](https://github.com/mahboobmonnamd/RILL/issues/21) closed.
   **Amended 2026-08-19** by [ADR 0035](../adr/0035-chip1-character-width.md)
-  (width; amends 0023 D1/D3/D4/D5). **Implementation hold 2026-08-21:**
-  [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md) D12
-  requires checkpoint compatibility and client reconciliation authority before
-  live-swap work resumes. Named tests are **Red**.
+  (width; amends 0023 D1/D3/D4/D5).   **Amended 2026-08-21** by [ADR 0054](../adr/0054-chip0-retired.md): Chip 1 is
+  the live emulator. Checkpoint/live-swap compatibility remains the hold in
+  ADR 0053 D12. Named library tests exist in-tree.
 - **Authority:** [ADR 0001](../adr/0001-session-operating-system.md) §1,
-  [ADR 0012](../adr/0012-chip1-isolated-vt.md)
+  [ADR 0012](../adr/0012-chip1-isolated-vt.md),
+  [ADR 0054](../adr/0054-chip0-retired.md)
 - **Issue:** [#6](https://github.com/mahboobmonnamd/RILL/issues/6)
-- **Crates (not in tree until tests exist):** `crates/rill-vt-types`,
-  `crates/vt-engine`
-- **Gates:** T-CHIP1-* in [TEST-CASES](../TEST-CASES.md) — **Red**. Not live.
-  Not T-NFR.
+- **Crates:** `crates/rill-vt-types`, `crates/vt-engine`
+- **Gates:** T-CHIP1-* in [TEST-CASES](../TEST-CASES.md). Live in the packaged
+  host ([ADR 0054](../adr/0054-chip0-retired.md)). Not T-NFR.
 
 Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
@@ -46,11 +45,10 @@ Three clauses below are superseded outright and say so in place.
 ## 1. Boundary
 
 - Chip 1 is a **library**. Bytes in, `PodGrid` out. It MUST NOT own a PTY,
-  paint, talk AppKit, dump cells into `Text`, or appear in `rill-host` /
-  `rilld` `Cargo.toml` until M7.
+  paint, talk AppKit, or dump cells into `Text`. The packaged host and `rilld`
+  depend on `vt-engine` as the live chip ([ADR 0054](../adr/0054-chip0-retired.md)).
 - Domain sources MUST NOT contain `ghostty_` identifiers.
-- `rill-chip0` MUST NOT depend on `vt-engine`. `vt-engine` MUST NOT depend on
-  `rill-chip0` except an optional macOS-only *dev* differential.
+- Chip 0 / `rill-chip0` is retired (ADR 0054). `vt-engine` MUST NOT depend on it.
 - Shared types MUST live in `rill-vt-types` so `fast.yml` can test Chip 1 on
   Linux with no Zig (SPEC-CHIP0 §9).
 

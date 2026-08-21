@@ -5,7 +5,7 @@
 #include <stdint.h>
 @class TerminalView;
 
-/* Three-column chrome around one Chip 0 leaf (ADR 0018, SPEC-CHROME).
+/* Three-column chrome around one Chip 1 leaf (ADR 0018, SPEC-CHROME, ADR 0054).
  * Not a second VT. Not tabs, nested splits, or agents. */
 @interface RillChromeController : NSViewController
 - (instancetype)initWithTerminal:(TerminalView *)terminal

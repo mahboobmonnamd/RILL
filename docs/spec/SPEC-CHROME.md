@@ -19,7 +19,7 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 - The proven M2 slice's default launch (no `--nfr-key`, no
   `RILL_MUTATE=no_chrome`) installs an
   `NSSplitView` as `contentView` with **three** subviews, left to right:
-  navigation, Chip 0, inspector.
+  navigation, Chip 1, inspector.
 - Accessibility identifiers MUST be `chrome-split` on the split,
   `chrome-left`, `chrome-center` (the `TerminalView`), `chrome-right`.
 - Left and right MUST have non-zero width after layout. Center MUST be the
@@ -42,7 +42,7 @@ keep every product-management surface hidden indefinitely.
 
 ## 2. Planes
 
-- Center MUST be Chip 0 (`libghostty-vt` + our Metal). It MUST NOT be an
+- Center MUST be Chip 1 (`vt-engine` + our Metal). It MUST NOT be an
   `NSTextView` / SwiftUI `Text` dump of the live grid.
 - Left and right MUST be AppKit chrome. They MUST NOT create a PTY, own
   scrollback, or receive the master fd.
@@ -64,10 +64,10 @@ keep every product-management surface hidden indefinitely.
 ## 4a. Look
 
 - Left and right MUST paint a **chrome surface**: look `background` with each
-  8-bit RGB channel saturating-minus 9. Center Chip 0 keeps the file
+  8-bit RGB channel saturating-minus 9. Center Chip 1 keeps the file
   `background`. Labels use look `foreground`.
 - They MUST NOT use a hardcoded gray independent of the theme file, and MUST
-  NOT match Chip 0's file background (T-SPLIT-LOOK).
+  NOT match Chip 1's file background (T-SPLIT-LOOK).
 - Latte and Mocha MUST both paint; a cream constant that matches only one
   file is not this gate.
 - `background-opacity` MUST NOT make chrome or the window translucent.
@@ -75,7 +75,7 @@ keep every product-management surface hidden indefinitely.
 ## 4b. Inset and type
 
 - Section labels MUST sit `padding-y` points from the top of their pane
-  (same look value Chip 0 uses as `window-padding-y` / host-surface
+  (same look value Chip 1 uses as `window-padding-y` / host-surface
   `padding-y`). Layout MUST use the live pane bounds. A 680pt template is
   not this gate (T-CHROME-INSET).
 - Section labels MUST use `NSFont.systemFontSize` (13pt control size), not

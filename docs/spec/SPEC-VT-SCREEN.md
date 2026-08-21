@@ -143,8 +143,11 @@ fn resize(&mut self, cols: u16, rows: u16, cell_w: u32, cell_h: u32) -> Result<(
 - The grid becomes exactly `cols * rows`; `cells.len()` follows (T-CHIP1-SIZE).
 - Cursor is clamped into the new bounds. The scroll region is reset when it no
   longer fits.
-- `cell_w` / `cell_h` are accepted for signature parity with Chip 0 and are not
-  used by v0 layout. They MUST NOT change cell contents.
+- Resize MUST NOT leave the alternate screen or discard the saved primary
+  (`in_alt`, `saved_grid`, saved cursors). Gate:
+  **T-CHIP1-RESIZE-ALT** ([#336](https://github.com/mahboobmonnamd/RILL/issues/336)).
+- `cell_w` / `cell_h` are accepted for signature parity with the retired Chip 0
+  adapter and are not used by v0 layout. They MUST NOT change cell contents.
 - `cols == 0` or `rows == 0` is an error, not a panic and not a silent clamp to
   1: a zero-area grid would make every index calculation a special case.
 - Reflow is **not** required in v0. Rows are truncated or padded. A reflowing

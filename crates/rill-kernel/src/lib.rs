@@ -1,8 +1,9 @@
 //! Kernel plane: PTY master, sole writer, bounded byte history.
 //!
 //! This crate must not paint and must not ship JSON cells. The GUI never
-//! receives the master fd — readiness is exposed as [`Session::wait_readable`],
-//! not as a descriptor (SPEC-KERNEL §1).
+//! receives the master fd — readiness is `Kernel::poll_with_extras` (and
+//! historically `Session::wait_readable`). The master fd is not a `pub` API
+//! (SPEC-KERNEL §1).
 
 mod checkpoint;
 mod error;

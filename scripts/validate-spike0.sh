@@ -301,8 +301,8 @@ if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
     cargo test -p rilld --offline --features mutate t_observe_attach -- --test-threads=1
   run_control "T-PARTIAL-WRITE" replay_full_frame \
     cargo test -p rilld --offline --features mutate t_outbound_partial_write -- --test-threads=1
-  run_control "T-ATTACHED-POLL" idle_poll_while_attached \
-    cargo test -p rilld --offline --features mutate t_attached_session_poll_does_not_sleep -- --test-threads=1
+  run_control "T-ATTACHED-POLL" spin_poll_while_attached \
+    cargo test -p rilld --offline --features mutate t_attached_session_poll_does_not_busy_loop -- --test-threads=1
   if [ "${RILL_NFR_OPTIONAL:-}" = 1 ]; then
     # Hosted 1× / no Spaces: these mutations go red for the missing
     # precondition, not for the defect, so they are not D3 evidence.

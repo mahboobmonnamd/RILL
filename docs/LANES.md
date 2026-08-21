@@ -47,7 +47,7 @@ Milestone numbers do not authorize work out of dependency order:
 9. artifacts and diffs; and
 10. optional activity timeline.
 
-Every lane preserves the existing PTY, attach, raw VT, Chip 0/Chip 1 and Metal
+Every lane preserves the existing PTY, attach, raw VT, Chip 1 and Metal
 foundations while working through this order.
 
 [SPEC-TERMINAL-PERFORMANCE](spec/SPEC-TERMINAL-PERFORMANCE.md) is cross-cutting:
