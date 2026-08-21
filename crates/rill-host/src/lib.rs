@@ -11,7 +11,7 @@
 //! reported 32 microseconds (docs/SPIKE-0-AUDIT.md S1-2).
 
 use rill_attach::{cold_identity_socket_path, Decoder, Frame};
-use rill_chip0::{apply_theme, load_resolved_surface, HostSurface, PodGrid, ThemeColors};
+use rill_chip0::{load_resolved_surface, HostSurface, PodGrid, ThemeColors};
 use rill_vt_types::{Rgb, TerminalEmulation, ATTR_WIDE_TAIL};
 use std::collections::VecDeque;
 use std::io::{Read, Write};
@@ -251,8 +251,9 @@ impl Client {
 
     pub fn snapshot(&mut self) -> Result<&PodGrid, rill_vt_types::Error> {
         if self.cached.is_none() {
-            let mut grid = self.chip.snapshot()?;
-            apply_theme(&mut grid, &self.surface);
+            // Chip 1 materialises the look-file palette in snapshot().
+            // apply_theme is a second full-grid walk and is not needed.
+            let grid = self.chip.snapshot()?;
             self.cached = Some(grid);
         }
         self.cached
