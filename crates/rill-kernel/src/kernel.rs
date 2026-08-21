@@ -411,7 +411,7 @@ impl Kernel {
         let mut ready_ids = Vec::new();
         let mut fds = Vec::new();
         for (&id, session) in &self.leaves {
-            if session.credit() > 0 && session.child_alive() {
+            if session.child_alive() {
                 ready_ids.push(id);
                 fds.push(session.master_pollfd(libc::POLLIN));
             }

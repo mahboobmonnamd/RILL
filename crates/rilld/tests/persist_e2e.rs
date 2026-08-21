@@ -20,7 +20,9 @@ fn unique_sock() -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .expect("time")
         .as_nanos();
-    PathBuf::from(format!("/tmp/rill-persist-{n}.sock"))
+    let dir = std::env::temp_dir().join(format!("rill-persist-{n}"));
+    std::fs::create_dir_all(&dir).expect("dir");
+    dir.join("attach.sock")
 }
 
 fn wait_sock(path: &PathBuf, timeout: Duration) -> bool {

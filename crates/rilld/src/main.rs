@@ -30,20 +30,28 @@ fn main() {
         eprintln!("rilld: nested launch refused (set RILL_ALLOW_NESTED=1)");
         std::process::exit(1);
     }
-    let shell = rilld::default_shell();
-    let size = rill_kernel::Winsize::default();
-    let daemon = match rilld::Daemon::bind(&socket, &shell, &[], size) {
-        Ok(d) => d,
-        Err(e) if matches!(e, rilld::Error::AlreadyRunning) => {
-            eprintln!("rilld: {e}");
-            std::process::exit(0);
-        }
-        Err(e) => {
+    let worker = std::env::var("RILL_WORKER").as_deref() == Ok("1");
+    if worker {
+        let shell = rilld::default_shell();
+        let size = rill_kernel::Winsize::default();
+        let daemon = match rilld::Daemon::bind(&socket, &shell, &[], size) {
+            Ok(d) => d,
+            Err(e) if matches!(e, rilld::Error::AlreadyRunning) => {
+                eprintln!("rilld: {e}");
+                std::process::exit(0);
+            }
+            Err(e) => {
+                eprintln!("rilld: {e}");
+                std::process::exit(1);
+            }
+        };
+        if let Err(e) = daemon.run() {
             eprintln!("rilld: {e}");
             std::process::exit(1);
         }
-    };
-    if let Err(e) = daemon.run() {
+        return;
+    }
+    if let Err(e) = rilld::run_control(&socket) {
         eprintln!("rilld: {e}");
         std::process::exit(1);
     }

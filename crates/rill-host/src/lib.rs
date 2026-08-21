@@ -302,9 +302,25 @@ pub fn default_socket() -> PathBuf {
     if let Ok(p) = std::env::var("RILL_SOCKET") {
         return PathBuf::from(p);
     }
-    // SAFETY: getuid is always safe.
-    let uid = unsafe { libc::getuid() };
-    PathBuf::from(format!("/tmp/rill-{uid}.sock"))
+    rill_attach_default_runtime()
+}
+
+fn rill_attach_default_runtime() -> PathBuf {
+    if let Ok(p) = std::env::var("RILL_RUNTIME_DIR") {
+        return PathBuf::from(p).join("attach.sock");
+    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/var/empty".into());
+    #[cfg(target_os = "macos")]
+    {
+        PathBuf::from(home).join("Library/Application Support/RILL/run/attach.sock")
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        if let Ok(xdg) = std::env::var("XDG_RUNTIME_DIR") {
+            return PathBuf::from(xdg).join("rill/attach.sock");
+        }
+        PathBuf::from(home).join(".local/share/rill/run/attach.sock")
+    }
 }
 
 fn cold_host_identity(attach_socket: &Path) -> Result<String, Error> {

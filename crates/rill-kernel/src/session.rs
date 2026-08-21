@@ -482,6 +482,24 @@ impl Session {
         Ok(())
     }
 
+    /// Worker drain: read the master into the ring without client credit.
+    /// Live attach delivery is per-ClientId (SPEC-ATTACH §5 protocol 2).
+    pub fn drain_pty(&mut self) -> Result<Option<Vec<u8>>, Error> {
+        if self.child_exit.is_some() {
+            return Ok(None);
+        }
+        let mut buf = vec![0u8; READ_BUF];
+        let got = self.pty.read(&mut buf)?;
+        if got == 0 {
+            return Ok(None);
+        }
+        buf.truncate(got);
+        self.ring.append(&buf);
+        self.bytes_delivered = self.bytes_delivered.saturating_add(got as u64);
+        self.record(IoEvent::PtyRead(got));
+        Ok(Some(buf))
+    }
+
     /// Read the master only while credit remains. When credit is exhausted the
     /// kernel stops reading — real backpressure, not a dropping channel
     /// (SPEC-KERNEL §4).

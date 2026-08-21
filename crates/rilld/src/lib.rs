@@ -1,9 +1,11 @@
 //! Kernel daemon: owns the session PTY, framed attach, cold-path resync.
 
+mod endpoint;
 mod error;
+mod proxy;
 
-use rill_attach::{cold_identity_socket_path, Decoder, Frame, PROTOCOL_VERSION};
-use rill_chip0::Chip0;
+use rill_attach::{cold_identity_socket_path, Decoder, Frame, PROTOCOL_2, PROTOCOL_VERSION};
+use rill_chip0::{Chip0, PodGrid, TerminalEmulation};
 use rill_kernel::{Kernel, Session, SessionId, Winsize};
 use std::collections::VecDeque;
 use std::fs::File;
@@ -14,7 +16,9 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+pub use endpoint::{authorize_peer, default_runtime_dir, ensure_protected_parent, peer_uid};
 pub use error::Error;
+pub use proxy::run_control;
 
 pub struct Daemon {
     listener: UnixListener,
@@ -38,6 +42,8 @@ struct Client {
     outbox: VecDeque<u8>,
     leaf: Option<SessionId>,
     observe: bool,
+    protocol: u8,
+    credit: u64,
 }
 
 impl Daemon {
@@ -51,9 +57,7 @@ impl Daemon {
             return Err(Error::NestedLaunch);
         }
         let socket_path = socket_path.as_ref().to_path_buf();
-        if let Some(dir) = socket_path.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
+        endpoint::ensure_protected_parent(&socket_path)?;
 
         // An exclusive lock, taken before anything is unlinked.
         //
@@ -105,8 +109,10 @@ impl Daemon {
         if let Ok(path) = std::env::var("RILL_TEST_PIDFILE") {
             std::fs::write(path, format!("{child_pid}\n"))?;
         }
-        if let Ok(path) = std::env::var("RILL_TEST_DAEMON_PIDFILE") {
-            std::fs::write(path, format!("{}\n", std::process::id()))?;
+        if std::env::var("RILL_WORKER").as_deref() != Ok("1") {
+            if let Ok(path) = std::env::var("RILL_TEST_DAEMON_PIDFILE") {
+                std::fs::write(path, format!("{}\n", std::process::id()))?;
+            }
         }
         if std::env::var("RILL_TEST_SECOND_LEAF").is_ok() {
             let second = kernel.spawn_leaf(shell, args, size)?;
@@ -208,9 +214,10 @@ impl Daemon {
             return 50;
         }
         let live = self.clients.iter().any(|c| {
-            c.leaf
-                .and_then(|id| self.kernel.session(id))
-                .is_some_and(|s| s.credit() > 0 && s.child_alive())
+            c.credit > 0
+                && c.leaf
+                    .and_then(|id| self.kernel.session(id))
+                    .is_some_and(|s| s.child_alive())
         });
         if live {
             0
@@ -232,6 +239,13 @@ impl Daemon {
                 .session_mut(id)
                 .and_then(Session::take_resync_history);
             if let Some(history) = history {
+                let proto2 = self
+                    .clients
+                    .iter()
+                    .any(|c| c.leaf == Some(id) && c.protocol == PROTOCOL_2);
+                if proto2 {
+                    continue;
+                }
                 let bytes = self.chip.resync_from_history(&history)?;
                 if !bytes.is_empty() {
                     if let Some(s) = self.kernel.session_mut(id) {
@@ -295,9 +309,50 @@ impl Daemon {
             {
                 continue;
             }
-            while let Some(s) = self.kernel.session_mut(id) {
-                if !(s.credit() > 0 && s.on_pty_readable()? > 0) {
-                    break;
+            #[cfg(feature = "mutate")]
+            if std::env::var("RILL_MUTATE").as_deref() == Ok("min_client_credit_gates_pty_read") {
+                let min_credit = self
+                    .clients
+                    .iter()
+                    .filter(|c| c.leaf == Some(id))
+                    .map(|c| c.credit)
+                    .min()
+                    .unwrap_or(0);
+                if min_credit == 0 {
+                    continue;
+                }
+            }
+            loop {
+                let proto2 = self
+                    .clients
+                    .iter()
+                    .any(|c| c.leaf == Some(id) && c.protocol == PROTOCOL_2);
+                let worker = std::env::var("RILL_WORKER").as_deref() == Ok("1");
+                if proto2 || worker {
+                    let drained = {
+                        let Some(s) = self.kernel.session_mut(id) else {
+                            break;
+                        };
+                        s.drain_pty()?
+                    };
+                    match drained {
+                        Some(bytes) => {
+                            let offset = self
+                                .kernel
+                                .session(id)
+                                .map(Session::bytes_delivered)
+                                .unwrap_or(0);
+                            self.fanout_pty_bytes(id, offset, bytes)?;
+                        }
+                        None => break,
+                    }
+                } else {
+                    let Some(s) = self.kernel.session_mut(id) else {
+                        break;
+                    };
+                    if !(s.credit() > 0 && s.on_pty_readable()? > 0) {
+                        break;
+                    }
                 }
             }
         }
@@ -348,6 +403,10 @@ impl Daemon {
     fn accept_client(&mut self) -> Result<(), Error> {
         match self.listener.accept() {
             Ok((stream, _)) => {
+                if endpoint::authorize_peer(&stream).is_err() {
+                    drop(stream);
+                    return Ok(());
+                }
                 stream.set_nonblocking(true)?;
                 if std::env::var("RILL_TEST_TINY_SNDBUF").is_ok() {
                     // T-PARTIAL-WRITE: force short writes on the accepted
@@ -380,6 +439,8 @@ impl Daemon {
                     outbox: VecDeque::new(),
                     leaf: None,
                     observe: false,
+                    protocol: PROTOCOL_VERSION,
+                    credit: 0,
                 });
             }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
@@ -409,7 +470,13 @@ impl Daemon {
             let Some(client) = self.clients.get_mut(idx) else {
                 return Ok(());
             };
-            client.decoder.push(&buf[..n])?
+            match client.decoder.push(&buf[..n]) {
+                Ok(frames) => frames,
+                Err(_) => {
+                    self.drop_client(idx);
+                    return Ok(());
+                }
+            }
         };
         for frame in frames {
             self.dispatch_frame(idx, frame)?;
@@ -429,11 +496,11 @@ impl Daemon {
                     #[cfg(feature = "mutate")]
                     {
                         std::env::var("RILL_MUTATE").as_deref() == Ok("ignore_protocol_version")
-                            || protocol == PROTOCOL_VERSION
+                            || Frame::protocol_supported(protocol)
                     }
                     #[cfg(not(feature = "mutate"))]
                     {
-                        protocol == PROTOCOL_VERSION
+                        Frame::protocol_supported(protocol)
                     }
                 };
                 if !proto_ok {
@@ -491,8 +558,11 @@ impl Daemon {
                     if let Some(c) = self.clients.get_mut(idx) {
                         c.leaf = Some(id);
                         c.observe = observe;
+                        c.protocol = protocol;
                     }
-                    if observe {
+                    if protocol == PROTOCOL_2 {
+                        self.emit_checkpoint(idx, id)?;
+                    } else if observe {
                         if let Some(s) = self.kernel.session(id) {
                             let hist = s.history();
                             if !hist.is_empty() {
@@ -505,6 +575,23 @@ impl Daemon {
                 }
             }
             other => {
+                let attached = self.clients.get(idx).and_then(|c| c.leaf);
+                if attached.is_none() {
+                    #[cfg(feature = "mutate")]
+                    if std::env::var("RILL_MUTATE").as_deref()
+                        == Ok("unattached_falls_back_to_default")
+                    {
+                        // fall through
+                    } else {
+                        self.drop_client(idx);
+                        return Ok(());
+                    }
+                    #[cfg(not(feature = "mutate"))]
+                    {
+                        self.drop_client(idx);
+                        return Ok(());
+                    }
+                }
                 let observe = self.clients.get(idx).is_some_and(|c| c.observe);
                 if observe && matches!(other, Frame::Data(_)) {
                     #[cfg(feature = "mutate")]
@@ -516,6 +603,22 @@ impl Daemon {
                     #[cfg(not(feature = "mutate"))]
                     {
                         return Ok(());
+                    }
+                }
+                if observe && matches!(other, Frame::Resize { .. }) {
+                    #[cfg(feature = "mutate")]
+                    if std::env::var("RILL_MUTATE").as_deref() == Ok("allow_observer_resize") {
+                    } else {
+                        return Ok(());
+                    }
+                    #[cfg(not(feature = "mutate"))]
+                    {
+                        return Ok(());
+                    }
+                }
+                if let Frame::Credit(n) = other {
+                    if let Some(c) = self.clients.get_mut(idx) {
+                        c.credit = c.credit.saturating_add(u64::from(n));
                     }
                 }
                 let id = self
@@ -549,6 +652,84 @@ impl Daemon {
             }
         }
         self.clients.remove(idx);
+        #[cfg(feature = "mutate")]
+        if std::env::var("RILL_MUTATE").as_deref() == Ok("worker_exits_on_daemon_close")
+            && std::env::var("RILL_WORKER").as_deref() == Ok("1")
+            && self.clients.is_empty()
+        {
+            std::process::exit(0);
+        }
+    }
+
+    fn fanout_pty_bytes(
+        &mut self,
+        id: SessionId,
+        offset: u64,
+        bytes: Vec<u8>,
+    ) -> Result<(), Error> {
+        #[cfg(feature = "mutate")]
+        if std::env::var("RILL_MUTATE").as_deref() == Ok("history_data_only") {
+            if let Some(s) = self.kernel.session_mut(id) {
+                s.enqueue_outbound(Frame::Data(bytes));
+            }
+            return Ok(());
+        }
+        for c in &mut self.clients {
+            if c.leaf != Some(id) {
+                continue;
+            }
+            if c.credit == 0 {
+                continue;
+            }
+            let n = bytes.len().min(c.credit as usize);
+            c.credit -= n as u64;
+            let chunk = bytes[..n].to_vec();
+            let frame = if c.protocol == PROTOCOL_2 {
+                Frame::Delta {
+                    start_offset: offset.saturating_sub(bytes.len() as u64),
+                    bytes: chunk,
+                }
+            } else {
+                Frame::Data(chunk)
+            };
+            c.outbox.extend(frame.encode()?);
+        }
+        Ok(())
+    }
+
+    fn emit_checkpoint(&mut self, idx: usize, id: SessionId) -> Result<(), Error> {
+        #[cfg(feature = "mutate")]
+        if std::env::var("RILL_MUTATE").as_deref() == Ok("history_data_only") {
+            if let Some(s) = self.kernel.session(id) {
+                let hist = s.history();
+                if let Some(c) = self.clients.get_mut(idx) {
+                    c.outbox.extend(Frame::Data(hist).encode()?);
+                }
+            }
+            return Ok(());
+        }
+        let (hist, offset, _exec) = match self.kernel.session(id) {
+            Some(s) => (s.history(), s.bytes_delivered(), id.as_u64()),
+            None => return Ok(()),
+        };
+        self.chip.reset();
+        if !hist.is_empty() {
+            self.chip.feed(&hist)?;
+        }
+        let grid = self.chip.snapshot()?;
+        let body = encode_pod_grid(&grid);
+        let hash = pod_hash(&grid);
+        if let Some(c) = self.clients.get_mut(idx) {
+            c.outbox.extend(
+                Frame::Checkpoint {
+                    ending_offset: offset,
+                    hash,
+                    blob: body,
+                }
+                .encode()?,
+            );
+        }
+        Ok(())
     }
 
     fn flush_outbound(&mut self) -> Result<(), Error> {
@@ -620,8 +801,12 @@ impl Daemon {
                     }
                     continue;
                 }
+                let protocol = self.clients[i].protocol;
                 let client = &mut self.clients[i];
                 for frame in frames {
+                    if protocol == PROTOCOL_2 && matches!(frame, Frame::Data(_)) {
+                        continue;
+                    }
                     client.outbox.extend(frame.encode()?);
                 }
             }
@@ -636,6 +821,33 @@ impl Daemon {
         }
         Ok(())
     }
+}
+
+fn encode_pod_grid(grid: &PodGrid) -> Vec<u8> {
+    let mut body = Vec::new();
+    body.extend_from_slice(&grid.cols.to_le_bytes());
+    body.extend_from_slice(&grid.rows.to_le_bytes());
+    body.extend_from_slice(&grid.cursor_col.to_le_bytes());
+    body.extend_from_slice(&grid.cursor_row.to_le_bytes());
+    body.push(u8::from(grid.cursor_visible));
+    for cell in &grid.cells {
+        body.extend_from_slice(&cell.codepoint.to_le_bytes());
+        body.extend_from_slice(&cell.fg.to_le_bytes());
+        body.extend_from_slice(&cell.bg.to_le_bytes());
+        body.extend_from_slice(&cell.attrs.to_le_bytes());
+        body.extend_from_slice(&cell._pad.to_le_bytes());
+    }
+    body
+}
+
+fn pod_hash(grid: &PodGrid) -> u64 {
+    let mut h = 0u64;
+    for cell in &grid.cells {
+        h = h
+            .wrapping_mul(16777619)
+            .wrapping_add(u64::from(cell.codepoint));
+    }
+    h
 }
 
 /// Non-blocking drain of `outbox`. Partial progress stays queued (Q1).
@@ -667,8 +879,7 @@ pub fn default_socket() -> PathBuf {
     if let Ok(p) = std::env::var("RILL_SOCKET") {
         return PathBuf::from(p);
     }
-    let uid = unsafe { libc::getuid() };
-    PathBuf::from(format!("/tmp/rill-{uid}.sock"))
+    default_runtime_dir().join("attach.sock")
 }
 
 pub fn default_shell() -> String {
