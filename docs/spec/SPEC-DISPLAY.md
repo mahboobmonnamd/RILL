@@ -7,7 +7,14 @@
   [ADR 0016](../adr/0016-exit-fullscreen-must-not-hang.md),
   [ADR 0017](../adr/0017-ghostty-look-windowed-default.md),
   [ADR 0018](../adr/0018-three-pane-host-chrome.md) (M2 chrome; not a Spike 0 reopen),
-  [ADR 0019](../adr/0019-dock-reopen-shows-window.md)
+  [ADR 0019](../adr/0019-dock-reopen-shows-window.md), amended for the future
+  product surface by
+  [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md) D4–D6
+  and D9
+- **Future contract:** [SPEC-RUNTIME-SUPERVISION](SPEC-RUNTIME-SUPERVISION.md),
+  [SPEC-CLIENT-AUTHORITY](SPEC-CLIENT-AUTHORITY.md), and
+  [SPEC-COMPOSITOR](SPEC-COMPOSITOR.md). Existing Spike 0 clauses remain
+  evidence for that slice only.
 - **Code:** `host/macos/`, `crates/rill-host`
 - **Gates:** T-NFR, T-SPAWN, T-KILL, T-RESIZE — **Proven**. T-FS-EXIT
   ([#257](https://github.com/mahboobmonnamd/RILL/issues/257)). T-LOOK /
@@ -22,12 +29,13 @@
 - The GUI MUST NOT create a PTY. No `forkpty`, `openpty`, `posix_openpt`,
   `grantpt`, `unlockpt`, `ptsname`, `login_tty` — as **imports**, verified by
   `nm -u` and `otool -Iv` (T-SPAWN).
-- `posix_spawn` of `rilld` is permitted and required. The gate distinguishes
-  the two by checking PTY-creation primitives, plus a runtime parent check.
+- `posix_spawn` of `rilld` is permitted for the proven Spike 0 development
+  lifecycle. Production uses the per-user supervised service. The gate still
+  distinguishes daemon launch from forbidden GUI PTY creation.
 - The GUI MUST NOT own scrollback, receive the master fd, or consume cells over
   IPC.
 
-## 2. Daemon launch
+## 2. Historical Spike 0 daemon launch and production successor
 
 - `main.m` spawns `rilld` with `POSIX_SPAWN_SETSID` so the GUI's process group
   death cannot take it.
@@ -36,6 +44,11 @@
   20ms for up to 3s, then fail with a diagnostic.
 - If `rilld` is already running, the GUI attaches to the existing socket. It
   MUST NOT unlink a live socket.
+
+These clauses prove GUI/process separation, not the production service or
+worker-survival contract. Production registration, protected endpoint,
+daemon restart and update compatibility are SPEC-RUNTIME-SUPERVISION and must
+not be claimed from `POSIX_SPAWN_SETSID`.
 
 ## 3. Warm path
 
@@ -72,7 +85,7 @@
 - Keystroke writes MUST NOT block the UI thread. The ≤2 ms attach-socket
   `poll` after send (ADR 0009 D1) waits for echo, not for the write.
 
-## 4. Renderer
+## 4. Terminal-grid renderer
 
 Per ADR 0003 D1:
 
@@ -96,13 +109,19 @@ Per ADR 0003 D1:
   Silent mis-rendering is not acceptable; a BGRA atlas is later display work,
   not the M1 session-graph slice ([ADR 0014](../adr/0014-m1-first-slice-closes.md) D4).
 
+This renderer remains the specialized terminal-grid primitive inside the RILL
+compositor. It is not replaced and is not the renderer for all structured
+content. Rich scene, virtualization, shared shaping, editor, selection and
+accessibility requirements are SPEC-COMPOSITOR and remain Red.
+
 ## 5. Geometry
 
 - Cell size derives from the font's advance and line metrics via CoreText.
   `TerminalView` does this. Kernel `Winsize::default` still uses 80×8 / 24×16
   px until the first `RESIZE` — leftover, not a font-family bug.
-- On resize: recompute cols/rows from the real cell box, resize the chip, and
-  send `RESIZE` with both cell and pixel dimensions.
+- On resize by the input/resize lease owner: recompute cols/rows from the real
+  cell box and request canonical RESIZE with cell and pixel dimensions.
+  Observers do not resize the PTY; they crop, pan or letterbox the live grid.
 - Backing scale factor changes (moving between displays) rebuild the atlas.
 
 ## 6. Input
@@ -143,8 +162,8 @@ exists in a test build is not measuring the shipped app.
 
 ## 9. Out of scope for Spike 0
 
-Tabs, nested PTY splits, Blocks, scrollback UI, mouse reporting,
-selection, search, ligatures, colour emoji, any second window, and
+Tabs, nested PTY splits, structured content, scrollback UI, mouse reporting,
+selection, search, shaping/ligatures, colour emoji, any second window, and
 session-graph UI in the kernel
 ([ADR 0011](../adr/0011-session-graph.md) D5). Three-pane chrome around **one**
 leaf is M2 ([SPEC-CHROME](SPEC-CHROME.md), [ADR 0018](../adr/0018-three-pane-host-chrome.md)).

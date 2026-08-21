@@ -198,4 +198,4 @@ truncate and increment `grapheme_truncated`.
   M7 + packaged CJK look ([#272](https://github.com/mahboobmonnamd/RILL/issues/272),
   [#305](https://github.com/mahboobmonnamd/RILL/issues/305)).
 - **Sixel / ReGIS / Kitty / iTerm images, Ghostty exec, a second VT.**
-  Rejected by ADR 0012 D5 and ADR 0032 D5.
+  Rejected by ADR 0012 D5 and ADR 0050 D5.

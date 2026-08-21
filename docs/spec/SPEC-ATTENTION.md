@@ -9,7 +9,10 @@
   zero-control-plane-RPC half of T-ATT-COLD, T-ATT-UNTRUSTED (needs Chip 0's
   OSC parser), T-ATT-SOCKET (needs a running daemon) and T-ATT-HOOK are not
   attempted here and stay **Red**.
-- **Authority:** [ADR 0029](../adr/0029-attention-is-an-orchestration-queue.md)
+- **Authority:** [ADR 0047](../adr/0047-attention-is-an-orchestration-queue.md),
+  amended by [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md)
+  D18. Existing library evidence does not prove the structured product
+  contract below.
 - **Requires:** [SPEC-NAV](SPEC-NAV.md), [SPEC-TRUST](SPEC-TRUST.md),
   [SPEC-CHIP0](SPEC-CHIP0.md), [SPEC-REMOTE](SPEC-REMOTE.md)
 - **Milestone:** M3 — Conversations
@@ -20,7 +23,11 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
 - There MUST be exactly one attention queue. Badges, mailbox, OS notifications,
   rollups and the next-attention shortcut all read it.
-- An entry has: target `NodeId`, state, origin, monotonic sequence, timestamp.
+- A product entry has stable AttentionId, exact WorkspaceId, SessionId, TabId
+  and PaneId, optional TerminalExecutionId/TaskId/StructuredRequestId, state,
+  type, urgency, origin, monotonic sequence, timestamp, lifecycle/expiry,
+  authorization policy, navigation target and allowed actions. The existing
+  library entry is a partial representation.
 - States are exactly: `needs_input`, `approval`, `completed_unread`, `failed`,
   `disconnected`.
 - No surface MAY invent a state or derive attention independently. Workspace
@@ -88,6 +95,20 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 - Clearing is idempotent and MUST NOT resurrect on re-render.
 - Badges are a pure function of the queue.
 
+## 7.1 Structured response
+
+- Safe, single-step structured requests MAY expose an inline allowed action.
+- Raw-mode prompts, TUI-owned input, ambiguous/multi-step interactions and
+  secret/password input MUST navigate to the exact owning pane.
+- Secret input and sensitive request payloads MUST NOT appear in notification
+  previews or be copied into an attention item.
+- A response authenticates the client/role and binds StructuredRequestId,
+  request generation and allowed action. Expired, stale, duplicate and replayed
+  responses are rejected and audited.
+- Read-only clients cannot respond, write terminal input or acquire approval
+  capability by rendering an item.
+- Terminal-cell scraping MUST NOT fabricate an actionable request.
+
 ## 8. Rollup
 
 Priority order:
@@ -110,6 +131,10 @@ Priority order:
 | T-ATT-HOOK | Red (not attempted) | §6 |
 | T-ATT-READ | **Proven** (library) | §7 |
 | T-ATT-ROLLUP | **Proven** (library) | §8 |
+| T-ATT-STRUCTURED-IDENTITY | Red | §§1, 7.1 |
+| T-ATT-RESPONSE-AUTH | Red | §7.1 |
+| T-ATT-REPLAY-REJECT | Red | §7.1 |
+| T-ATT-SECRET-NAVIGATION | Red | §7.1 |
 
 **Library evidence (2026-08-18).** `crates/rill-orchestrate/tests/attention_gates.rs`,
 green, each mutation confirmed to turn only its own test red under

@@ -1,7 +1,9 @@
 # SPEC-CHROME — three-pane host chrome (`lane:host`)
 
-- **Status:** Accepted — 2026-08-17
-- **Authority:** [ADR 0018](../adr/0018-three-pane-host-chrome.md)
+- **Status:** Accepted — 2026-08-17 for the three-pane evidence slice;
+  product visibility amended 2026-08-21.
+- **Authority:** [ADR 0018](../adr/0018-three-pane-host-chrome.md), amended by
+  [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md) D2
 - **Issue:** [#260](https://github.com/mahboobmonnamd/RILL/issues/260),
   look-file chrome: [#269](https://github.com/mahboobmonnamd/RILL/issues/269),
   inset / type / surface: [#270](https://github.com/mahboobmonnamd/RILL/issues/270)
@@ -14,7 +16,8 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
 ## 1. Layout
 
-- Default launch (no `--nfr-key`, no `RILL_MUTATE=no_chrome`) MUST install an
+- The proven M2 slice's default launch (no `--nfr-key`, no
+  `RILL_MUTATE=no_chrome`) installs an
   `NSSplitView` as `contentView` with **three** subviews, left to right:
   navigation, Chip 0, inspector.
 - Accessibility identifiers MUST be `chrome-split` on the split,
@@ -23,6 +26,19 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
   remaining width and MUST be `TerminalView`.
 - First responder MUST be `TerminalView`.
 - Sidebars MUST NOT accept first responder in this slice.
+
+### 1a. Product visibility contract
+
+The fixed three-pane default is historical evidence for chrome layout, not the
+final product default. Workspace UI, Session UI, sidebars, inspectors and agent
+surfaces are independently hideable per client. With them hidden, the terminal
+uses the available content area and the same stable implicit/named domain
+objects remain underneath.
+
+Toggling chrome MUST NOT create, delete, migrate, detach, terminate or resize a
+domain object except for an explicit user-requested terminal geometry change by
+the current lease owner. Re-enabling chrome projects the same IDs. Users may
+keep every product-management surface hidden indefinitely.
 
 ## 2. Planes
 
@@ -39,8 +55,9 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
 ## 4. Placeholders this slice MAY show
 
-- Left: a **Workspaces** heading and one row named from the home directory's
-  last path component. Not persisted. Not a second session.
+- Left: the historical slice MAY show a **Workspaces** heading and one row named
+  from the home directory's last path component. It is placeholder evidence,
+  not a stable implicit Workspace implementation and not persistence proof.
 - Right: inert **Changes** and **Files** rows. Clicks MUST NOT spawn, kill,
   or detach.
 
@@ -67,8 +84,8 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
 ## 5. Out of scope
 
-Tabs, nested PTY splits, agents, conversations, sidebar hide, workspace
-persist, cwd-leave ([#261](https://github.com/mahboobmonnamd/RILL/issues/261)),
+Tabs, nested PTY splits, agents, conversations, product visibility wiring,
+Workspace/Session persistence, cwd-leave ([#261](https://github.com/mahboobmonnamd/RILL/issues/261)),
 Blocks, Chip 1 live, a theme store, `NSVisualEffectView` over Metal.
 
 ## 6. What we will not do

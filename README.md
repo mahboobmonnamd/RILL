@@ -1,6 +1,7 @@
 # RILL
 
-A session operating system for terminals. macOS first. MIT OR Apache-2.0.
+A persistent host runtime and native content system for terminals. macOS first.
+MIT OR Apache-2.0.
 
 **Spike 0 is GREEN** ([ADR 0010](docs/adr/0010-spike-0-closes.md)). Kernel,
 attach, Chip 0, and a packaged `Rill.app` exist. Every named gate is Proven:
@@ -17,35 +18,29 @@ for regression. Launch the window with `make run`.
 
 | Word | Meaning |
 |---|---|
-| **Kernel** | The session OS. Owns shells, IDs, journal, who may type where. Lives after you quit the window. |
-| **PTY** | The Unix pipe to `zsh` / `vim` / `claude`. The kernel owns the master end. Nothing else writes it. |
-| **Attach plane** | Framed bytes between the window and the kernel (keys in, output out). Not JSON. Not cells. |
-| **UI / display chip** | What you see and type into. Lives in the window process. Dies on quit. Chip 0 = `libghostty-vt` + our GPU. Chip 1 = our emulator later, same traits. |
-| **Scrollback** | Byte history in the **kernel**, not in the window. Quit does not destroy it. |
-| **Orchestration** | Later: conversations, agents, scheduler. JSON and cold. Never on the typing path. |
+| **Runtime** | The per-user service on the process-owning host. Owns durable domain state, workers, leases and recovery. Lives after clients quit. |
+| **Workspace / Session** | Stable durable grouping. The objects remain real when their management UI is hidden. Session is not a PTY. |
+| **Terminal pane / execution** | A terminal pane owns at most one TerminalExecution. That execution worker owns one PTY and child process group. `Leaf` is internal tree terminology. |
+| **Attach plane** | Versioned framed bytes, checkpoints, credit and leases between clients and the runtime. The warm path is not JSON or cells. |
+| **Terminal core / display** | Host canonical VT plus disposable client mirrors. Chip 0 is live today; Chip 1 is isolated. The existing Metal grid remains the terminal primitive. |
+| **ContentTimeline** | Typed primary terminal/agent content and transcript under explicit retention policy. Raw replay is recovery/audit, not normal content identity. |
+| **Conversation / Task** | Structured orchestration objects attached to domain IDs. Neither is Session, TerminalExecution or transcript. |
+| **Shell compatibility** | zsh, fish, bash and other PTY-compatible shells keep their existing prompts, themes, plugins, startup files, ANSI behavior and interactive semantics. |
+| **Configuration / privacy** | One versioned TOML model covers product settings; portable copies exclude credentials. Sensitive content is minimized, policy-gated, encrypted and isolated. |
 
 ```mermaid
-flowchart TB
-  subgraph window["Window process — dies on quit"]
-    UI[Chrome: nav | Chip 0 | inspector]
-    CHIP[Display chip: VT + GPU + keys]
-  end
-  subgraph attach["Attach plane"]
-    FRAMES["SOCK_STREAM + tagged frames<br/>bytes, credit, resize, exit, attach-id"]
-  end
-  subgraph kernel["Kernel process — survives quit"]
-    PTY[PTY master — sole writer]
-    RING[Bounded byte history]
-    GRAPH[Pane / conversation graph]
-  end
-  CHIP -->|keys| FRAMES
-  FRAMES -->|output bytes| CHIP
-  FRAMES --> PTY
-  PTY --> RING
-  GRAPH -.->|cold JSON| FRAMES
+flowchart LR
+  C["Native client<br/>compositor + disposable VT mirror"]
+  A["Attach protocol<br/>bytes + checkpoint + lease"]
+  D["Control daemon<br/>domain + journal + leases"]
+  W["TerminalExecution worker<br/>canonical VT + one PTY"]
+  P["Child process group"]
+  C <--> A <--> D <--> W <--> P
 ```
 
-Warm typing never touches JSON, cell dumps, or the graph.
+Warm typing remains raw bytes to an in-process client VT and POD damage to the
+Metal grid. It never touches JSON, per-cell strings, ContentTimeline
+serialization or control-plane RPC.
 
 ## Setup
 
@@ -61,18 +56,19 @@ Installs or checks Rust (`rustc` ≥ 1.85), Zig (≥ 0.16, for Chip 0 / `libghos
 1. [ADR 0010](docs/adr/0010-spike-0-closes.md) — Spike 0 is Proven
 2. [PRD](docs/PRD.md) — what we ship and what we refuse
 3. [Architecture](docs/ARCHITECTURE.md) — planes, contracts, diagrams
-4. [ADR 0001](docs/adr/0001-session-operating-system.md) — the lock
-5. [ADR 0002](docs/adr/0002-falsifiable-evidence.md) — what counts as evidence
-6. [ADR 0003](docs/adr/0003-display-pipeline.md) — renderer and key→present
-7. [Spike 0](docs/SPIKE-0.md) — named gates ([validation](docs/SPIKE-0-VALIDATION.md), [test cases](docs/TEST-CASES.md))
-8. [SPIKE-0-AUDIT](docs/SPIKE-0-AUDIT.md) — historical: why 2026-08-16 was Red
-9. [Specs](docs/spec/) — [kernel](docs/spec/SPEC-KERNEL.md), [attach](docs/spec/SPEC-ATTACH.md), [chip 0](docs/spec/SPEC-CHIP0.md), [display](docs/spec/SPEC-DISPLAY.md), [graph](docs/spec/SPEC-GRAPH.md), [chrome](docs/spec/SPEC-CHROME.md), [chip 1](docs/spec/SPEC-CHIP1.md) (umbrella over [types](docs/spec/SPEC-VT-TYPES.md), [parser](docs/spec/SPEC-VT-PARSER.md), [screen](docs/spec/SPEC-VT-SCREEN.md), [colour](docs/spec/SPEC-VT-COLOR.md), [reply](docs/spec/SPEC-VT-REPLY.md), [conformance](docs/spec/SPEC-VT-CONFORMANCE.md))
-10. [ADR 0011](docs/adr/0011-session-graph.md) / [ADR 0014](docs/adr/0014-m1-first-slice-closes.md) / [ADR 0015](docs/adr/0015-m1-persist-remainder.md) — Milestone 1
-11. [ADR 0018](docs/adr/0018-three-pane-host-chrome.md) — M2 three-pane chrome (one leaf)
-12. [ADR 0012](docs/adr/0012-chip1-isolated-vt.md) / [M4-HANDOFF](docs/M4-HANDOFF.md) — isolated Chip 1 (not live)
-13. [M4-PLAN](docs/M4-PLAN.md) — Chip 1 slice plan. [ADR 0020](docs/adr/0020-chip1-parser-in-tree.md) parser (in-tree; `vte` dev-only), [ADR 0021](docs/adr/0021-chip1-colour-identity.md) colour identity, [ADR 0022](docs/adr/0022-chip1-reply-channel.md) DA/DSR replies, [ADR 0023](docs/adr/0023-chip1-v0-defers-character-width.md) width deferred, [ADR 0035](docs/adr/0035-chip1-character-width.md) width (T-CHIP1-WIDTH; blocks M7). Spikes: [SPIKE-VT](docs/SPIKE-VT.md), [SPIKE-WIDTH](docs/SPIKE-WIDTH.md)
-14. [Lanes](docs/LANES.md) — how 3–5 people work in parallel
-15. [CONTRIBUTING](CONTRIBUTING.md) — issues, PRs, TDD
+4. [ADR 0053](docs/adr/0053-runtime-domain-content-and-client-authority.md) — runtime, domain, content and client authority
+5. [Architecture evidence](docs/ARCHITECTURE-EVIDENCE-2026-08-21.md) — repository findings and workflow sources
+6. [ADR registry](docs/adr/README.md) — canonical numbering and historical mappings
+7. [ADR 0001](docs/adr/0001-session-operating-system.md) — the lock
+8. [ADR 0002](docs/adr/0002-falsifiable-evidence.md) — what counts as evidence
+9. [ADR 0003](docs/adr/0003-display-pipeline.md) — renderer and key→present
+10. [Foundation specs](docs/spec/) — [domain/lifecycle](docs/spec/SPEC-DOMAIN-LIFECYCLE.md), [runtime](docs/spec/SPEC-RUNTIME-SUPERVISION.md), [clients](docs/spec/SPEC-CLIENT-AUTHORITY.md), [content](docs/spec/SPEC-CONTENT.md), [compositor](docs/spec/SPEC-COMPOSITOR.md)
+11. [Spike 0](docs/SPIKE-0.md) — named gates ([validation](docs/SPIKE-0-VALIDATION.md), [test cases](docs/TEST-CASES.md))
+12. [Existing subsystem specs](docs/spec/) — [kernel](docs/spec/SPEC-KERNEL.md), [attach](docs/spec/SPEC-ATTACH.md), [chip 0](docs/spec/SPEC-CHIP0.md), [display](docs/spec/SPEC-DISPLAY.md), [graph](docs/spec/SPEC-GRAPH.md), [chrome](docs/spec/SPEC-CHROME.md), [remote](docs/spec/SPEC-REMOTE.md), [chip 1](docs/spec/SPEC-CHIP1.md)
+13. [ADR 0011](docs/adr/0011-session-graph.md) / [ADR 0014](docs/adr/0014-m1-first-slice-closes.md) / [ADR 0015](docs/adr/0015-m1-persist-remainder.md) — Milestone 1
+14. [ADR 0012](docs/adr/0012-chip1-isolated-vt.md) / [M4-HANDOFF](docs/M4-HANDOFF.md) / [M4-PLAN](docs/M4-PLAN.md) — isolated Chip 1; live swap parked behind checkpoint compatibility
+15. [Lanes](docs/LANES.md) — dependency order and parallel ownership
+16. [CONTRIBUTING](CONTRIBUTING.md) — issues, PRs, TDD
 
 ## License
 

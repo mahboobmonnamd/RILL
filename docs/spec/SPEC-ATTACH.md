@@ -4,7 +4,12 @@
   ([ADR 0010](../adr/0010-spike-0-closes.md)). Written 2026-08-16 as the
   remediation draft.
 - **Authority:** [ADR 0001](../adr/0001-session-operating-system.md) §2, §5, §6,
-  [ADR 0015](../adr/0015-m1-persist-remainder.md) (protocol + observe)
+  [ADR 0015](../adr/0015-m1-persist-remainder.md) (protocol + observe), amended
+  for future versions by
+  [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md)
+- **Future contract:** [SPEC-CLIENT-AUTHORITY](SPEC-CLIENT-AUTHORITY.md). The
+  existing protocol-1 clauses remain historical evidence; they do not prove
+  roles, independent observer flow control, leases or checkpoints.
 - **Crate:** `crates/rill-attach`
 - **Gates:** T-ATTACH, T-EXIT, T-RESIZE, T-DROP, T-NFR (control-RPC clause) —
   **Proven**. T-ATTACH-PROTO, T-GRAPH-OBSERVE — persist remainder.
@@ -14,12 +19,14 @@
 - Darwin has no `SOCK_SEQPACKET` (errno 43). The transport is a framed
   `SOCK_STREAM` over `AF_UNIX`.
 - `SOCK_SEQPACKET` MUST NOT appear in the tree.
-- The socket MUST be created with mode `0600` in a directory the invoking user
-  owns. A world-writable socket path is a shell-execution vector.
+- The socket MUST be created with mode `0600` in a protected runtime directory
+  the invoking user owns. A predictable endpoint directly under shared `/tmp`
+  does not satisfy this requirement. Local peer credentials MUST match before
+  ATTACH is processed.
 
 ## 2. Frame format
 
-```
+```text
 +--------+------------------+------------------+
 | tag u8 | len u32 (LE)     | payload (len)    |
 +--------+------------------+------------------+
@@ -63,16 +70,21 @@ flags u8 (bit 0 = observe). Packaged host still sends 8-byte.
 
 ## 5. Credit
 
-- `CREDIT` is a **window the client replenishes as it consumes**, not a
-  one-shot grant (audit S3-5).
-- The GUI MUST NOT open with `Credit(u32::MAX)`. Initial window is 256 KiB;
-  the client grants `n` further bytes only after it has fed `n` bytes to the
-  chip.
-- The kernel MUST NOT read more than the outstanding credit.
+- Protocol 1 `CREDIT` is the sole attached client's replenished delivery window,
+  not a one-shot grant (audit S3-5). The proven implementation couples its PTY
+  read to that window.
+- The protocol-1 GUI MUST NOT open with `Credit(u32::MAX)`. Initial window is
+  256 KiB; the client grants `n` further bytes only after it has fed `n` bytes
+  to the chip.
+- Protocol 2 separates worker PTY drain/recovery bounds from per-ClientId
+  delivery credit. Each client's credit governs only that client's outbound
+  stream. A stalled observer or controller may lose deltas and resync; it cannot
+  stall the worker's bounded PTY drain, another client or another pane.
 
 ## 6. Attach identity
 
-- Exactly one **writer** attach per session. A second writer `ATTACH` MUST
+- Protocol 1 permits exactly one **writer** attach per legacy execution. A
+  second writer `ATTACH` MUST
   receive `REFUSED{AlreadyAttached}` and MUST NOT disturb the first client.
   A second connection MAY `ATTACH` with observe (flags bit 0) and MUST NOT
   write the PTY (ADR 0015 D7).
@@ -80,6 +92,8 @@ flags u8 (bit 0 = observe). Packaged host still sends 8-byte.
   to displace an attached client by connecting (audit S3-6). The daemon tracks
   connections and the attach claim separately; the attached connection is
   replaced only when it closes.
+- A connection without a completed ATTACH MUST NOT route any pane-directed
+  frame to a default execution. Such a frame closes only that connection.
 - 8-byte ATTACH (generation only) MUST attach the default leaf. 16-byte ATTACH
   MUST name a `SessionId`. 18-byte ATTACH carries protocol and flags. Protocol
   other than 1 → `REFUSED{ProtocolMismatch}`. Unknown id → `REFUSED{Invalid}`
@@ -87,6 +101,12 @@ flags u8 (bit 0 = observe). Packaged host still sends 8-byte.
   (ADR 0011 D3) or observe the same id (ADR 0015 D7).
 - `generation` is opaque to the kernel in Spike 0 and reserved for reconnect
   tokens under a later ADR.
+
+Protocol 2 or later replaces writer/observe flags with authenticated ClientId,
+role, capabilities, independent credit, explicit TerminalExecutionId and an
+input/resize lease generation. It adds versioned checkpoint, delta-offset,
+state-hash and lease events without putting cells, JSON or per-cell strings on
+the warm path. Protocol 1 MUST NOT be silently interpreted as protocol 2.
 
 ## 7. What the attach plane may and may not do
 

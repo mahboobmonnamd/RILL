@@ -9,7 +9,9 @@
   red-then-green under `--features mutate` (evidence below). T-CFG-OPAQUE
   (needs `NSWindow`/Metal) and T-CFG-UPDATE (needs a signed-binary updater)
   are host/platform work, not attempted here, and stay **Red**.
-- **Authority:** [ADR 0025](../adr/0025-one-look-schema-one-config-file.md)
+- **Authority:** [ADR 0043](../adr/0043-one-look-schema-one-config-file.md),
+  amended by
+  [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md) D14–D15
 - **Requires:** [ADR 0017](../adr/0017-ghostty-look-windowed-default.md),
   [SPEC-CHROME](SPEC-CHROME.md), [SPEC-DISPLAY](SPEC-DISPLAY.md)
 - **Files:** `host-surface.toml`, `~/.config/rill/config`, `RILL_CONFIG`
@@ -17,10 +19,17 @@
 
 Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
-## 1. One schema
+## 1. One versioned TOML schema
 
 - There MUST be exactly one configuration schema. Every importer is an adapter
   producing values in it. There MUST NOT be a second internal representation.
+- The canonical serialization is TOML with an explicit schema version. It
+  covers app and terminal themes, fonts, font sizes, keybindings, rendering,
+  line height, cursor, shell selection, window/pane and Workspace/Session
+  behavior, Flow/Raw preferences, attention, inspector, notifications, remote
+  connections, privacy, logging, retention and export settings. Platform
+  adapters MAY expose only supported fields but MUST NOT invent a parallel
+  schema.
 - The schema is versioned. An unknown key MUST be reported and dropped, never
   guessed (T-LOOK-UNKNOWN).
 - A change that would reinterpret an existing key requires a version bump.
@@ -32,6 +41,9 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 - Configuration lives in the user's dotfiles. No account is required or offered.
 - A settings UI MUST write that file, readable and diffable. It MUST NOT keep a
   parallel binary store and MUST NOT rewrite keys it did not change.
+- Credentials, private keys, tokens, secret values, device authentication
+  material and host credentials MUST NOT be represented in TOML. Opaque
+  references to a separately governed platform credential store are allowed.
 
 ## 3. Resolution order
 
@@ -62,6 +74,10 @@ Highest wins:
   `NSWindow.alphaValue` and MUST NOT install `NSVisualEffectView` behind the
   Metal layer. The T-NFR path stays opaque (ADR 0007).
 - Dock icon sets are file references. Icons MUST NOT be executable or scripted.
+- A named theme MUST resolve coherent application chrome, terminal palette,
+  ContentTimeline, editor, diff, control and accessibility/contrast tokens.
+  Role-specific derived tokens are allowed; an unrelated fallback palette or
+  surface-local theme identity is not.
 
 ## 5. Keybindings
 
@@ -80,9 +96,24 @@ Highest wins:
 
 ## 7. Sync
 
-- Cloud settings sync, if it exists, is optional and additive. The local file
-  MUST remain complete and authoritative with sync off.
-- Secrets MUST NOT be synced (SPEC-TRUST §4). Nothing ships in M2.
+- Export and backup serialize the validated canonical model and MUST NOT include
+  credential-store values, secrets, host credentials or device authentication
+  material.
+- Sync, if it exists, is optional, opt-in and additive. The local file MUST
+  remain complete and authoritative with sync off. Only explicitly allowlisted
+  non-secret schema fields may sync.
+- Backup and sync inherit SPEC-TRUST privacy, encryption, isolation, retention
+  and deletion requirements. Nothing ships in M2.
+
+## 7a. Validation and migration
+
+- Parse and schema validation complete before activation. Invalid input keeps
+  the last valid configuration active and reports exact field diagnostics.
+- A version migration MUST be explicit, previewable and atomic. It creates a
+  recoverable pre-migration backup and verifies the migrated file before
+  replacing the prior file.
+- Failed validation or migration MUST NOT partially apply settings, erase
+  unknown user text or expose secrets in diagnostics.
 
 ## 8. Updates
 
@@ -102,6 +133,10 @@ Highest wins:
 | T-CFG-ORDER | **Proven** (library) | §3 |
 | T-CFG-OPAQUE | Red (host, not attempted) | §4 |
 | T-CFG-BIND | **Proven** (library) | §5 |
+| T-CFG-SCHEMA-COVERAGE | Red | §1 |
+| T-CFG-THEME-CONSISTENCY | Red | §4 |
+| T-CFG-MIGRATE | Red | §7a |
+| T-CFG-PORTABLE-SECRETS | Red | §§2, 7 |
 | T-CFG-UPDATE | Red (host, not attempted) | §8 |
 
 **Library evidence (2026-08-18).** `crates/rill-orchestrate/tests/config_gates.rs`,
@@ -119,3 +154,5 @@ T-LOOK-FILE, T-LOOK-UNKNOWN, T-SPLIT-LOOK MUST stay green.
 - Use `NSWindow.alphaValue` for opacity.
 - Look up bindings per event through the config tree.
 - Require an account for any feature.
+- Store credentials or secret values in TOML, exports, backups or sync.
+- Partially apply an invalid or failed migration.

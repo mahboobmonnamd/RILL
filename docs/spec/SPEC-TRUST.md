@@ -7,7 +7,10 @@
   mutate` (evidence below). §3 plugins, §6 updates, §7 the daemon socket, and
   §8 accessibility all need a running daemon or a window and are not
   attempted here; those gates stay **Red**.
-- **Authority:** [ADR 0026](../adr/0026-trust-secrets-and-automation-boundary.md)
+- **Authority:** [ADR 0044](../adr/0044-trust-secrets-and-automation-boundary.md),
+  amended by
+  [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md) D4,
+  D8, D11 and D15
 - **Requires:** [SPEC-CONFIG](SPEC-CONFIG.md), [SPEC-NAV](SPEC-NAV.md),
   [SPEC-KERNEL](SPEC-KERNEL.md)
 - **Crates:** `crates/rilld`, `crates/rill-host`, `host/macos/`
@@ -50,14 +53,64 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
   confirm. A new version MUST re-ask rather than inherit a grant.
 - No plugin runtime ships in M2.
 
-## 4. Redaction
+## 4. Capture, retention and redaction
 
-- Secrets MUST NOT appear in journals, diagnostics, crash reports, exported
-  Blocks, shared permalinks, agent context, history, clipboard, or telemetry.
-- Redaction MUST be applied at the **sink** that persists or transmits. A sink
-  without a redaction pass MUST NOT be given content.
+- Terminal output, commands, transcript/history, clipboard data, agent context,
+  host/user/session identifiers and diagnostic metadata are sensitive by
+  default. Collection MUST be purpose-limited and minimized before redaction is
+  considered.
+- Capturing terminal output, history, transcript, conversations or task content
+  requires an applicable retention policy. Durable capture MAY be disabled
+  entirely. Local encryption and available redaction do not authorize capture
+  and MUST NOT be described as making corporate output automatically safe.
+- Service diagnostics, crash reports and telemetry MUST NOT receive terminal or
+  secret content.
+- Clipboard, export, share, agent context and other transmission are derived
+  sinks. Redaction MUST run at those sinks and report that detection is
+  incomplete. A sink without its required redaction pass receives no content.
+- Canonical policy-authorized source is not silently rewritten by redaction.
+  Destructive deletion is a separate retention operation.
 - Redaction MUST NOT be applied to the live terminal surface (NFR-BYTES).
 - Trusted project config MUST NOT weaken redaction.
+- The most restrictive applicable user, host, Workspace, Session or enterprise
+  policy wins. A local setting MUST NOT widen a parent policy.
+- Policy-authorized durable sensitive data MUST be encrypted at rest with a
+  platform-protected key. Authenticated encryption is required in transit.
+- Isolation MUST prevent data disclosure across operating-system users,
+  runtimes, hosts, Workspaces, Sessions, clients, agents and external services.
+
+The existing T-TRUST-REDACT library gate proves a derived export transform only.
+It does not prove capture authorization, complete secret detection, durable
+storage, deletion or transmission policy.
+
+### 4a. Diagnostics, clipboard, agents, backup and sync
+
+- Service logs, telemetry, analytics identifiers and crash reports MUST NOT
+  contain terminal output, commands, clipboard payloads, credentials, secrets,
+  PII or raw agent context.
+- Optional diagnostics require explicit consent after the exact fields,
+  destination and retention are shown. Collection is off when that contract is
+  unavailable.
+- Clipboard and agent context are explicit derived sinks. Scope is the minimum
+  selected payload, previewed where practical; visibility on screen never
+  authorizes a whole-pane, Session or Workspace attachment.
+- Backup and sync operate only on allowlisted data, apply encryption and
+  deletion policy, and never include credentials, host credentials, tokens,
+  private keys, device authentication material or credential-store payloads.
+- Secrets and PII MUST NOT appear in configuration, URLs, process arguments,
+  socket names or service/crash metadata.
+- PTY traffic, raw history, semantic events, Flow/activity projections, Task
+  messages/tool calls, structured requests, approvals, attention, artifacts,
+  snapshots, notifications, mobile/remote transport, clipboard, file transfer,
+  shell integration, configuration export and backup each declare their sink
+  policy before receiving content.
+- Secret prompts navigate to their owning pane and expose no value or content
+  preview in notification/attention surfaces. Approval actions require an
+  authenticated StructuredRequestId and generation; stale/replayed responses
+  are rejected. Read-only clients cannot send terminal or approval input.
+- Clipboard, file transfer, export and remote access are separately
+  policy-controlled capabilities. Tool permissions are explicit, scoped,
+  inspectable and cannot be inferred from visible content.
 
 ## 5. No account
 
@@ -72,8 +125,9 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 - Builds MUST be signed and notarized.
 - The updater MUST verify signature and version before applying and MUST refuse
   on failure. Rollback MUST be supported.
-- An update MUST NOT be applied while a leaf is attached without confirmation,
-  and MUST NOT leave persist worse than a normal quit.
+- An update MUST NOT terminate a healthy TerminalExecution. It proceeds with
+  live workers only under the version/checkpoint compatibility matrix in
+  SPEC-RUNTIME-SUPERVISION; otherwise it is deferred with blockers named.
 - Downgrade to unsigned or older builds MUST be refused unless the user
   explicitly rolls back.
 
@@ -81,8 +135,8 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
 - Automation goes through the daemon socket: cold, framed, versioned.
 - It MUST NOT put JSON, cells, or extra RPCs on the warm path.
-- The socket MUST be user-scoped with restrictive permissions and MUST refuse a
-  foreign uid.
+- The socket MUST be in a protected user-owned runtime directory with
+  restrictive permissions and MUST verify/refuse a foreign uid before frames.
 - Every mutating verb MUST be explicit. There MUST NOT be an `exec` or `eval`
   verb, or a shell passthrough bypassing §2.
 
@@ -94,8 +148,9 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 - Chrome elements MUST carry accessibility labels and identifiers, extending
   SPEC-CHROME §1's convention.
 - VoiceOver MUST be able to name the focused pane and its state.
-- The grid MUST be exposed to assistive technology by a cold, on-demand read of
-  the POD buffer. There MUST NOT be a per-frame `String` mirror.
+- Live terminal accessibility uses a cold projection of terminal state;
+  structured content uses virtualized semantic accessibility nodes. There MUST
+  NOT be a per-frame String mirror or a full offscreen timeline rebuild.
 
 ## 9. Gates
 
@@ -103,7 +158,15 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 |---|---|---|
 | T-TRUST-CONFIG | **Proven** (library) | §2 |
 | T-TRUST-PLUGIN | Red (not attempted) | §3 |
-| T-TRUST-REDACT | **Proven** (library) | §4 |
+| T-TRUST-REDACT | **Proven** (derived-transform library sub-gate) | §4 |
+| T-TRUST-CAPTURE-POLICY | Red | §4 capture/disable/delete authority |
+| T-PRIVACY-MINIMIZATION | Red | §§4, 4a collection and scope |
+| T-PRIVACY-BOUNDARY-ISOLATION | Red | §4 user/host/session/client/agent boundaries |
+| T-PRIVACY-DIAGNOSTICS | Red | §4a logs/telemetry/crash reports |
+| T-PRIVACY-BACKUP-SYNC | Red | §4a backup/sync allowlist and secrets |
+| T-PRIVACY-NOTIFICATION-SECRET | Red | §4a secret prompts/previews |
+| T-TRUST-STRUCTURED-REPLAY | Red | §4a authenticated request generation |
+| T-TRUST-READONLY-INPUT | Red | §4a read-only denial |
 | T-TRUST-NOACCT | Red (not attempted) | §5 |
 | T-TRUST-UPDATE | Red (not attempted) | §6 |
 | T-TRUST-SOCKET | Red (not attempted) | §7 |
@@ -122,3 +185,5 @@ T-TRUST-NOACCT MUST be executed with the network denied.
 - Redact by rewriting the grid.
 - Ship a generic `exec` verb on the socket.
 - Mirror the grid per frame for accessibility.
+- Treat redaction or encryption as authority to collect more data.
+- Put credentials, terminal content or raw agent context in diagnostics.

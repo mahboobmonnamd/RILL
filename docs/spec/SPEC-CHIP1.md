@@ -8,7 +8,10 @@
   [0023](../adr/0023-chip1-v0-defers-character-width.md) after
   [S-VT #21](https://github.com/mahboobmonnamd/RILL/issues/21) closed.
   **Amended 2026-08-19** by [ADR 0035](../adr/0035-chip1-character-width.md)
-  (width; amends 0023 D1/D3/D4/D5). Named tests are **Red**.
+  (width; amends 0023 D1/D3/D4/D5). **Implementation hold 2026-08-21:**
+  [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md) D12
+  requires checkpoint compatibility and client reconciliation authority before
+  live-swap work resumes. Named tests are **Red**.
 - **Authority:** [ADR 0001](../adr/0001-session-operating-system.md) §1,
   [ADR 0012](../adr/0012-chip1-isolated-vt.md)
 - **Issue:** [#6](https://github.com/mahboobmonnamd/RILL/issues/6)
@@ -71,6 +74,11 @@ pub trait TerminalEmulation {
 - Inherent methods, matching Chip 0: `reset`, `repaint_bytes`,
   `resync_from_history`. Tests MUST NOT assert on a `\x1b[2J\x1b[H` prefix the
   emit path itself prepends (ADR 0002 D4). Assert a second instance’s grid.
+- `repaint_bytes` and `resync_from_history` are not the product checkpoint
+  contract. Live eligibility additionally requires a deterministic versioned
+  checkpoint codec, import/export at a monotonic execution offset, and a state
+  hash that detects divergence after delta application. Checkpoints are compact
+  cold binary state, not per-frame cells or per-cell Strings.
 - Inherent, **Chip 1 only**: `take_replies` / `has_replies`
   ([ADR 0022](../adr/0022-chip1-reply-channel.md),
   [SPEC-VT-REPLY](SPEC-VT-REPLY.md)) and `set_palette`
@@ -216,6 +224,9 @@ and MUST run the `vte` differential there. It MUST NOT gain `rill-chip0`.
 
 Live swap **wiring** ([#24](https://github.com/mahboobmonnamd/RILL/issues/24)) —
 [ADR 0037](../adr/0037-chip1-live-swap.md) is Accepted; host/`rilld` dependency
-lifts only in the swap PR after spec and named tests. Blocks, live TUI-in-block,
-cwd tap (M6). Chrome, conversations, Metal, fonts. Changing the Ghostty pin. A
-second VT in `rilld`.
+lifts only after checkpoint/reconciliation specs and their required mutations
+are demonstrated red, followed by the live-swap spec and named tests. Content,
+live TUI-in-content, cwd tap, chrome, conversations, Metal, fonts and changing
+the Ghostty pin remain outside this isolated-crate spec. The future runtime has
+one authoritative host VT per TerminalExecution plus disposable client mirrors;
+it does not add competing authoritative VTs.

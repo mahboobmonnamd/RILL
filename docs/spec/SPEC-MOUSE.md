@@ -2,31 +2,41 @@
 
 - **Status:** Accepted — 2026-08-18. Gates **Red** until demonstrated
   red-then-green (ADR 0002 D2).
-- **Authority:** [ADR 0034](../adr/0034-selection-links-and-raw-mode-arbitration.md)
+- **Authority:** [ADR 0052](../adr/0052-selection-links-and-raw-mode-arbitration.md),
+  amended by
+  [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md) D9
 - **Requires:** [SPEC-FIDELITY](SPEC-FIDELITY.md), [SPEC-BLOCKS](SPEC-BLOCKS.md),
   [SPEC-SURFACES](SPEC-SURFACES.md) §10, [SPEC-TRUST](SPEC-TRUST.md),
-  [SPEC-CWD](SPEC-CWD.md)
-- **Milestone:** M6 — Blocks
+  [SPEC-CWD](SPEC-CWD.md), [SPEC-CONTENT](SPEC-CONTENT.md),
+  [SPEC-COMPOSITOR](SPEC-COMPOSITOR.md)
+- **Milestone:** after content/compositor foundations; historical M6 numbering
+  does not override ADR 0053 D12.
 
 Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
 ## 1. Selection
 
-- Selection MUST resolve against Chip 0's flat POD buffer.
+- Live terminal selection resolves against terminal grid position plus
+  TerminalExecution/checkpoint identity. Structured-content and editor
+  selection use ContentItem/grapheme and document anchors respectively.
 - It MUST NOT build a per-cell `String` mirror, MUST NOT run on the display-link
   callback, and MUST NOT modify the grid.
 - Copy-on-select MUST be opt-in, default off, and MUST fire on release only —
   never during a drag.
-- Smart select expands to word, path, or URL by reading the buffer. Rectangular
-  select is a selection mode, not a second buffer.
-- The clipboard is a sink; redaction applies (SPEC-TRUST §4).
+- Smart select expands within the owning surface. Rectangular terminal select
+  is a selection mode, not a second buffer. Cross-surface copy orders derived
+  fragments without mutating sources.
+- The clipboard is a derived sink; redaction policy applies but does not claim
+  complete secret removal or authorize capture.
 
 ## 2. Copy mode
 
-- vi/tmux motions over scrollback MUST work **while the process stays live**.
+- vi/tmux motions over policy-retained primary content MUST work **while the
+  process stays live**.
 - Entering copy mode MUST NOT stop the PTY reader. The child keeps running and
   the ring keeps filling (PRD NFR-DROP).
-- Leaving returns to the live tail.
+- Leaving returns to the live tail. Missing/deleted history is shown as a
+  discontinuity, not reconstructed from unrelated ring contents.
 
 ## 3. Opening paths and links
 

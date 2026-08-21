@@ -1,14 +1,14 @@
 # SPEC-TASK — the agent runtime object (orchestration plane)
 
-- **Status:** Accepted — 2026-08-18. `crates/rill-orchestrate/src/task.rs`
-  implements `Task`, the closed section set, the replay adapter, the prompt
-  queue, fork, and persistence, entirely provider-independent per §2.
-  **T-TASK-SECTIONS, T-TASK-APPROVE, T-TASK-FORK, T-TASK-QUEUE,
-  T-TASK-REPLAY, T-TASK-PERSIST and T-TASK-ATTACH are Proven at the library
-  level** — `cargo test -p rill-orchestrate --test task_gates`,
-  red-then-green under `--features mutate` (evidence below). T-TASK-CHECKPOINT
-  needs a real git repository and is not attempted here; it stays **Red**.
-- **Authority:** [ADR 0030](../adr/0030-task-is-the-agent-runtime-object.md)
+- **Status:** Accepted — 2026-08-18, amended 2026-08-21. The existing
+  `rill-orchestrate` gates prove isolated section, replay, decision, fork,
+  queue, serialization and redacted-attachment mechanics. They do **not** prove
+  the complete Task object, daemon integration, durable storage, restart
+  recovery or product UI. Those product gates remain **Red**.
+- **Authority:** [ADR 0048](../adr/0048-task-is-the-agent-runtime-object.md),
+  amended by
+  [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md) D1,
+  D5, D7 and D8
 - **Requires:** [SPEC-GRAPH](SPEC-GRAPH.md), [SPEC-NAV](SPEC-NAV.md),
   [SPEC-ATTENTION](SPEC-ATTENTION.md), [SPEC-TRUST](SPEC-TRUST.md)
 - **Milestone:** M3 — Conversations
@@ -17,15 +17,19 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 
 ## 1. The object
 
-- A `Task` has a stable `TaskId` (`u64`, kernel-allocated, not reused while
-  live), status, cwd, host, target `NodeId`, label, and ordered sections.
-- It is orchestration-plane state living beside the session graph, not inside a
-  chrome view model.
-- A `Task` MAY target a leaf; it MUST NOT own one. The kernel still owns PTYs
-  (FR-PTY, FR-SOLE).
-- Task end MUST NOT kill a leaf unless the user asked.
+- A complete `Task` has a stable TaskId, status, cwd, verified host, optional
+  WorkspaceId/SessionId/TerminalPaneId target, label and ordered sections. The
+  current library type contains only a subset and MUST NOT be cited as object
+  completeness.
+- It is orchestration state beside the domain graph, not Session,
+  TerminalExecution, transcript or a chrome view model.
+- A Task MAY target a terminal pane or execution; it MUST NOT own a PTY.
+- Task end MUST NOT kill a TerminalExecution unless the user separately
+  completes the explicit termination workflow.
 - A label is display-only and MUST NOT address a task.
-- Tasks and their prompt queues MUST survive a window restart.
+- Tasks and prompt queues survive GUI and control-daemon restart only after the
+  runtime durable-store/recovery gate is Proven. A TOML/String round trip in a
+  library process is serialization evidence, not that product guarantee.
 
 ## 2. Replay first
 
@@ -47,8 +51,9 @@ Exactly: `prompt`, `plan`, `tool`, `command`, `output`, `approval`, `diff`,
 - A new section type requires an ADR amendment.
 - An adapter receiving something unmappable MUST emit `output` with the raw
   content. It MUST NOT invent a type or drop it.
-- Section content is untrusted: it MUST NOT render as executable markup and MUST
-  be redacted at every persisting sink (SPEC-TRUST §4).
+- Section content is untrusted and MUST NOT render as executable markup.
+  Capture obeys SPEC-CONTENT retention policy. Redaction applies to derived
+  transmission/export sinks and does not silently rewrite canonical source.
 
 ## 4. Approvals and questions
 
@@ -80,6 +85,15 @@ Exactly: `prompt`, `plan`, `tool`, `command`, `output`, `approval`, `diff`,
 - It MUST NOT duplicate the PTY, MUST NOT attach a second writer to a leaf
   (FR-ONE), and MUST NOT continue the source task.
 - The two tasks MUST be independent afterwards.
+- ParentTaskId, fork point, worktree/isolation identity and lifecycle are
+  durable. A fork remains grouped under its parent and is hidden from ordinary
+  navigation unless opened, pinned or requiring attention.
+- Forking MUST NOT create a visible Tab or Pane.
+- Cancellation/completion propagation is an explicit recorded policy; the
+  default is no implicit propagation in either direction.
+- Concurrent write-capable forks MUST use distinct worktrees. Creation/cleanup
+  refuses on ambiguous ownership or data loss. Merge/rebase conflicts become
+  durable structured events and require explicit resolution.
 
 ## 7. Prompt queue
 
@@ -113,13 +127,19 @@ Exactly: `prompt`, `plan`, `tool`, `command`, `output`, `approval`, `diff`,
 | ID | Status | Closes |
 |---|---|---|
 | T-TASK-REPLAY | **Proven** (library) | §2 |
-| T-TASK-PERSIST | **Proven** (library) | §1 |
+| T-TASK-SERIALIZE | **Proven** (library; existing test is named `T-TASK-PERSIST`) | byte round-trip only |
+| T-TASK-RUNTIME-PERSIST | Red | §1 durable runtime/restart contract |
+| T-TASK-COMPLETE-OBJECT | Red | §1 fields and domain targets |
 | T-TASK-SECTIONS | **Proven** (library) | §3 |
 | T-TASK-APPROVE | **Proven** (library) | §4 |
 | T-TASK-CHECKPOINT | Red (needs a real git repo, not attempted) | §5 |
 | T-TASK-FORK | **Proven** (library) | §6 |
 | T-TASK-QUEUE | **Proven** (library) | §7 |
 | T-TASK-ATTACH | **Proven** (library) | §9 |
+| T-TASK-FORK-NAVIGATION | Red | §6 hidden/grouped behavior |
+| T-TASK-FORK-PROPAGATION | Red | §6 explicit lifecycle policy |
+| T-TASK-WORKTREE-ISOLATION | Red | §6 real filesystem isolation |
+| T-TASK-FORK-CONFLICT | Red | §6 structured conflict handling |
 
 **Library evidence (2026-08-18).** `crates/rill-orchestrate/tests/task_gates.rs`,
 green, each mutation confirmed to turn red under `--features mutate`:
@@ -129,6 +149,13 @@ green, each mutation confirmed to turn red under `--features mutate`:
 `approval_times_out_to_yes` turns both T-TASK-APPROVE's and T-TASK-QUEUE's
 tests red, because the queue's blocked-refusal genuinely depends on
 `Task::is_blocked` — real coupling, not a test-isolation defect.
+
+The test currently named `t_task_persist_round_trips_sections_decisions_and_queue`
+round-trips a returned text value in one process. It is retained as a
+serialization sub-gate but MUST NOT be described as window, daemon, disk,
+recovery or product persistence evidence. `Task` currently lacks the specified
+status, cwd, host, target and label fields, and `rill-orchestrate` is not wired
+into `rilld`; the Red gates above record that gap.
 
 ## 12. What we will not do
 

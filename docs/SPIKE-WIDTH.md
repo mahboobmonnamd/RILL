@@ -117,7 +117,7 @@ Hand-written CJK `match` ranges remain forbidden (ADR 0023 D5).
 
 - Live swap ([#305](https://github.com/mahboobmonnamd/RILL/issues/305), [#24](https://github.com/mahboobmonnamd/RILL/issues/24)).
 - Mode channel, `take_replies` drain, T-NFR recut (forbidden).
-- Blocks / live TUI-in-block ([ADR 0032](adr/0032-blocks-are-a-cold-overlay.md) D5 still refuses a second VT).
+- Blocks / live TUI-in-block ([ADR 0050](adr/0050-blocks-are-a-cold-overlay.md) D5 still refuses a second VT).
 - Colour emoji atlas (ADR 0003: tofu until a BGRA atlas).
 - Chip 0 C1 measurement ([#304](https://github.com/mahboobmonnamd/RILL/issues/304)).
 

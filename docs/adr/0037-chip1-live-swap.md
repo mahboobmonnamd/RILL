@@ -1,6 +1,9 @@
 # ADR 0037: Chip 1 replaces Chip 0 on the warm path (M7 live swap)
 
 - **Status:** Accepted — 2026-08-20
+- **Implementation hold:** [ADR 0053](0053-runtime-domain-content-and-client-authority.md)
+  D12 parks the live swap until host checkpoint and client reconciliation
+  contracts are specified and demonstrated red.
 - **Tree:** this repository only
 - **Issue:** [#305](https://github.com/mahboobmonnamd/RILL/issues/305) (ADR),
   implementation [#24](https://github.com/mahboobmonnamd/RILL/issues/24)
@@ -11,7 +14,7 @@
   T-CHIP0-C1-PAINT Proven ([#304](https://github.com/mahboobmonnamd/RILL/issues/304),
   [#308](https://github.com/mahboobmonnamd/RILL/pull/308))
 - **Amends:** [ADR 0012](0012-chip1-isolated-vt.md) D1 — isolation lifts in the
-  swap PR named below. [ADR 0022](0022-terminal-fidelity-is-chip0.md) D1 — at
+  swap PR named below. [ADR 0040](0040-terminal-fidelity-is-chip0.md) D1 — at
   M7 the host queries Chip 1 `mode_state()`, not Chip 0. [M4-PLAN](../M4-PLAN.md)
   M7 preconditions 4–6.
 - **Does not authorize:** starting [#24](https://github.com/mahboobmonnamd/RILL/issues/24)
@@ -89,7 +92,7 @@ with Chip 1 as the resync engine.
 ### D4 — Theme palette via `set_palette`, look gates unchanged
 
 The host MUST load the resolved theme palette from the look **file**
-([ADR 0025](0025-one-look-schema-one-config-file.md),
+([ADR 0043](0043-one-look-schema-one-config-file.md),
 [ADR 0017](0017-ghostty-look-windowed-default.md)) and call `VtEngine::set_palette`
 after connect and whenever the theme changes. `snapshot()` materialises SGR
 against that palette ([ADR 0021](0021-chip1-colour-identity.md)).
@@ -101,7 +104,7 @@ The swap PR does not recut those fixtures.
 ### D5 — Host encodes from `mode_state()` after `feed`
 
 The host MUST NOT parse escape sequences for mouse mode, DECCKM, keypad mode,
-or bracketed paste ([ADR 0022](0022-terminal-fidelity-is-chip0.md) D1, amended).
+or bracketed paste ([ADR 0040](0040-terminal-fidelity-is-chip0.md) D1, amended).
 After each `feed` (and after resync replay on the attach client), the host reads
 `VtEngine::mode_state()` and encodes keys and mouse from the returned
 `TerminalModeState` ([ADR 0036](0036-chip1-mode-state-channel.md) D2).
@@ -166,7 +169,8 @@ implementation that turns them green:
 - `no-host-dep-on-vt-engine` becomes a regression guard only until the swap PR
   lands; after that, accidental `rill-chip0` on the warm path should be linted
   separately (follow-up if needed).
-- Blocks (M6) and live TUI-in-block (ADR 0032) still use whatever chip the warm
+- Blocks (historical M6) and live TUI-in-content (ADR 0050 as amended by ADR
+  0053) still use whatever chip the warm
   path owns — after swap, that is Chip 1.
 
 ## Rejected alternatives

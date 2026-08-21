@@ -1,6 +1,7 @@
 # M4 handoff — Chip 1 isolated VT
 
-**Status: handover context. 2026-08-17. S-VT closed 2026-08-18.**
+**Status: handover context. 2026-08-17. S-VT closed 2026-08-18. Live-swap
+hold added 2026-08-21 by ADR 0053.**
 `lane:chip1-vt-engine` / Milestone 4.
 
 **Read [M4-PLAN](M4-PLAN.md) first — it is the current order of work.**
@@ -16,6 +17,10 @@
 
 Do **not** write `vt-engine` until the T-CHIP1 tests for that slice exist and
 have been observed red (ADR 0002 D2). Do **not** link the crate into the window.
+Isolated crate/conformance work may continue under its existing issues. Live
+host/`rilld` swap work remains parked until
+[SPEC-CLIENT-AUTHORITY](spec/SPEC-CLIENT-AUTHORITY.md)'s checkpoint and mirror
+reconciliation mutations have demonstrated red.
 
 | | |
 |---|---|

@@ -2,8 +2,8 @@
 
 - **Status:** Accepted — 2026-08-18. Gates **Red** until demonstrated
   red-then-green (ADR 0002 D2).
-- **Authority:** [ADR 0024](../adr/0024-non-terminal-panes-are-cold.md),
-  [ADR 0028](../adr/0028-development-surfaces-are-panes.md)
+- **Authority:** [ADR 0042](../adr/0042-non-terminal-panes-are-cold.md),
+  [ADR 0046](../adr/0046-development-surfaces-are-panes.md)
 - **Requires:** [SPEC-NAV](SPEC-NAV.md) (pane slots),
   [SPEC-CHROME](SPEC-CHROME.md), [SPEC-TRUST](SPEC-TRUST.md)
 - **Crates:** `crates/rill-host`, `host/macos/`
