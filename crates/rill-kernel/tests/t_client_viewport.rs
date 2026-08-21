@@ -39,7 +39,9 @@ fn t_client_viewport_authority_observer_does_not_set_child_winsize() {
     );
     let mut session =
         Session::spawn("/bin/sh", &["-c", &script], Winsize::default()).expect("spawn");
-    session.on_frame(Frame::attach(1, None)).expect("controller");
+    session
+        .on_frame(Frame::attach(1, None))
+        .expect("controller");
     std::thread::sleep(Duration::from_millis(150));
 
     session
