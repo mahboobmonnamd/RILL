@@ -32,3 +32,8 @@ decision text; ADR 0053 makes later substantive amendments explicitly.
 Old filenames remain as non-authoritative mapping documents so historical
 links resolve. Git history and the notes in each canonical ADR preserve the
 original merge identity.
+
+## 2026-08-21 Chip 0 retirement
+
+[ADR 0054](0054-chip0-retired.md) deletes `crates/rill-chip0` and `libghostty-vt`.
+Historical ADRs that named Chip 0 as the then-live emulator stay as history.

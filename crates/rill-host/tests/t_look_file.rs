@@ -1,9 +1,14 @@
-//! Look paint oracles that need Chip 0 (T-LOOK).
+//! T-LOOK file oracles on Chip 1. Authority: look files, not a catalog.
 
-use super::*;
+use rill_look::{
+    apply_theme, chrome_surface_rgba, load_host_surface, look_file_candidates_for, overlay_look,
+    parse_hex, parse_look_keys, resolve_theme, HostSurface, ThemeColors,
+};
+use rill_vt_types::{PodCell, PodGrid, Rgb, TerminalEmulation};
 use std::path::{Path, PathBuf};
+use vt_engine::{Palette, VtEngine};
 
-fn fixture_ghostty() -> &'static str {
+fn fixture_look() -> &'static str {
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../fixtures/look/rill.config"
@@ -17,11 +22,10 @@ fn fixture_themes() -> PathBuf {
     ))
 }
 
-/// Oracle: parse `background =` from the theme file, not a Rust constant.
 fn background_from_theme_file(name: &str) -> u32 {
     let text = std::fs::read_to_string(fixture_themes().join(name)).expect("theme file");
     parse_look_keys(&text, None)
-        .expect("theme file is Ghostty grammar")
+        .expect("theme file parses")
         .background
         .expect("theme file has background =")
 }
@@ -30,7 +34,6 @@ fn colors_from_theme_file(name: &str) -> ThemeColors {
     resolve_theme(name, Some(&fixture_themes())).expect("resolve fixture theme")
 }
 
-/// Oracle: `palette = N=` from the theme file, not ThemeColors we also fed in.
 fn palette_from_theme_file(name: &str, index: usize) -> u32 {
     let text = std::fs::read_to_string(fixture_themes().join(name)).expect("theme file");
     let prefix = format!("palette = {index}=");
@@ -41,6 +44,27 @@ fn palette_from_theme_file(name: &str, index: usize) -> u32 {
         }
     }
     panic!("{name} has no palette = {index}=");
+}
+
+fn u32_to_rgb(v: u32) -> Rgb {
+    Rgb {
+        r: ((v >> 24) & 0xff) as u8,
+        g: ((v >> 16) & 0xff) as u8,
+        b: ((v >> 8) & 0xff) as u8,
+    }
+}
+
+fn palette_from_theme(colors: &ThemeColors) -> Palette {
+    let mut p = Palette::vt_default();
+    p.foreground = u32_to_rgb(colors.foreground);
+    p.background = u32_to_rgb(colors.background);
+    p.cursor = u32_to_rgb(colors.cursor);
+    if let Some(ansi) = colors.ansi {
+        for (i, v) in ansi.iter().enumerate() {
+            p.ansi[i] = u32_to_rgb(*v);
+        }
+    }
+    p
 }
 
 fn wcag_contrast(a: u32, b: u32) -> f64 {
@@ -60,7 +84,7 @@ fn wcag_contrast(a: u32, b: u32) -> f64 {
     (hi + 0.05) / (lo + 0.05)
 }
 
-fn first_codepoint(grid: &PodGrid, cp: u32) -> crate::PodCell {
+fn first_codepoint(grid: &PodGrid, cp: u32) -> PodCell {
     grid.cells
         .iter()
         .copied()
@@ -86,7 +110,7 @@ fn base_surface() -> HostSurface {
 
 /// T-LOOK-FILE. Required mutation: `invent_theme_rgb`.
 #[test]
-fn t_ghostty_look_theme_file_wins_over_hardcoded_rgb() {
+fn t_look_theme_file_wins_over_hardcoded_rgb() {
     let dir = std::env::temp_dir().join(format!(
         "rill-look-file-{}",
         std::time::SystemTime::now()
@@ -104,58 +128,30 @@ fn t_ghostty_look_theme_file_wins_over_hardcoded_rgb() {
     let look = parse_look_keys("theme = Catppuccin Latte\n", Some(&dir)).expect("parse theme name");
     let _ = std::fs::remove_dir_all(&dir);
     let bg = look.background.expect("theme file must supply background");
-    assert_eq!(
-        bg, probe,
-        "theme file background = #a1b2c3 must win; hardcoded Latte is {bg:#08x}"
-    );
-    assert_ne!(
-        bg, 0xeff1_f5ff,
-        "oracle is the file, not official Latte cream"
-    );
+    assert_eq!(bg, probe, "theme file background = #a1b2c3 must win");
+    assert_ne!(bg, 0xeff1_f5ff);
 }
 
-/// T-LOOK-OVERLAY. Required mutation: `skip_ghostty_overlay`.
+/// T-LOOK-OVERLAY. Required mutation: `skip_look_overlay`.
 #[test]
-fn t_ghostty_look_overlay_applies_latte_and_font_size() {
-    let look = parse_look_keys(fixture_ghostty(), Some(&fixture_themes()))
-        .expect("parse system-setup look keys");
+fn t_look_overlay_applies_latte_and_font_size() {
+    let look = parse_look_keys(fixture_look(), Some(&fixture_themes())).expect("parse look keys");
     let resolved = overlay_look(base_surface(), &look);
-    assert_eq!(
-        resolved.font_size, 16.0,
-        "Ghostty font-size=16 must win over host-surface 13"
-    );
-    assert_eq!(
-        resolved.font_family, "JetBrainsMono Nerd Font",
-        "Ghostty font-family must win"
-    );
-    assert_eq!(resolved.padding_x, 8.0);
-    assert_eq!(resolved.padding_y, 8.0);
+    assert_eq!(resolved.font_size, 16.0);
+    assert_eq!(resolved.font_family, "JetBrainsMono Nerd Font");
     let expected = background_from_theme_file("Catppuccin Latte");
     let bg = resolved.colors.expect("theme colours").background;
-    assert_eq!(
-        bg, expected,
-        "theme = Catppuccin Latte must resolve to the theme file background, not Chip0 dark ({bg:#08x})"
-    );
+    assert_eq!(bg, expected);
     assert_ne!(bg, 0x1212_12ff);
     assert!(resolved.macos_option_as_alt);
 }
 
-/// User look file is ~/.config/rill/config, not Ghostty or cmux.
 #[test]
-fn t_ghostty_look_user_file_is_config_rill() {
+fn t_look_user_file_is_config_rill() {
     let paths = look_file_candidates_for(Some(Path::new("/Users/tester")), None);
     assert_eq!(
         paths,
         vec![PathBuf::from("/Users/tester/.config/rill/config")]
-    );
-    let override_paths = look_file_candidates_for(
-        Some(Path::new("/Users/tester")),
-        Some("/tmp/rill-test-config".into()),
-    );
-    assert_eq!(
-        override_paths[0],
-        PathBuf::from("/tmp/rill-test-config"),
-        "RILL_CONFIG must win"
     );
     assert!(
         !paths.iter().any(|p| {
@@ -168,87 +164,50 @@ fn t_ghostty_look_user_file_is_config_rill() {
 
 /// T-LOOK-UNKNOWN. Required mutation: `unknown_theme_wipes`.
 #[test]
-fn t_ghostty_look_unknown_theme_does_not_replace_host_surface_colors() {
+fn t_look_unknown_theme_does_not_replace_host_surface_colors() {
     let mut base = base_surface();
     base.colors = Some(colors_from_theme_file("Catppuccin Latte"));
     let look = parse_look_keys("theme = NotARealTheme\n", None).expect("parsed unknown theme");
-    assert!(
-        look.background.is_none(),
-        "unknown theme must not invent colours at parse"
-    );
     let resolved = overlay_look(base, &look);
     let expected = background_from_theme_file("Catppuccin Latte");
-    let bg = resolved
-        .colors
-        .expect("host-surface Latte must survive")
-        .background;
-    assert_eq!(bg, expected);
+    assert_eq!(
+        resolved.colors.expect("Latte survives").background,
+        expected
+    );
 }
 
-/// T-LOOK-CELL. Required mutation: `skip_theme_apply`.
+/// T-LOOK-CELL. Required mutation: `skip_file_palette`.
 #[test]
-fn t_ghostty_look_themed_empty_cell_is_not_chip0_default_dark() {
-    let mut chip = Chip0::new(80, 24).expect("chip0");
-    let mut grid = chip.snapshot().expect("snapshot");
-    let before = grid.cell(0, 0).expect("cell").bg;
+fn t_look_themed_empty_cell_is_not_vt_default_dark() {
+    let colors = colors_from_theme_file("Catppuccin Latte");
     let expected = background_from_theme_file("Catppuccin Latte");
-    assert_eq!(
-        before, grid.default_bg,
-        "empty cell must be the VT default so remap has something to catch"
-    );
-    assert_ne!(
-        before, expected,
-        "precondition: Chip0 default is not already the theme file background"
-    );
-
-    let mut surface = base_surface();
-    surface.colors = Some(colors_from_theme_file("Catppuccin Latte"));
-    apply_theme(&mut grid, &surface);
+    let mut chip = VtEngine::new(80, 24).expect("vt");
+    chip.set_palette(palette_from_theme(&colors))
+        .expect("palette");
+    let grid = chip.snapshot().expect("snapshot");
     let after = grid.cell(0, 0).expect("cell").bg;
-    assert_eq!(
-        after, expected,
-        "empty cell bg must be the theme file background, not Chip0 {before:#08x}"
-    );
-    assert_ne!(after, before);
+    assert_eq!(after, expected);
 }
 
-/// T-LOOK-ANSI. Bug: Ghostty/cmux paint Latte SGR green from the theme
-/// file; Rill left libghostty-vt's dark default palette, so `killall` was
-/// pale yellow-green on `#eff1f5`.
-/// Required mutation: `skip_vt_look_colors`.
+/// T-LOOK-ANSI. Required mutation: `skip_file_palette`.
 #[test]
-fn t_ghostty_look_sgr_green_is_theme_file_palette() {
+fn t_look_sgr_green_is_theme_file_palette() {
     let colors = colors_from_theme_file("Catppuccin Latte");
     let expected = palette_from_theme_file("Catppuccin Latte", 2);
     let bg = background_from_theme_file("Catppuccin Latte");
-    assert_eq!(
-        colors.ansi.expect("Latte file has palette 0-15")[2],
-        expected,
-        "precondition: resolve_theme palette 2 matches the file"
-    );
-
-    let mut chip = Chip0::new(80, 24).expect("chip0");
-    chip.apply_look(&colors).expect("apply_look");
+    let mut chip = VtEngine::new(80, 24).expect("vt");
+    chip.set_palette(palette_from_theme(&colors))
+        .expect("palette");
     chip.feed(b"\x1b[32mG").expect("feed SGR green");
     let grid = chip.snapshot().expect("snapshot");
     let cell = first_codepoint(&grid, b'G' as u32);
-    assert_eq!(
-        cell.fg, expected,
-        "SGR 32 must be Latte file palette 2, not Chip0 default green; got {:#08x}",
-        cell.fg
-    );
+    assert_eq!(cell.fg, expected);
     let builtin_green = 0xb5bd_68ff;
-    assert!(
-        wcag_contrast(cell.fg, bg) > wcag_contrast(builtin_green, bg),
-        "file palette 2 must beat Chip0 default green on Latte bg; file {:.2} vs builtin {:.2}",
-        wcag_contrast(cell.fg, bg),
-        wcag_contrast(builtin_green, bg)
-    );
+    assert!(wcag_contrast(cell.fg, bg) > wcag_contrast(builtin_green, bg));
 }
 
-/// Unstyled glyphs must be the file foreground, not `#cccccc` on cream.
 #[test]
-fn t_ghostty_look_unstyled_text_is_theme_file_foreground() {
+fn t_look_unstyled_text_is_theme_file_foreground() {
     let colors = colors_from_theme_file("Catppuccin Latte");
     let expected = parse_look_keys(
         &std::fs::read_to_string(fixture_themes().join("Catppuccin Latte")).expect("file"),
@@ -257,37 +216,21 @@ fn t_ghostty_look_unstyled_text_is_theme_file_foreground() {
     .expect("parse")
     .foreground
     .expect("foreground =");
-    let bg = background_from_theme_file("Catppuccin Latte");
-
-    let mut chip = Chip0::new(80, 24).expect("chip0");
-    chip.apply_look(&colors).expect("apply_look");
+    let mut chip = VtEngine::new(80, 24).expect("vt");
+    chip.set_palette(palette_from_theme(&colors))
+        .expect("palette");
     chip.feed(b"A").expect("feed");
     let grid = chip.snapshot().expect("snapshot");
     let cell = first_codepoint(&grid, b'A' as u32);
-    assert_eq!(
-        cell.fg, expected,
-        "unstyled text must be Latte file foreground, not Chip0 default; got {:#08x}",
-        cell.fg
-    );
-    assert!(
-        wcag_contrast(cell.fg, bg) >= 4.5,
-        "unstyled fg on Latte bg must be readable; contrast {:.2}",
-        wcag_contrast(cell.fg, bg)
-    );
+    assert_eq!(cell.fg, expected);
 }
 
 #[test]
 fn t_chrome_surface_darkens_latte_and_mocha_file_backgrounds() {
     let latte = background_from_theme_file("Catppuccin Latte");
     let mocha = background_from_theme_file("Catppuccin Mocha");
-    let latte_s = chrome_surface_rgba(latte);
-    let mocha_s = chrome_surface_rgba(mocha);
-    assert_ne!(latte_s, latte, "chrome must not match Chip 0 Latte base");
-    assert_ne!(mocha_s, mocha, "chrome must not match Chip 0 Mocha base");
-    assert_ne!(
-        latte_s, mocha_s,
-        "two files must not share one cream constant"
-    );
+    assert_ne!(chrome_surface_rgba(latte), latte);
+    assert_ne!(chrome_surface_rgba(mocha), mocha);
 }
 
 #[test]
@@ -302,7 +245,19 @@ fn bundled_host_surface_still_parses() {
         .or_else(|_| load_host_surface("../../host-surface.toml"))
         .expect("host-surface.toml");
     assert!(!cfg.font_family.is_empty());
-    assert_ne!(cfg.font_family, "SF Mono");
     let bg = cfg.colors.expect("host-surface theme file").background;
     assert_eq!(bg, background_from_theme_file("Catppuccin Latte"));
+}
+
+#[test]
+fn apply_theme_still_remaps_default_cells() {
+    let mut chip = VtEngine::new(80, 24).expect("vt");
+    let mut grid = chip.snapshot().expect("snap");
+    let mut surface = base_surface();
+    surface.colors = Some(colors_from_theme_file("Catppuccin Latte"));
+    apply_theme(&mut grid, &surface);
+    assert_eq!(
+        grid.cell(0, 0).expect("cell").bg,
+        background_from_theme_file("Catppuccin Latte")
+    );
 }

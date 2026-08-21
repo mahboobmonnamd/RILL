@@ -1,30 +1,21 @@
-# Spike 0 developer setup. Chip 0 links libghostty-vt; this is not Ghostty.app.
-.PHONY: help setup deps libghostty-vt fast lint test gates negative-controls package run
+# Developer setup. Live chip is vt-engine (ADR 0054).
+.PHONY: help setup deps fast lint test gates negative-controls package run
 
 help:
-	@echo "make setup             install build tools and libghostty-vt (at the pin)"
-	@echo "make deps              rustc, cargo, zig 0.16+, Xcode CLT"
-	@echo "make libghostty-vt     fetch/build Chip 0 VT library at third_party/ghostty.pin"
-	@echo "make lint              plane invariants (AGENTS.md §5, ADR 0002 D9) — no Zig needed"
-	@echo "make fast              lint + codec/kernel tests — no Zig, no macOS"
+	@echo "make setup             install rustc, cargo, Xcode CLT"
+	@echo "make lint              plane invariants (AGENTS.md §5, ADR 0002 D9)"
+	@echo "make fast              lint + codec/kernel tests"
 	@echo "make gates             full Spike 0 gate suite, writes evidence/"
 	@echo "make negative-controls assert each gate goes red under its own mutation"
-	@echo "make package           dist/Rill.app (after setup)"
-	@echo "make run               package and launch dist/Rill.app"
-	@echo ""
-	@echo "Spike 0 is GREEN ([ADR 0010](docs/adr/0010-spike-0-closes.md)). See docs/SPIKE-0.md."
+	@echo "make package           dist/Rill.app"
+	@echo "make run               package and launch (dev: spawn rilld from the GUI)"
 
-setup: deps libghostty-vt
+setup: deps
 	@echo "setup ok"
 
 deps:
 	sh scripts/install-deps.sh
 
-libghostty-vt: deps
-	sh scripts/fetch-libghostty-vt.sh
-
-# The fast tier must never need Lane C's toolchain, or LANES is fiction
-# (SPEC-CHIP0 §9).
 lint:
 	sh scripts/lint-planes.sh
 
@@ -34,18 +25,20 @@ fast: lint
 	cargo test -p rill-attach
 	cargo test -p rill-kernel -- --test-threads=1
 
-gates: libghostty-vt
+gates:
 	. "$$HOME/.cargo/env" 2>/dev/null; sh scripts/validate-spike0.sh
 
-negative-controls: libghostty-vt
+negative-controls:
 	. "$$HOME/.cargo/env" 2>/dev/null; sh scripts/validate-spike0.sh --negative-controls
 
-# Kept for muscle memory; `gates` is the accurate name.
 test: gates
 
-package: libghostty-vt
+package:
 	sh scripts/package-macos.sh
 
-# One titled fullscreen window with three-pane chrome around Chip 0.
+# `open dist/Rill.app` does not pass env and does not start rilld. Ad-hoc
+# SMAppService registration is not enabled, so the GUI exits with
+# "host io: No such file or directory". Direct spawn is the bounded
+# development path (SPEC-RUNTIME-SUPERVISION §1).
 run: package
-	open dist/Rill.app
+	RILL_DEV_DIRECT_RILLD=1 dist/Rill.app/Contents/MacOS/Rill

@@ -3,7 +3,7 @@ name = "rill-look"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Look-file and host-surface load. No PTY, no libghostty-vt."
+description = "Look-file and host-surface load. No PTY."
 
 [features]
 mutate = []

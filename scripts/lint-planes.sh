@@ -2,8 +2,7 @@
 # Executable form of AGENTS.md §5 and ADR 0002 D9.
 #
 # These were review conventions. Review conventions do not survive five people
-# working in parallel, so they are checks now. Runs in fast.yml on Linux with no
-# Zig toolchain.
+# working in parallel, so they are checks now. Runs in fast.yml on Linux.
 #
 # Comments are stripped before matching: a file that *documents* a prohibition
 # must not trip the check for it. Excluding this script from its own scans is
@@ -86,16 +85,17 @@ scan no-seqpacket \
   'SOCK_SEQPACKET' \
   $(rust_src) $(c_src) $(objc_src)
 
+# --- chip0 retired (ADR 0054) -----------------------------------------------
+if [ -e crates/rill-chip0 ] || [ -e third_party/ghostty.pin ] || [ -e scripts/fetch-libghostty-vt.sh ]; then
+  fail chip0-retired "Chip 0 crate, ghostty pin, or fetch script returned (ADR 0054)"
+fi
+
 # --- no-ghostty-in-domain ---------------------------------------------------
-# Ghostty FFI types live only in the adapter (ADR 0001 D1, SPEC-CHIP0 §1).
-# Require an identifier boundary so Chip 0 tests named t_ghostty_look_* are
-# not mistaken for ghostty_*() FFI calls.
-GHOSTTY_FILES="$(git ls-files 'crates/**/*.rs' 'crates/**/*.c' 'crates/**/*.h' 'host/**/*.m' \
-  | grep -v '^crates/rill-chip0/src/adapter/' || true)"
+GHOSTTY_FILES="$(git ls-files 'crates/**/*.rs' 'crates/**/*.c' 'crates/**/*.h' 'host/**/*.m' || true)"
 if [ -n "$GHOSTTY_FILES" ]; then
   # shellcheck disable=SC2086
   scan no-ghostty-in-domain \
-    "Ghostty identifiers outside crates/rill-chip0/src/adapter/" \
+    "Ghostty FFI identifiers are retired (ADR 0054)" \
     '(^|[^A-Za-z_])ghostty_[a-z_]+\(|(^|[^A-Za-z_])Ghostty[A-Z][A-Za-z]*' \
     $GHOSTTY_FILES
 fi
@@ -106,7 +106,6 @@ fi
 hits="$(python3 - <<'PY'
 import os, re
 files = [
-    "crates/rill-chip0/src/lib.rs",
     "crates/rill-vt-types/src/lib.rs",
     "crates/vt-engine/src/lib.rs",
 ]
@@ -170,7 +169,7 @@ done
 scan no-json-on-warm-path \
   "JSON is orchestration only; not in kernel/attach/display (AGENTS.md §5)" \
   'serde_json' \
-  $(git ls-files 'crates/rill-kernel/**' 'crates/rill-attach/**' 'crates/rill-chip0/**' 'crates/rill-host/**' | grep -E '\.(rs|toml)$')
+  $(git ls-files 'crates/rill-kernel/**' 'crates/rill-attach/**' 'crates/rill-host/**' | grep -E '\.(rs|toml)$')
 
 # --- no-gui-pty -------------------------------------------------------------
 # The link-level gate is T-SPAWN; this catches it at review time too.
@@ -219,13 +218,7 @@ scan no-nm-defined-only \
   'nm[^\n]*"-U"|nm -U' \
   $(git ls-files 'crates/**/tests/*.rs') $(sh_src)
 
-# Grapheme overflow (S3-1): GRAPHEMES_BUF without a prior GRAPHEMES_LEN query.
-if [ -f crates/rill-chip0/src/adapter/rill_chip0_vt.c ]; then
-  if grep -q 'GRAPHEMES_BUF' crates/rill-chip0/src/adapter/rill_chip0_vt.c \
-    && ! grep -q 'GRAPHEMES_LEN' crates/rill-chip0/src/adapter/rill_chip0_vt.c; then
-    fail grapheme-len "GRAPHEMES_BUF used without GRAPHEMES_LEN (SPEC-CHIP0 §5)"
-  fi
-fi
+# Grapheme overflow used to live in the Chip 0 adapter (retired, ADR 0054).
 
 # Naked write_all on the attach client (Q1). Allowed only inside the mutate
 # block that implements replay_full_frame.

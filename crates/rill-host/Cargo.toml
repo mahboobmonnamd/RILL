@@ -21,4 +21,4 @@ vt-engine.workspace = true
 libc.workspace = true
 
 [features]
-mutate = ["vt-engine/mutate"]
+mutate = ["vt-engine/mutate", "rill-look/mutate"]

@@ -10,10 +10,9 @@
 
 ## 1. One live type
 
-`rill-host::Client` and `rilld::Daemon` MUST use `vt_engine::VtEngine` as
-`TerminalEmulation`. Neither crate MUST depend on `rill-chip0`. Look-file load
-lives in `rill-look` (no libghostty-vt). `rill-chip0` remains for `gates.yml`
-measurement until a retirement ADR.
+`rill-host::Client` and `rilld::Daemon` MUST use `vt_engine::VtEngine`.
+Neither crate MUST depend on `rill-chip0`. That crate is deleted
+([ADR 0054](../adr/0054-chip0-retired.md)). Look-file load lives in `rill-look`.
 
 ## 2. Replies
 

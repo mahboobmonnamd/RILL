@@ -1,5 +1,5 @@
-//! Ghostty / cmux look-key subset (ADR 0017 D2). Not TOML. Not a theme store.
-//! Theme RGB comes from Ghostty-grammar files, never a compiled-in catalog.
+//! Look-key subset (ADR 0017 D2). Not TOML. Not a theme store.
+//! Theme RGB comes from look files, never a compiled-in catalog.
 
 use crate::surface::HostSurface;
 use rill_vt_types::PodGrid;
@@ -195,7 +195,7 @@ pub fn parse_look_keys(text: &str, theme_directory: Option<&Path>) -> Option<Ter
 
 pub fn overlay_look(mut base: HostSurface, look: &TerminalLook) -> HostSurface {
     #[cfg(feature = "mutate")]
-    if std::env::var("RILL_MUTATE").as_deref() == Ok("skip_ghostty_overlay") {
+    if std::env::var("RILL_MUTATE").as_deref() == Ok("skip_look_overlay") {
         return base;
     }
 
@@ -287,7 +287,7 @@ pub fn apply_theme(grid: &mut PodGrid, surface: &HostSurface) {
 
 pub fn load_look_overlay() -> Option<TerminalLook> {
     #[cfg(feature = "mutate")]
-    if std::env::var("RILL_MUTATE").as_deref() == Ok("skip_ghostty_overlay") {
+    if std::env::var("RILL_MUTATE").as_deref() == Ok("skip_look_overlay") {
         return None;
     }
     for path in look_file_candidates() {

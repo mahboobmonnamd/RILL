@@ -1,8 +1,4 @@
-# Fast tier. No Zig, no macOS, no libghostty-vt.
-#
-# LANES says kernel and attach can work before Chip 0. That is only true if
-# their tests run without Chip 0's toolchain, so this job must never grow a
-# dependency on rill-chip0. ADR 0002 D8.
+# Fast tier. Linux, no Zig. Live chip is vt-engine (ADR 0054).
 name: fast
 
 on:
@@ -32,8 +28,6 @@ jobs:
       - name: Format
         run: cargo fmt --all --check
 
-      # Only the crates that do not link libghostty-vt. If this list ever needs
-      # rill-chip0, SPEC-CHIP0 §9 has been violated.
       - name: Clippy (fast tier)
         run: cargo clippy -p rill-attach -p rill-kernel -p rill-vt-types -p vt-engine -p rill-look --all-targets -- -D warnings
 
@@ -43,10 +37,9 @@ jobs:
       - name: Kernel tests that do not need a display chip
         run: cargo test -p rill-kernel -- --test-threads=1 --nocapture
 
-      - name: rilld Chip 1 resync (no libghostty-vt)
+      - name: rilld Chip 1 resync
         run: cargo test -p rilld --test t_vt_live_resync -- --test-threads=1 --nocapture
 
-      # Chip 1 library only. MUST NOT add rill-chip0 (SPEC-CHIP0 §9).
       - name: Chip 1 types and engine
         run: cargo test -p rill-vt-types -p vt-engine -p rill-look -- --nocapture
 
@@ -347,25 +340,3 @@ jobs:
         working-directory: crates/vt-engine
         run: cargo fuzz run feed -- -max_total_time=30 -runs=50000
 
-  pin-integrity:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: libghostty-vt pin is a full commit id and resolves upstream
-        run: |
-          set -eu
-          SHA="$(sed -n 's/^sha *= *//p' third_party/ghostty.pin | tr -d '[:space:]')"
-          REPO="$(sed -n 's/^repo *= *//p' third_party/ghostty.pin | tr -d '[:space:]')"
-          echo "pin: $SHA"
-          case "$SHA" in
-            ????????????????????????????????????????) : ;;
-            *) echo "pin is not a full 40-char commit id" >&2; exit 1 ;;
-          esac
-          # ls-remote lists refs, not arbitrary commits. Fetch the object.
-          TMP="$(mktemp -d)"
-          git init -q "$TMP"
-          git -C "$TMP" remote add origin "$REPO"
-          git -C "$TMP" fetch --depth 1 origin "$SHA"
-          GOT="$(git -C "$TMP" rev-parse FETCH_HEAD)"
-          rm -rf "$TMP"
-          [ "$GOT" = "$SHA" ] || { echo "fetched $GOT, wanted $SHA" >&2; exit 1; }
