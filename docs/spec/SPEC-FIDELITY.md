@@ -5,9 +5,10 @@
 - **Authority:** [ADR 0040](../adr/0040-terminal-fidelity-is-chip0.md), amended
   by [ADR 0037](../adr/0037-chip1-live-swap.md) and
   [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md) D5–D8
-  and D13
+  and D13/D22
 - **Requires:** [SPEC-CHIP0](SPEC-CHIP0.md), [SPEC-DISPLAY](SPEC-DISPLAY.md),
-  [SPEC-KERNEL](SPEC-KERNEL.md), [SPEC-CWD](SPEC-CWD.md)
+  [SPEC-KERNEL](SPEC-KERNEL.md), [SPEC-CWD](SPEC-CWD.md), and
+  [SPEC-TERMINAL-PERFORMANCE](SPEC-TERMINAL-PERFORMANCE.md)
 - **Crates:** `crates/rill-chip0`, `crates/rill-kernel`, `host/macos/`
 - **Milestone:** M2 — Chrome
 
@@ -109,6 +110,10 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 | T-FID-CONTRAST | Red | §8 |
 
 T-NFR MUST NOT be re-cut. T-LOOK-FILE, T-LOOK-ANSI, T-LOOK-UNKNOWN stay green.
+Every later fidelity or product surface also runs the applicable paired
+disabled/enabled matrix in SPEC-TERMINAL-PERFORMANCE. Missing semantic metadata
+may remove enhancement but never change raw bytes, terminal modes, grapheme
+fidelity, input ordering or grid presentation.
 
 ## 10. Out of scope
 

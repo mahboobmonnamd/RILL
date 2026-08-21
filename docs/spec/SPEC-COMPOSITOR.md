@@ -2,7 +2,8 @@
 
 - **Status:** Red. Specification only; no implementation is authorized.
 - **Authority:** [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md)
-  D7 and D9.
+  D7, D9 and D22.
+- **Requires:** [SPEC-TERMINAL-PERFORMANCE](SPEC-TERMINAL-PERFORMANCE.md).
 - **Lane:** `lane:host` for the first macOS presenter. Core boundaries remain
   platform-neutral where specified; platform UI remains native.
 
@@ -87,11 +88,19 @@ content, lifecycle or fidelity contracts.
 
 - Warm PTY DATA does not traverse ContentTimeline serialization.
 - Terminal grid damage does not allocate a String per cell.
-- Hidden rich surfaces do no frame-rate polling.
+- Hidden rich surfaces do no frame-rate polling or terminal-cell scans.
+- Inspector, attention and activity are event-driven/cold.
 - Virtualized content has explicit item, glyph, image and overscan bounds.
-- One slow content surface cannot stall PTY drain or another terminal pane.
-- NFR-KEY remains measured on the terminal path; no comparative speed claim is
-  made without equivalent benchmarks.
+  Markdown, diffs, artifacts, images and text shaping have separate bounded
+  work budgets; offscreen content is not fully laid out.
+- Present, PTY read and key handling MUST NOT wait on transcript construction,
+  persistence, indexing, redaction or rich layout.
+- One slow content surface, observer or pane cannot stall PTY drain or another
+  terminal pane.
+- Historical VT replay is not routine Flow/Block rendering.
+- NFR-KEY remains measured on the terminal path. Enabled/disabled comparisons
+  follow SPEC-TERMINAL-PERFORMANCE; no new millisecond tolerance is invented
+  here.
 
 ## 8. Gates
 
@@ -103,6 +112,9 @@ content, lifecycle or fidelity contracts.
 - T-SELECTION-SURFACE-ANCHORS
 - T-A11Y-VIRTUALIZED-BOUNDS
 - T-COMPOSITOR-WARM-PATH-BOUNDARY
+- T-PERF-PRESENT-INDEPENDENT
+- T-PERF-BOUNDED-RESOURCES
+- T-PERF-RAW-TUI-BYPASS
 - T-LIBRARY-NO-UI-DEPENDENCY
 - T-LIBRARY-WASM-PROOF-BEFORE-PUBLIC
 

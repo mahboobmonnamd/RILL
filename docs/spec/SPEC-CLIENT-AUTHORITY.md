@@ -2,7 +2,9 @@
 
 - **Status:** Red. Specification only; no implementation is authorized.
 - **Authority:** [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md)
-  D5–D6 and D10–D11.
+  D5–D6, D10–D11 and D22.
+- **Requires:** [SPEC-ATTACH](SPEC-ATTACH.md) and
+  [SPEC-TERMINAL-PERFORMANCE](SPEC-TERMINAL-PERFORMANCE.md).
 - **Lane:** `lane:attach` for protocol and flow control; `lane:kernel` for
   authority; platform host lanes for disposable presentation.
 
@@ -79,6 +81,13 @@ traffic. Slow/mobile clients receive bounded projections and must resume from a
 cursor or request a compatible snapshot. Unsupported protocol, checkpoint or
 content versions fail closed without interpreting one frame type as another.
 
+Terminal worker drain, canonical VT advancement and recovery retention are not
+the minimum of all clients' credit. Every client/channel queue has an
+independent bound and overflow counter. A slow client may be disconnected or
+required to resync; it cannot transfer its backpressure to a healthy client,
+another pane or the worker. The same isolation applies when semantic or content
+channels fail while that client's terminal channel is healthy.
+
 ## 4. Input and resize lease
 
 At most one ClientId owns a TerminalExecution's input/resize lease. The lease
@@ -131,6 +140,8 @@ and reachable.
 - T-PROTOCOL-BYTE-EVENT-ORDER
 - T-PROTOCOL-SLOW-CLIENT-CHANNEL-ISOLATION
 - T-PROTOCOL-VERSION-MISMATCH
+- T-PERF-CLIENT-ISOLATION
+- T-PERF-RECOVERY-ISOLATION
 
 ## 7. Out of scope
 

@@ -89,6 +89,7 @@ out of scope.
 | FR-INPUT-MODE | Composer, shell editor, Raw, TUI, agent and approval input modes are explicit and host/lease-authorized. Composer drafts are client-local and non-durable by default. |
 | FR-PROTOCOL | Typed binary channels carry authoritative semantic events, ContentTimeline snapshots/deltas or bounded semantic-content projections with independent ordering, bounds, credit, recovery and version negotiation. Clients derive Flow and other presentations; semantic failure cannot block raw terminal traffic. |
 | FR-COMPOSITOR | Existing Metal terminal-grid rendering remains inside a broader RILL compositor for shaped text, rich content, editor, diffs, images, controls and accessibility. |
+| FR-TERMINAL-PATH | The protected path is keyboard/input → binary attach → PTY → TerminalExecution worker/core → client mirror → POD damage → Metal grid. Semantic/content/product systems are bounded asynchronous consumers and never synchronous dependencies. Missing or failed enhancement always preserves an honest Raw terminal path. |
 | FR-CLIENTS | Each client has identity, role, independent credit and view state. Observers cannot write, resize or affect controller flow control. |
 | FR-REMOTE | A RILL runtime on the process host is authoritative. Zero-footprint SSH performs no probing/bootstrap/history/profile/hidden commands. Enhanced bootstrap is explicit opt-in with best-effort cleanup. |
 | FR-MOBILE | Mobile attaches as a client to an awake/reachable host. Backgrounding or lease loss never terminates work; offline keystroke injection is forbidden. |
@@ -100,6 +101,7 @@ out of scope.
 | ID | Requirement |
 |---|---|
 | NFR-KEY | Key-down `NSEvent.timestamp` → `presentedTime` of the drawable first containing the echoed glyph **at the cell the cursor occupied**. Packaged app. p95 < one display refresh interval over ≥1000 accepted samples, discards ≤ 2%. Warm and under load. **On battery.** Zero control-plane RPCs during the run. Superseded definition and measurement procedure: [ADR 0003](adr/0003-display-pipeline.md) D5–D9. |
+| NFR-TERMINAL | No feature may slow, block, reorder or reduce the fidelity of raw input, PTY drain, VT processing or grid presentation. Compare identical packaged builds/workloads with enhancements disabled and enabled under [SPEC-TERMINAL-PERFORMANCE](spec/SPEC-TERMINAL-PERFORMANCE.md); preserve NFR-KEY, zero control RPCs and zero dropped/reordered bytes. Secondary metrics without an authoritative numeric limit remain explicit baseline comparisons, not invented pass thresholds. |
 | NFR-DROP | `yes` for 10s then `^C`: zero dropped bytes; prompt usable. Per-pane pumps so one flood cannot stall another pane (when panes exist). |
 | NFR-BYTES | Invalid UTF-8 from the child reaches the emulator byte-identical. |
 | NFR-SPAWN | Shipped GUI binary: no `posix_spawn` / `forkpty` / `openpty` used to start the user shell. Link-level test, not a source grep. |
@@ -130,3 +132,8 @@ that reported eight of nine gates Proven is withdrawn; see
 
 If a later NFR-KEY run misses: **stop that surface.** Do not add agents to hide
 the miss, and do not re-cut the instrument to flatter it.
+
+Every user-visible semantic/content/agent surface also requires the Red
+terminal-performance matrix before acceptance. Existing Spike 0 and M1 evidence
+is preserved for its named slice; it is not evidence that later enhancements
+meet NFR-TERMINAL.

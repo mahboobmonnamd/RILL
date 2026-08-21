@@ -60,3 +60,7 @@ Milestone numbers do not authorize work out of dependency order:
 
 Every lane preserves the existing PTY, attach, raw VT, Chip 0/Chip 1 and Metal
 foundations while working through this order.
+
+[SPEC-TERMINAL-PERFORMANCE](spec/SPEC-TERMINAL-PERFORMANCE.md) is cross-cutting:
+no lane may waive ADR 0053 D22. Feature work that cannot meet T-NFR and the
+T-PERF matrix stays disabled, deferred, off-path or redesigned.
