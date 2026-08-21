@@ -9,6 +9,29 @@ the 2026-08-21 architecture decision. External products are evidence about
 workflows and capability boundaries; none is adopted as RILL's internal
 architecture.
 
+## Accepted follow-up requirements — verbatim
+
+The product owner supplied and accepted this follow-up on 2026-08-21:
+
+1. **Shell compatibility:** RILL must preserve normal behaviour for zsh, fish,
+   bash, and other PTY-compatible shells. Existing shell configurations,
+   prompts, themes, plugins, ANSI colours, and interactive features must work
+   without RILL-specific replacement or modification. Remote hosts must remain
+   zero-footprint by default.
+2. **Unified configuration:** Define one versioned TOML configuration model for
+   RILL. It must cover app and terminal themes, fonts, font sizes, keybindings,
+   rendering, workspace behaviour, and other user settings. A named theme must
+   apply consistently throughout the application. Configuration must support
+   validation, migration, export, backup, and optional sync; secrets and host
+   credentials must never be included.
+3. **Privacy and PII:** Establish privacy-by-design requirements covering
+   terminal output, commands, transcripts, logs, telemetry, crash reports,
+   clipboard data, agent context, local retention, backup, and sync. Minimize
+   collection, disable sensitive persistence where required, enforce
+   policy-controlled retention and redaction, encrypt stored data, and prevent
+   credentials, secrets, and PII from leaking across users, hosts, sessions,
+   logs, agents, or external services.
+
 ## Repository findings
 
 | Concern | Authority at snapshot | Implementation at snapshot | Finding |
