@@ -91,8 +91,12 @@ documented in the test. Mutation: ignore CSI. **T-CHIP1-ED** — feed text, then
 
 - Scrolling MUST respect DECSTBM. Rows outside the region MUST NOT move. This is
   what `less` and `vim` status lines depend on; a full-grid scroll destroys them.
-- Content scrolled off the top is **discarded**. The chip keeps no scrollback
-  (ADR 0012 D3).
+- Content scrolled off the top is **not stored in the chip**. The chip keeps no
+  scrollback ring (ADR 0012 D3). Rows that leave the primary screen (full-region
+  scroll at the top margin, not the alt screen) MAY be reported **once** via
+  `take_scrolled_off` so the host can paint a viewport over a POD line ring.
+  After take, the chip MUST NOT still hold those rows. Snapshot size stays
+  `cols * rows`.
 - `?1049h` switches to a **cleared** alt screen, saving the primary buffer and
   the cursor. `?1049l` restores both. `?1047h/l` switches buffers preserving the
   primary but does not save the cursor.
