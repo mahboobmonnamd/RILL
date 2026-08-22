@@ -12,7 +12,7 @@ platform toolkit may appear.
 import sys
 import json
 
-CORE_CRATES = ["rill-kernel", "rill-attach", "rilld"]
+CORE_CRATES = ["rill-kernel", "rill-attach", "rilld", "rill-content"]
 
 # Substrings of a dependency crate name that indicate a platform-UI toolkit.
 # Case-insensitive. Not exhaustive by design — this is a regression guard,

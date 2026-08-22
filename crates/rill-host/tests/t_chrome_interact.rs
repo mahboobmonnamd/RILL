@@ -29,7 +29,7 @@ fn unique_sock() -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .expect("time")
         .as_nanos();
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../../target/rill-ui-{n:x}"));
+    let dir = PathBuf::from("/tmp").join(format!("rui-{n:x}"));
     let _ = fs::create_dir_all(&dir);
     let _ = fs::set_permissions(&dir, fs::Permissions::from_mode(0o700));
     dir.join("a")
@@ -64,6 +64,9 @@ struct Heartbeat {
     plus_trail: Option<u32>,
     overflow: Option<u32>,
     hints: Option<u32>,
+    flow: Option<u32>,
+    flow_cards: Option<u32>,
+    term_visible: Option<u32>,
 }
 
 fn read_heartbeat(path: &PathBuf) -> Option<Heartbeat> {
@@ -95,6 +98,9 @@ fn read_heartbeat(path: &PathBuf) -> Option<Heartbeat> {
     let mut plus_trail = None;
     let mut overflow = None;
     let mut hints = None;
+    let mut flow = None;
+    let mut flow_cards = None;
+    let mut term_visible = None;
     for part in s.split_whitespace() {
         if let Some(v) = part.strip_prefix("seq=") {
             seq = v.parse().ok();
@@ -177,6 +183,15 @@ fn read_heartbeat(path: &PathBuf) -> Option<Heartbeat> {
         if let Some(v) = part.strip_prefix("hints=") {
             hints = v.parse().ok();
         }
+        if let Some(v) = part.strip_prefix("flow=") {
+            flow = v.parse().ok();
+        }
+        if let Some(v) = part.strip_prefix("flow_cards=") {
+            flow_cards = v.parse().ok();
+        }
+        if let Some(v) = part.strip_prefix("term_visible=") {
+            term_visible = v.parse().ok();
+        }
     }
     Some(Heartbeat {
         seq: seq?,
@@ -206,6 +221,9 @@ fn read_heartbeat(path: &PathBuf) -> Option<Heartbeat> {
         plus_trail,
         overflow,
         hints,
+        flow,
+        flow_cards,
+        term_visible,
     })
 }
 
@@ -515,6 +533,57 @@ fn t_cmd_v_pastes_onto_the_pty() {
     assert!(
         hb.sent.unwrap_or(0) >= 5,
         "paste body must reach the PTY; heartbeat={raw:?}"
+    );
+}
+
+/// Bug: Flow and terminal rendered at the same time, causing overdraw and
+/// unreadable UI.
+#[test]
+fn t_flow_surface_excludes_live_terminal_when_visible() {
+    let sock = unique_sock();
+    let heartbeat = PathBuf::from(format!("{}.hb", sock.display()));
+    let _ = fs::remove_file(&heartbeat);
+    let mut gui = spawn_gui(&sock, &heartbeat, &[]);
+    let pid = gui.id();
+    let hb = wait_heartbeat(&heartbeat, pid, Duration::from_secs(8), |h| {
+        h.flow == Some(1) && h.term_visible == Some(0)
+    });
+    let raw = fs::read_to_string(&heartbeat).ok();
+    unsafe {
+        libc::kill(pid as i32, libc::SIGTERM);
+    }
+    let _ = gui.wait();
+    let hb = hb.unwrap_or_else(|| panic!("flow overlap state not reached; heartbeat={raw:?}"));
+    assert_eq!(hb.flow, Some(1), "flow should be visible; heartbeat={raw:?}");
+    assert_eq!(
+        hb.term_visible,
+        Some(0),
+        "terminal must be hidden while flow is visible; heartbeat={raw:?}"
+    );
+    assert!(hb.flow_cards.is_some(), "flow cards counter missing; heartbeat={raw:?}");
+}
+
+/// Bug: opening Flow showed too many blocks and drowned the screen.
+#[test]
+fn t_flow_open_caps_visible_block_cards() {
+    let sock = unique_sock();
+    let heartbeat = PathBuf::from(format!("{}.hb", sock.display()));
+    let _ = fs::remove_file(&heartbeat);
+    let mut gui = spawn_gui(&sock, &heartbeat, &[]);
+    let pid = gui.id();
+    let hb = wait_heartbeat(&heartbeat, pid, Duration::from_secs(8), |h| {
+        h.flow == Some(1) && h.flow_cards.is_some()
+    });
+    let raw = fs::read_to_string(&heartbeat).ok();
+    unsafe {
+        libc::kill(pid as i32, libc::SIGTERM);
+    }
+    let _ = gui.wait();
+    let hb = hb.unwrap_or_else(|| panic!("flow card state not reached; heartbeat={raw:?}"));
+    let cards = hb.flow_cards.unwrap_or(999);
+    assert!(
+        cards <= 7,
+        "flow should keep open-state cards compact (<=7 incl summary), got {cards}; heartbeat={raw:?}"
     );
 }
 

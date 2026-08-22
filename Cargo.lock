@@ -68,11 +68,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rill-content"
+version = "0.1.0"
+dependencies = [
+ "rill-kernel",
+]
+
+[[package]]
 name = "rill-host"
 version = "0.1.0"
 dependencies = [
  "libc",
  "rill-attach",
+ "rill-content",
  "rill-look",
  "rill-vt-types",
  "vt-engine",

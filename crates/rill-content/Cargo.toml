@@ -1,0 +1,15 @@
+[package]
+name = "rill-content"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "ContentTimeline and semantic event ledger. No PTY, no paint, no AppKit."
+
+[features]
+mutate = []
+
+[lib]
+name = "rill_content"
+
+[dev-dependencies]
+rill-kernel.workspace = true

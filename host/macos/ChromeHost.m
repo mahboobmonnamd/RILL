@@ -3,6 +3,7 @@
 
 #import "ChromeHost.h"
 #import "TerminalView.h"
+#import "FlowHost.h"
 #include "rill_ffi.h"
 #import <QuartzCore/QuartzCore.h>
 #include <stdlib.h>
@@ -359,6 +360,7 @@ static NSTextField *RillChordHint(NSString *text, uint32_t fg) {
 @interface RillCenterHost : NSView
 @property (nonatomic, strong) NSView *tabStrip;
 @property (nonatomic, strong) NSView *terminalHost;
+@property (nonatomic, strong) RillFlowHost *flowHost;
 @end
 @implementation RillCenterHost
 - (BOOL)isFlipped {
@@ -371,8 +373,35 @@ static NSTextField *RillChordHint(NSString *text, uint32_t fg) {
     CGFloat bar = 36.0;
     self.tabStrip.frame = NSMakeRect(0, 0, w, bar);
     self.terminalHost.frame = NSMakeRect(0, bar, w, MAX(8.0, h - bar));
+    BOOL raw = self.flowHost.rawFallback;
+    TerminalView *selected = nil;
     for (NSView *v in self.terminalHost.subviews) {
-        v.frame = self.terminalHost.bounds;
+        if ([v isKindOfClass:[TerminalView class]]) {
+            v.frame = self.terminalHost.bounds;
+            if ([v.accessibilityIdentifier isEqualToString:@"chrome-center"]) {
+                selected = (TerminalView *)v;
+            }
+        }
+    }
+    if (!selected) {
+        for (NSView *v in self.terminalHost.subviews) {
+            if ([v isKindOfClass:[TerminalView class]]) {
+                selected = (TerminalView *)v;
+                break;
+            }
+        }
+    }
+    BOOL alt = selected ? rill_client_alternate_screen(selected.rillClient) != 0 : NO;
+    BOOL showFlow = self.flowHost && !raw && !alt;
+    for (NSView *v in self.terminalHost.subviews) {
+        if ([v isKindOfClass:[TerminalView class]]) {
+            BOOL isSelected = [v.accessibilityIdentifier isEqualToString:@"chrome-center"];
+            v.hidden = showFlow ? YES : !isSelected;
+        }
+    }
+    if (self.flowHost) {
+        self.flowHost.hidden = !showFlow;
+        self.flowHost.frame = self.terminalHost.bounds;
     }
 }
 @end
@@ -381,6 +410,7 @@ static NSTextField *RillChordHint(NSString *text, uint32_t fg) {
 @property (nonatomic, strong) TerminalView *terminal;
 @property (nonatomic, strong) NSMutableArray<TerminalView *> *terminals;
 @property (nonatomic, strong) RillCenterHost *centerHost;
+@property (nonatomic, strong) RillFlowHost *flowHost;
 @property (nonatomic, assign) NSUInteger selectedTab;
 @property (nonatomic, assign) BOOL positioned;
 @property (nonatomic, assign) uint32_t bgRgba;
@@ -457,12 +487,34 @@ static NSTextField *RillChordHint(NSString *text, uint32_t fg) {
     [host addSubview:self.terminal];
     self.terminal.frame = host.bounds;
     self.terminal.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    NSString *fam = nil;
+    const char *ff = rill_client_font_family(self.terminal.rillClient);
+    if (ff && ff[0]) {
+        fam = [NSString stringWithUTF8String:ff];
+    }
+    CGFloat fsz = (CGFloat)rill_client_font_size(self.terminal.rillClient);
+    RillFlowHost *flow = [[RillFlowHost alloc] initWithFrame:host.bounds
+                                                      client:self.terminal.rillClient
+                                                  fontFamily:fam
+                                                    fontSize:fsz
+                                                          bg:self.bgRgba
+                                                          fg:self.fgRgba];
+    [host addSubview:flow];
+    self.flowHost = flow;
+    if (getenv("RILL_TEST_SCROLL") || getenv("RILL_TEST_FEED") ||
+        getenv("RILL_NFR") || getenv("RILL_NFR_MODE")) {
+        flow.hidden = YES;
+        flow.rawFallback = YES;
+    }
     center.tabStrip = bar;
     center.terminalHost = host;
+    center.flowHost = flow;
     [center addSubview:bar];
     [center addSubview:host];
     self.centerHost = center;
     [bar reloadCount:self.terminals.count selected:0];
+    [center setNeedsLayout:YES];
+    [center layoutSubtreeIfNeeded];
 
     RillChromePane *right = [self inspectorPaneNamed:self.hostIdentity];
     right.terminal = self.terminal;
@@ -496,8 +548,12 @@ static NSTextField *RillChordHint(NSString *text, uint32_t fg) {
                                                  name:@"RillSelectTab"
                                                object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(chordHintsFromNote:)
-                                                 name:@"RillChordHints"
+                                             selector:@selector(reloadFlow)
+                                                 name:@"RillFlowNeedsReload"
+                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(flowRawChanged)
+                                                 name:@"RillFlowRawChanged"
                                                object:nil];
     __weak RillChromeController *weakSelf = self;
     self.flagsMonitor =
@@ -669,6 +725,18 @@ static NSTextField *RillChordHint(NSString *text, uint32_t fg) {
     return _navHidden;
 }
 
+- (void)reloadFlow {
+    if (self.flowHost.client != self.terminal.rillClient && self.terminal) {
+        self.flowHost.client = self.terminal.rillClient;
+    }
+    [self.flowHost reloadFromClient];
+    [self.centerHost setNeedsLayout:YES];
+}
+
+- (void)flowRawChanged {
+    [self.centerHost setNeedsLayout:YES];
+}
+
 - (void)toggleNav {
     [self togglePaneNav:YES];
 }
@@ -715,6 +783,10 @@ static NSTextField *RillChordHint(NSString *text, uint32_t fg) {
         tv.accessibilityIdentifier = i == idx ? @"chrome-center" : @"pane-surface";
     }
     self.terminal = self.terminals[idx];
+    if (self.flowHost) {
+        self.flowHost.client = self.terminal.rillClient;
+        [self.flowHost reloadFromClient];
+    }
     RillTabBar *bar = (RillTabBar *)self.centerHost.tabStrip;
     if (bar.chips.count == self.terminals.count) {
         [bar restyleSelected:idx];

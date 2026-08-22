@@ -133,13 +133,15 @@ fn t_look_theme_file_wins_over_hardcoded_rgb() {
 }
 
 /// T-LOOK-OVERLAY. Required mutation: `skip_look_overlay`.
+/// Bug (doc comment): the shipped sample config resolved to Catppuccin Latte
+/// (a light theme), which does not match the dark mockup RILL ships toward.
 #[test]
-fn t_look_overlay_applies_latte_and_font_size() {
+fn t_look_overlay_applies_mocha_and_font_size() {
     let look = parse_look_keys(fixture_look(), Some(&fixture_themes())).expect("parse look keys");
     let resolved = overlay_look(base_surface(), &look);
     assert_eq!(resolved.font_size, 16.0);
     assert_eq!(resolved.font_family, "JetBrainsMono Nerd Font");
-    let expected = background_from_theme_file("Catppuccin Latte");
+    let expected = background_from_theme_file("Catppuccin Mocha");
     let bg = resolved.colors.expect("theme colours").background;
     assert_eq!(bg, expected);
     assert_ne!(bg, 0x1212_12ff);
@@ -239,14 +241,17 @@ fn unquoted_hash_hex_is_a_colour_not_a_comment() {
     assert_eq!(look.split_divider, parse_hex("#5c5f77"));
 }
 
+/// Bug (doc comment): the bundled host-surface.toml default shipped
+/// Catppuccin Latte (a light theme), so the first launch never matched the
+/// dark mockup.
 #[test]
-fn bundled_host_surface_still_parses() {
+fn bundled_host_surface_defaults_to_dark_theme() {
     let cfg = load_host_surface("host-surface.toml")
         .or_else(|_| load_host_surface("../../host-surface.toml"))
         .expect("host-surface.toml");
     assert!(!cfg.font_family.is_empty());
     let bg = cfg.colors.expect("host-surface theme file").background;
-    assert_eq!(bg, background_from_theme_file("Catppuccin Latte"));
+    assert_eq!(bg, background_from_theme_file("Catppuccin Mocha"));
 }
 
 #[test]

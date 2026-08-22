@@ -701,3 +701,77 @@ pub unsafe extern "C" fn rill_client_bytes_sent(client: *const Client) -> u64 {
     }
     unsafe { (*client).bytes_sent() }
 }
+
+/// # Safety
+/// `client` is a live handle.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_alternate_screen(client: *const Client) -> i32 {
+    if client.is_null() {
+        return 0;
+    }
+    i32::from(unsafe { (*client).alternate_screen() })
+}
+
+/// # Safety
+/// `bytes` is `len` readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_composer_submit(
+    client: *mut Client,
+    bytes: *const u8,
+    len: usize,
+) -> i32 {
+    if client.is_null() || (len > 0 && bytes.is_null()) {
+        return -1;
+    }
+    let c = unsafe { &mut *client };
+    let slice = if len == 0 {
+        &[][..]
+    } else {
+        unsafe { std::slice::from_raw_parts(bytes, len) }
+    };
+    match c.submit_composer(slice) {
+        Ok(()) => 0,
+        Err(e) => {
+            set_err(e);
+            -1
+        }
+    }
+}
+
+/// # Safety
+/// `client` is a live handle. Pointers from `rill_client_flow_item` are valid
+/// until the next flow FFI call or pump.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_flow_count(client: *mut Client) -> u32 {
+    if client.is_null() {
+        return 0;
+    }
+    unsafe { (*client).refresh_flow_ffi() as u32 }
+}
+
+/// # Safety
+/// `kind` and `len` are writable; `bytes_out` receives a pointer into client memory.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_flow_item(
+    client: *const Client,
+    index: u32,
+    kind: *mut u32,
+    bytes_out: *mut *const u8,
+    len: *mut usize,
+) -> i32 {
+    if client.is_null() || kind.is_null() || bytes_out.is_null() || len.is_null() {
+        return -1;
+    }
+    let c = unsafe { &*client };
+    match c.flow_ffi_item(index as usize) {
+        Some((k, bytes)) => {
+            unsafe {
+                *kind = k;
+                *bytes_out = bytes.as_ptr();
+                *len = bytes.len();
+            }
+            0
+        }
+        None => -1,
+    }
+}

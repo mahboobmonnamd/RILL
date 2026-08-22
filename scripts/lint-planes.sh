@@ -132,7 +132,7 @@ fi
 # --- no-unwrap-in-daemon / no-unwrap (Chip 1) -------------------------------
 # PRD NFR-FAIL. src/ only; tests live in tests/ and may unwrap freely.
 # SPEC-VT-CONFORMANCE §5 extends this to rill-vt-types and vt-engine.
-for crate in rill-kernel rill-attach rilld rill-vt-types vt-engine; do
+for crate in rill-kernel rill-attach rilld rill-vt-types vt-engine rill-content; do
   files="$(git ls-files "crates/$crate/src/*.rs" "crates/$crate/src/**/*.rs" 2>/dev/null || true)"
   [ -n "$files" ] || continue
   # shellcheck disable=SC2086

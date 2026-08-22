@@ -109,6 +109,13 @@ run_gate "LINT-PLANES" sh scripts/lint-planes.sh
 
 # ------------------------------------------------------------------ library tier
 run_gate "T-LOOK"         cargo test -p rill-host --offline --test t_look_file -- --nocapture
+run_gate "T-CONTENT-MONOTONIC-OFFSETS" cargo test -p rill-content --offline t_content_monotonic_offsets -- --nocapture
+run_gate "T-CONTENT-RANGE-REQUIRES-STATE" cargo test -p rill-content --offline t_content_range_requires_state -- --nocapture
+run_gate "T-CONTENT-SURVIVES-RING-EVICTION" cargo test -p rill-content --offline t_content_survives_ring_eviction -- --nocapture
+run_gate "T-CONTENT-NO-PROMPT-HEURISTIC" cargo test -p rill-content --offline t_content_no_prompt_heuristic -- --nocapture
+run_gate "T-CONTENT-SOURCE-AUTHORITY" cargo test -p rill-content --offline t_content_source_authority -- --nocapture
+run_gate "T-TRANSCRIPT-EVENT-IDEMPOTENCY" cargo test -p rill-content --offline t_transcript_event_idempotency -- --nocapture
+run_gate "T-COMPOSER-DRAFT-LOCAL" cargo test -p rill-content --offline t_composer_draft_local -- --nocapture
 run_gate "T-BYTES-kernel" cargo test -p rill-kernel --offline t_bytes -- --nocapture
 run_gate "T-DROP"         cargo test -p rill-kernel --offline t_drop -- --test-threads=1 --nocapture
 run_gate "T-RESIZE"       cargo test -p rill-kernel --offline t_resize -- --nocapture
@@ -320,6 +327,16 @@ if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
     cargo test -p rill-host --offline --features mutate --test t_look_file t_look_theme_file -- --nocapture
   run_control "T-LOOK-ANSI" skip_file_palette \
     cargo test -p rill-host --offline --features mutate --test t_look_file t_look_sgr_green -- --nocapture
+  run_control "T-CONTENT-NO-PROMPT-HEURISTIC" prompt_regex_boundary \
+    cargo test -p rill-content --offline --features mutate --test gates t_content_no_prompt_heuristic -- --nocapture
+  run_control "T-CONTENT-SOURCE-AUTHORITY" scrape_cells_for_command_and_pass_count \
+    cargo test -p rill-content --offline --features mutate --test gates t_content_source_authority -- --nocapture
+  run_control "T-CONTENT-RANGE-REQUIRES-STATE" always_reset_vt \
+    cargo test -p rill-content --offline --features mutate --test gates t_content_range_requires_state -- --nocapture
+  run_control "T-CONTENT-SURVIVES-RING-EVICTION" timeline_rereads_ring \
+    cargo test -p rill-content --offline --features mutate --test gates t_content_survives_ring_eviction -- --nocapture
+  run_control "T-CONTENT-RETENTION-RESTRICTIVE-WINS" closest_workspace_wins \
+    cargo test -p rill-content --offline --features mutate --test gates t_content_retention_restrictive_wins -- --nocapture
   run_control "T-DROP" drop_on_full \
     cargo test -p rill-kernel --offline --features mutate t_drop -- --test-threads=1
   run_control "T-RESIZE" resize_before_data \

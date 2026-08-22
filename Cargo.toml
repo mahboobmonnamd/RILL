@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/rill-attach",
     "crates/rill-kernel",
+    "crates/rill-content",
     "crates/rill-look",
     "crates/rilld",
     "crates/rill-host",
@@ -20,6 +21,7 @@ rust-version = "1.85"
 [workspace.dependencies]
 rill-attach = { path = "crates/rill-attach" }
 rill-kernel = { path = "crates/rill-kernel" }
+rill-content = { path = "crates/rill-content" }
 rill-look = { path = "crates/rill-look" }
 rill-vt-types = { path = "crates/rill-vt-types" }
 vt-engine = { path = "crates/vt-engine" }

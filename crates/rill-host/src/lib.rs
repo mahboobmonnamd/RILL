@@ -11,6 +11,7 @@
 //! reported 32 microseconds (docs/SPIKE-0-AUDIT.md S1-2).
 
 use rill_attach::{cold_identity_socket_path, cold_nav_socket_path, Decoder, Frame};
+use rill_content::FlowSession;
 use rill_look::{load_resolved_surface, HostSurface, ThemeColors};
 use rill_vt_types::{PodGrid, Rgb, TerminalEmulation, TerminalModeState, ATTR_WIDE_TAIL};
 use std::collections::VecDeque;
@@ -62,6 +63,8 @@ pub struct Client {
     workspace_id: Option<u64>,
     modes: TerminalModeState,
     bytes_sent: u64,
+    flow: FlowSession,
+    flow_ffi: Vec<Vec<u8>>,
     #[allow(dead_code)]
     attach_path: PathBuf,
 }
@@ -105,6 +108,8 @@ impl Client {
             workspace_id,
             modes: TerminalModeState::default(),
             bytes_sent: 0,
+            flow: FlowSession::new(64 * 1024),
+            flow_ffi: Vec::new(),
             attach_path,
         };
         client.send(Frame::attach(1, session_id))?;
@@ -211,6 +216,64 @@ impl Client {
         self.send(Frame::Data(bytes.to_vec()))
     }
 
+    pub fn submit_composer(&mut self, command: &[u8]) -> Result<(), Error> {
+        self.flow.submit_command(command).map_err(|e| {
+            Error::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                e.to_string(),
+            ))
+        })?;
+        let mut line = command.to_vec();
+        if !line.ends_with(b"\n") && !line.ends_with(b"\r") {
+            line.push(b'\n');
+        }
+        self.send_input(&line)
+    }
+
+    pub fn set_composer_draft(&mut self, text: String) {
+        self.flow.set_draft(text);
+    }
+
+    pub fn composer_draft(&self) -> &str {
+        self.flow.draft()
+    }
+
+    pub fn flow_items(&self) -> &[rill_content::ContentItem] {
+        self.flow.timeline.items()
+    }
+
+    pub fn refresh_flow_ffi(&mut self) -> usize {
+        self.flow_ffi = self
+            .flow
+            .timeline
+            .items()
+            .iter()
+            .map(|i| sanitize_flow_payload_for_ui(&i.payload))
+            .collect();
+        self.flow_ffi.len()
+    }
+
+    pub fn flow_ffi_item(&self, index: usize) -> Option<(u32, &[u8])> {
+        let item = self.flow.timeline.items().get(index)?;
+        let bytes = self
+            .flow_ffi
+            .get(index)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
+        let kind = match item.kind {
+            rill_content::ContentKind::TerminalInput => 1,
+            rill_content::ContentKind::TerminalOutput => 2,
+            rill_content::ContentKind::Unstructured => 3,
+            rill_content::ContentKind::Discontinuity => 4,
+            rill_content::ContentKind::Other => 5,
+        };
+        Some((kind, bytes))
+    }
+
+    pub fn alternate_screen(&self) -> bool {
+        self.modes.alternate_screen
+    }
+
     pub fn follow_live(&mut self) {
         self.scroll_offset = follow_live_after_input(self.scroll_offset);
         self.viewport_jumped = true;
@@ -287,6 +350,7 @@ impl Client {
                         match frame {
                             Frame::Data(bytes) => {
                                 fed += bytes.len();
+                                let _ = self.flow.ingest_pty_bytes(&bytes);
                                 self.chip.feed(&bytes)?;
                                 ingest_scrolled(
                                     &mut self.history_rows,
@@ -482,7 +546,25 @@ fn cold_workspace_id(attach_socket: &Path) -> Option<u64> {
 }
 
 fn cold_host_identity(attach_socket: &Path) -> Result<String, Error> {
-    let mut stream = UnixStream::connect(cold_identity_socket_path(attach_socket))?;
+    let path = cold_identity_socket_path(attach_socket);
+    let mut last_err = None;
+    let mut stream_opt = None;
+    for _ in 0..40 {
+        match UnixStream::connect(&path) {
+            Ok(s) => {
+                stream_opt = Some(s);
+                break;
+            }
+            Err(e) => {
+                last_err = Some(e);
+                std::thread::sleep(std::time::Duration::from_millis(25));
+            }
+        }
+    }
+    let mut stream = match stream_opt {
+        Some(s) => s,
+        None => return Err(Error::Io(last_err.unwrap_or_else(|| std::io::Error::other("identity connect failed")))),
+    };
     stream.set_read_timeout(Some(std::time::Duration::from_secs(1)))?;
     let mut identity = [0_u8; 6];
     stream.read_exact(&mut identity)?;
@@ -667,6 +749,86 @@ pub fn percentile(sorted: &[f64], q: f64) -> f64 {
     }
 }
 
+fn sanitize_flow_payload_for_ui(input: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(input.len());
+    let mut i = 0;
+    while i < input.len() {
+        let b = input[i];
+        if b == 0x1b {
+            i += 1;
+            if i >= input.len() {
+                break;
+            }
+            match input[i] {
+                b'[' => {
+                    i += 1;
+                    while i < input.len() {
+                        let c = input[i];
+                        i += 1;
+                        if (0x40..=0x7e).contains(&c) {
+                            break;
+                        }
+                    }
+                }
+                b']' => {
+                    i += 1;
+                    while i < input.len() {
+                        if input[i] == 0x07 {
+                            i += 1;
+                            break;
+                        }
+                        if input[i] == 0x1b && i + 1 < input.len() && input[i + 1] == b'\\' {
+                            i += 2;
+                            break;
+                        }
+                        i += 1;
+                    }
+                }
+                b'P' | b'^' | b'_' => {
+                    i += 1;
+                    while i < input.len() {
+                        if input[i] == 0x1b && i + 1 < input.len() && input[i + 1] == b'\\' {
+                            i += 2;
+                            break;
+                        }
+                        i += 1;
+                    }
+                }
+                _ => {
+                    i += 1;
+                }
+            }
+            continue;
+        }
+
+        if b == b'\r' {
+            if i + 1 < input.len() && input[i + 1] == b'\n' {
+                i += 1;
+                continue;
+            }
+            out.push(b'\n');
+            i += 1;
+            continue;
+        }
+        if b == 0x08 {
+            if let Some(last) = out.last() {
+                if *last != b'\n' {
+                    out.pop();
+                }
+            }
+            i += 1;
+            continue;
+        }
+        if b == b'\n' || b == b'\t' || b >= 0x20 {
+            if b != 0x7f {
+                out.push(b);
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
 mod ffi;
 
 #[cfg(test)]
@@ -747,5 +909,21 @@ mod tests {
         assert_eq!(s.workspace_id, 1);
         assert_eq!(s.tabs, vec![2, 4]);
         assert_eq!(s.leaves, vec![7, 9]);
+    }
+
+    /// Bug: Flow cards rendered raw terminal control bytes as visible text.
+    #[test]
+    fn t_flow_ui_sanitizes_ansi_sequences() {
+        let input = b"\x1b[2J\x1b[Hfoo\x1b[0m\r\nbar\x08!\x1b]0;title\x07\n";
+        let got = sanitize_flow_payload_for_ui(input);
+        assert_eq!(got, b"foo\nba!\n");
+    }
+
+    /// Bug: OSC/DCS payloads leaked into cards and broke layout.
+    #[test]
+    fn t_flow_ui_strips_osc_and_st_terminated_blocks() {
+        let input = b"a\x1b]0;hello\x1b\\b\x1bP123\x1b\\c";
+        let got = sanitize_flow_payload_for_ui(input);
+        assert_eq!(got, b"abc");
     }
 }

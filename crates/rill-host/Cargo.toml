@@ -15,6 +15,7 @@ path = "src/bin/rill_host.rs"
 
 [dependencies]
 rill-attach.workspace = true
+rill-content.workspace = true
 rill-look.workspace = true
 rill-vt-types.workspace = true
 vt-engine.workspace = true

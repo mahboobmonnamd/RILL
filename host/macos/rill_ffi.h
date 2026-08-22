@@ -97,6 +97,12 @@ uint32_t rill_client_live_codepoint(RillClient *client, uint16_t col, uint16_t r
 uint64_t rill_client_workspace_id(const RillClient *client);
 uint64_t rill_client_bytes_sent(const RillClient *client);
 
+int rill_client_alternate_screen(const RillClient *client);
+int rill_client_composer_submit(RillClient *client, const uint8_t *bytes, size_t len);
+uint32_t rill_client_flow_count(RillClient *client);
+int rill_client_flow_item(const RillClient *client, uint32_t index, uint32_t *kind,
+                          const uint8_t **bytes_out, size_t *len);
+
 #ifdef __cplusplus
 }
 #endif

@@ -4,7 +4,7 @@
 font-family = "JetBrainsMono Nerd Font"
 font-size = 16.0
 font-fallbacks = ["JetBrainsMonoNL Nerd Font", "Menlo", "Courier"]
-theme = "Catppuccin Latte"
+theme = "Catppuccin Mocha"
 padding-x = 12.0
 padding-y = 12.0
 background-opacity = 0.95

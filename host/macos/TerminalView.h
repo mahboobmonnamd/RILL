@@ -29,6 +29,8 @@ typedef struct {
 
 - (instancetype)initWithClient:(RillClient *)client;
 
+- (RillClient *)rillClient;
+
 /* Blocks on the run loop until `count` samples are accepted or the run fails.
  * Measures NSEvent.timestamp -> CAMetalDrawable.presentedTime, with a
  * cell-position-specific sentinel (ADR 0003 D5, D6). */

@@ -266,6 +266,10 @@ typedef struct {
     return self;
 }
 
+- (RillClient *)rillClient {
+    return _client;
+}
+
 - (void)dealloc {
     if (_readSource) {
         dispatch_source_cancel(_readSource);
@@ -441,6 +445,8 @@ typedef struct {
     }
     if (fed > 0) {
         [self renderFrame];
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"RillFlowNeedsReload"
+                                                            object:self];
     }
 }
 
@@ -655,6 +661,17 @@ static int rill_count_ident_prefix(NSView *root, NSString *prefix) {
     return n;
 }
 
+static int rill_count_visible_terminals(NSView *root) {
+    if (!root || root.hidden) {
+        return 0;
+    }
+    int n = [root isKindOfClass:[TerminalView class]] ? 1 : 0;
+    for (NSView *sub in root.subviews) {
+        n += rill_count_visible_terminals(sub);
+    }
+    return n;
+}
+
 static unsigned rill_view_bg_rgb(NSView *v) {
     if (!v || !v.layer || !v.layer.backgroundColor) {
         return 0;
@@ -829,18 +846,24 @@ static unsigned rill_view_bg_rgb(NSView *v) {
         }
     }
     int hints = rill_count_visible_ident_prefix(content, @"chord-hint-");
+    NSView *flow = rill_find_ident(content, @"flow-host");
+    int flow_visible = flow && !flow.hidden ? 1 : 0;
+    int flow_cards = rill_count_visible_ident_prefix(content, @"flow-command-block") +
+                     rill_count_visible_ident_prefix(content, @"flow-unstructured-block") +
+                     rill_count_visible_ident_prefix(content, @"flow-summary-block");
+    int term_visible = rill_count_visible_terminals(content);
     NSString *line = [NSString
         stringWithFormat:
             @"seq=%u fullscreen=%d visible=%d key=%d chrome=%u left=%.0f center=%.0f right=%.0f "
             @"first=%s opaque=%d alpha=%d nav_bg=%06x nav_top=%.0f pad_y=%.0f chrome_font=%.0f "
             @"host=%s cell_px=%.0f glyph_m=%.0f paint0=%u live0=%u hist=%u scroll=%u mark=%d ws_id=%llu "
             @"ws_label=%s agents=%d hidden=%d insp=%d sent=%llu quit=%d close=%d tabs=%d kern_tabs=%d "
-            @"tab_close=%d tab1=%d selected=%lu plus_trail=%d overflow=%d hints=%d\n",
+            @"tab_close=%d tab1=%d selected=%lu plus_trail=%d overflow=%d hints=%d flow=%d flow_cards=%d term_visible=%d\n",
             _heartbeatSeq, fs, vis, key, chrome, left, center, right, first, opaque, alpha, nav_bg,
             nav_top, _padY, chrome_font, host, cell_px, glyph_m, paint0, live0, hist, scrolloff, mark,
             (unsigned long long)ws_id, ws_label, agents, hidden, insp, (unsigned long long)sent, quit,
             closedef, tabs, kern_tabs, tab_close, tab1, (unsigned long)selected, plus_trail, overflow,
-            hints];
+            hints, flow_visible, flow_cards, term_visible];
     [line writeToFile:@(path) atomically:YES encoding:NSUTF8StringEncoding error:NULL];
 }
 

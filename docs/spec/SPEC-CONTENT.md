@@ -1,6 +1,8 @@
 # SPEC-CONTENT — terminal event ledger, ContentTimeline and retention
 
-- **Status:** Red. Specification only; no implementation is authorized.
+- **Status:** Partial. Library ledger + ContentTimeline and host Flow composer
+  (#348) are in tree. Full retention/runtime and compositor remain Red.
+- **Issue:** [#348](https://github.com/mahboobmonnamd/RILL/issues/348)
 - **Authority:** [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md)
   D5–D8, D15 and D22; supersedes range-only normal rendering in
   [ADR 0050](../adr/0050-blocks-are-a-cold-overlay.md).
