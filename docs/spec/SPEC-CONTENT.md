@@ -1,6 +1,8 @@
 # SPEC-CONTENT — terminal event ledger, ContentTimeline and retention
 
-- **Status:** Red. Specification only; no implementation is authorized.
+- **Status:** Accepted for ADR 0053 D12 item 3 implementation — 2026-08-22.
+  Product-owner approval authorizes the per-gate `lane:kernel` slices tracked
+  by #331. Flow/host projection remains D12 item 4 and is not authorized here.
 - **Authority:** [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md)
   D5–D8, D15 and D22; supersedes range-only normal rendering in
   [ADR 0050](../adr/0050-blocks-are-a-cold-overlay.md).
@@ -176,6 +178,8 @@ completion.
 
 ## 8. Gates
 
+### 8.1 Stage 3 closure gates
+
 - T-CONTENT-MONOTONIC-OFFSETS
 - T-CONTENT-RANGE-REQUIRES-STATE
 - T-CONTENT-SURVIVES-RING-EVICTION
@@ -188,9 +192,12 @@ completion.
 - T-CONTENT-BOUNDED-RECOVERY
 - T-TRANSCRIPT-EVENT-IDEMPOTENCY
 - T-TRANSCRIPT-BYTE-EVENT-ORDER
+- T-CONTENT-SOURCE-AUTHORITY
+
+### 8.2 Later presentation and performance gates
+
 - T-FLOW-RAW-SEMANTIC-FAILURE
 - T-ACTIVITY-DERIVED-NOT-AUTHORITY
-- T-CONTENT-SOURCE-AUTHORITY
 - T-PERF-PTY-DRAIN-INDEPENDENT
 - T-PERF-SEMANTIC-DEGRADATION
 - T-PERF-BYTE-FIDELITY

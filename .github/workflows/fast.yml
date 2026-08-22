@@ -237,6 +237,34 @@ jobs:
           red T-GRAPH-EPHEMERAL ignore_ephemeral t_graph_ephemeral_drop_terminates_the_child
           red T-GRAPH-LIFECYCLE-MODE-FIXED dynamic_ephemeral_env t_graph_lifecycle_mode_is_fixed_at_spawn
 
+      # Stage 3 semantic event ledger (ADR 0053 D12 item 3).
+      - name: Stage 3 content negative controls
+        run: |
+          set -eu
+          red() {
+            name="$1"
+            mut="$2"
+            shift 2
+            if RILL_MUTATE="$mut" cargo test -p rill-kernel --features mutate "$@" -- --test-threads=1 --nocapture; then
+              echo "BROKEN INSTRUMENT: $name stayed green under $mut" >&2
+              exit 1
+            fi
+            echo "ok: $name went red under $mut"
+          }
+          red T-CONTENT-MONOTONIC-OFFSETS snapshot_relative_offsets t_content_monotonic_offsets_survive_ring_eviction
+          red T-CONTENT-RANGE-REQUIRES-STATE allow_range_without_state t_content_range_requires_compatible_state
+          red T-CONTENT-SURVIVES-RING-EVICTION timeline_reads_hot_ring t_content_materialized_output_survives_ring_eviction
+          red T-CONTENT-NO-PROMPT-HEURISTIC prompt_regex_creates_command t_content_prompt_shape_does_not_create_command_boundary
+          red T-CONTENT-ALT-SAME-PTY alt_grid_becomes_timeline_item t_content_alternate_screen_creates_no_timeline_item
+          red T-TRANSCRIPT-EVENT-IDEMPOTENCY duplicate_event_id_appends t_transcript_event_append_is_idempotent_and_conflicts_fail_closed
+          red T-TRANSCRIPT-BYTE-EVENT-ORDER semantic_before_source_offset t_transcript_terminal_ranges_follow_byte_order_and_generation
+          red T-CONTENT-RETENTION-DISABLED disabled_policy_writes_transcript t_content_retention_disabled_writes_nothing_durable
+          red T-CONTENT-RETENTION-RESTRICTIVE-WINS closest_workspace_setting_wins t_content_retention_policy_restrictive_wins
+          red T-CONTENT-REDACTION-DERIVED redactor_mutates_canonical_record t_content_redaction_is_a_derived_sink
+          red T-CONTENT-TRUNCATION-VISIBLE omit_truncation_marker t_content_timeline_marks_truncation_explicitly
+          red T-CONTENT-BOUNDED-RECOVERY unbounded_transcript t_content_transcript_bound_fails_closed_with_cursor
+          red T-CONTENT-SOURCE-AUTHORITY scrape_cells_for_command_and_pass_count t_content_source_authority_rejects_command_claim_from_pty
+
       - name: T-RUNTIME checkpoint negative controls
         run: |
           set -eu

@@ -6,14 +6,21 @@
 //! (SPEC-KERNEL §1).
 
 mod checkpoint;
+mod content;
 mod error;
 mod journal;
 mod kernel;
 mod pty;
 mod ring;
 mod session;
+mod transcript;
 
 pub use checkpoint::{StoredCheckpoint, CHECKPOINT_FORMAT_VERSION};
+pub use content::{
+    CaptureOutcome, ContentError, ContentEvent, ContentKind, ContentTimeline, DurableTranscript,
+    EventAvailability, RedactedExport, RedactionRule, ReplayState, RetentionMode, RetentionPolicy,
+    ScreenMode, SourceRange,
+};
 pub use error::Error;
 pub use journal::{reconcile_execution, TerminalOutcome};
 pub use kernel::{
@@ -23,3 +30,6 @@ pub use kernel::{
 pub use pty::{Discipline, Winsize};
 pub use ring::ByteRing;
 pub use session::{HostIdentity, InputDelivery, IoEvent, Session};
+pub use transcript::{
+    EventId, EventPayload, EventProvenance, SemanticEvent, TranscriptError, TranscriptLedger,
+};
