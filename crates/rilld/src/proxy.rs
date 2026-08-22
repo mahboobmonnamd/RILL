@@ -2,7 +2,7 @@
 
 use crate::endpoint::{authorize_peer, ensure_protected_parent};
 use crate::error::Error;
-use rill_attach::{cold_identity_socket_path, worker_socket_path};
+use rill_attach::{cold_identity_socket_path, cold_nav_socket_path, worker_socket_path};
 use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
@@ -35,6 +35,9 @@ pub fn spawn_worker(attach_sock: &Path, worker_sock: &Path) -> Result<std::proce
     }
     if let Ok(v) = std::env::var("RILL_ALLOW_NESTED") {
         cmd.env("RILL_ALLOW_NESTED", v);
+    }
+    if let Ok(v) = std::env::var("HOME") {
+        cmd.env("HOME", v);
     }
     if let Ok(v) = std::env::var("SHELL") {
         cmd.env("SHELL", v);
@@ -100,7 +103,17 @@ pub fn run_control(attach_sock: &Path) -> Result<(), Error> {
     std::fs::set_permissions(&identity_path, std::fs::Permissions::from_mode(0o600))?;
     let worker_identity = cold_identity_socket_path(&worker_sock);
 
+    let nav_path = cold_nav_socket_path(attach_sock);
+    if nav_path.exists() {
+        let _ = std::fs::remove_file(&nav_path);
+    }
+    let nav = UnixListener::bind(&nav_path)?;
+    nav.set_nonblocking(true)?;
+    std::fs::set_permissions(&nav_path, std::fs::Permissions::from_mode(0o600))?;
+    let worker_nav = cold_nav_socket_path(&worker_sock);
+
     let mut pipes: Vec<Pipe> = Vec::new();
+    let mut nav_pipes: Vec<Pipe> = Vec::new();
     loop {
         match listener.accept() {
             Ok((stream, _)) => {
@@ -134,11 +147,37 @@ pub fn run_control(attach_sock: &Path) -> Result<(), Error> {
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
             Err(e) => return Err(e.into()),
         }
+        match nav.accept() {
+            Ok((stream, _)) => {
+                if authorize_peer(&stream).is_ok() {
+                    if let Ok(worker) = UnixStream::connect(&worker_nav) {
+                        let _ = stream.set_nonblocking(true);
+                        let _ = worker.set_nonblocking(true);
+                        nav_pipes.push(Pipe {
+                            a: stream,
+                            b: worker,
+                            a_to_b: VecDeque::new(),
+                            b_to_a: VecDeque::new(),
+                        });
+                    }
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(e) => return Err(e.into()),
+        }
 
         let mut i = 0;
         while i < pipes.len() {
             if splice(&mut pipes[i]).is_err() {
                 pipes.remove(i);
+            } else {
+                i += 1;
+            }
+        }
+        i = 0;
+        while i < nav_pipes.len() {
+            if splice(&mut nav_pipes[i]).is_err() {
+                nav_pipes.remove(i);
             } else {
                 i += 1;
             }
@@ -155,8 +194,33 @@ pub fn run_control(attach_sock: &Path) -> Result<(), Error> {
                 events: libc::POLLIN,
                 revents: 0,
             },
+            libc::pollfd {
+                fd: nav.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            },
         ];
         for p in &pipes {
+            let mut ev_a = libc::POLLIN;
+            if !p.b_to_a.is_empty() {
+                ev_a |= libc::POLLOUT;
+            }
+            let mut ev_b = libc::POLLIN;
+            if !p.a_to_b.is_empty() {
+                ev_b |= libc::POLLOUT;
+            }
+            fds.push(libc::pollfd {
+                fd: p.a.as_raw_fd(),
+                events: ev_a,
+                revents: 0,
+            });
+            fds.push(libc::pollfd {
+                fd: p.b.as_raw_fd(),
+                events: ev_b,
+                revents: 0,
+            });
+        }
+        for p in &nav_pipes {
             let mut ev_a = libc::POLLIN;
             if !p.b_to_a.is_empty() {
                 ev_a |= libc::POLLOUT;

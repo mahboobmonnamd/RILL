@@ -453,6 +453,104 @@ typedef struct {
         layer.opaque = YES;
         [self armDisplayLink];
         [self writeTestHeartbeat];
+        static BOOL rillChromeTestsArmed;
+        if (rillChromeTestsArmed) {
+            /* viewDidMoveToWindow can fire more than once; arm once. */
+        } else {
+        rillChromeTestsArmed = YES;
+        if (getenv("RILL_TEST_SCROLL") || getenv("RILL_TEST_FEED")) {
+            __weak TerminalView *weakSelf = self;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)),
+                               dispatch_get_main_queue(), ^{
+                                 TerminalView *strong = weakSelf;
+                                 if (!strong) {
+                                     return;
+                                 }
+                                 const char *feed = getenv("RILL_TEST_FEED");
+                                 if (!feed || !feed[0]) {
+                                     feed = "printf 'RILLMARK\\n'; i=1; while [ $i -le 200 ]; do echo "
+                                            "xxxxxxxx; i=$((i+1)); done\n";
+                                 }
+                                 [strong sendBytes:(const uint8_t *)feed length:strlen(feed)];
+                                 [strong writeTestHeartbeat];
+                               });
+            });
+        }
+        if (getenv("RILL_TEST_SCROLL")) {
+            __weak TerminalView *weakSelf = self;
+            dispatch_async(dispatch_get_main_queue(), ^{
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.2 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{
+                             TerminalView *strong = weakSelf;
+                             if (!strong) {
+                                 return;
+                             }
+                             rill_client_pump(strong->_client);
+                             const char *mut = getenv("RILL_MUTATE");
+                             if (!(mut && strcmp(mut, "ignore_wheel") == 0)) {
+                                 int32_t n = (int32_t)rill_client_history_rows(strong->_client);
+                                 rill_client_scroll_lines(strong->_client, n);
+                             }
+                             [strong renderFrame];
+                             [strong presentEcho];
+                             [strong writeTestHeartbeat];
+                           });
+            });
+        }
+        if (getenv("RILL_TEST_INJECT_HOST_CHORD")) {
+            __weak TerminalView *weakSelf = self;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
+                               dispatch_get_main_queue(), ^{
+                                 [weakSelf applyHostSidebarChord];
+                               });
+            });
+        }
+        if (getenv("RILL_TEST_INJECT_EDIT")) {
+            __weak TerminalView *weakSelf = self;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)),
+                               dispatch_get_main_queue(), ^{
+                                 uint8_t buf[4];
+                                 int n = rill_encode_edit(1, buf);
+                                 if (n > 0) {
+                                     [weakSelf sendBytes:buf length:(size_t)n];
+                                 }
+                                 [weakSelf writeTestHeartbeat];
+                               });
+            });
+        }
+        if (getenv("RILL_TEST_INJECT_PASTE")) {
+            __weak TerminalView *weakSelf = self;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)),
+                               dispatch_get_main_queue(), ^{
+                                 TerminalView *strong = weakSelf;
+                                 if (!strong || !strong->_client) {
+                                     return;
+                                 }
+                                 const char *p = getenv("RILL_TEST_INJECT_PASTE");
+                                 if (p && p[0] && strcmp(p, "1") != 0) {
+                                     rill_client_paste(strong->_client, (const uint8_t *)p,
+                                                       strlen(p));
+                                 } else {
+                                     [strong paste:nil];
+                                 }
+                                 [strong writeTestHeartbeat];
+                               });
+            });
+        }
+        if (getenv("RILL_TEST_INJECT_INSPECTOR_CHORD")) {
+            __weak TerminalView *weakSelf = self;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
+                               dispatch_get_main_queue(), ^{
+                                 [weakSelf applyHostInspectorChord];
+                               });
+            });
+        }
+        }
     } else if (_displayLink) {
         _displayLink.paused = YES;
     }
@@ -495,6 +593,24 @@ typedef struct {
     [self writeTestHeartbeat];
 }
 
+static BOOL rill_menu_has_key(NSMenu *menu, NSString *key, NSEventModifierFlags need) {
+    if (!menu) {
+        return NO;
+    }
+    for (NSMenuItem *it in menu.itemArray) {
+        if (it.submenu && rill_menu_has_key(it.submenu, key, need)) {
+            return YES;
+        }
+        NSEventModifierFlags got =
+            it.keyEquivalentModifierMask & NSEventModifierFlagDeviceIndependentFlagsMask;
+        NSEventModifierFlags want = need & NSEventModifierFlagDeviceIndependentFlagsMask;
+        if ([it.keyEquivalent isEqualToString:key] && got == want) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
 static NSView *rill_find_ident(NSView *root, NSString *ident) {
     if (!root) {
         return nil;
@@ -509,6 +625,34 @@ static NSView *rill_find_ident(NSView *root, NSString *ident) {
         }
     }
     return nil;
+}
+
+static int rill_count_visible_ident_prefix(NSView *root, NSString *prefix) {
+    if (!root || root.hidden) {
+        return 0;
+    }
+    int n = 0;
+    if ([root.accessibilityIdentifier hasPrefix:prefix]) {
+        n++;
+    }
+    for (NSView *sub in root.subviews) {
+        n += rill_count_visible_ident_prefix(sub, prefix);
+    }
+    return n;
+}
+
+static int rill_count_ident_prefix(NSView *root, NSString *prefix) {
+    if (!root) {
+        return 0;
+    }
+    int n = 0;
+    if ([root.accessibilityIdentifier hasPrefix:prefix]) {
+        n++;
+    }
+    for (NSView *sub in root.subviews) {
+        n += rill_count_ident_prefix(sub, prefix);
+    }
+    return n;
 }
 
 static unsigned rill_view_bg_rgb(NSView *v) {
@@ -607,13 +751,96 @@ static unsigned rill_view_bg_rgb(NSView *v) {
     RillGlyph gm = [self glyphForCodepoint:(uint32_t)'M' bold:NO];
     float cell_px = (float)(_cellH * backing);
     float glyph_m = gm.sizeY;
+    uint32_t paint0 = rill_client_cell_codepoint(_client, 0, 0);
+    uint32_t live0 = rill_client_live_codepoint(_client, 0, 0);
+    uint32_t hist = rill_client_history_rows(_client);
+    uint32_t scrolloff = rill_client_scroll_offset(_client);
+    int mark = 0;
+    for (uint16_t r = 0; r < 48 && !mark; r++) {
+        for (uint16_t c = 0; c < 40 && !mark; c++) {
+            if (rill_client_cell_codepoint(_client, c, r) == (uint32_t)'R' &&
+                rill_client_cell_codepoint(_client, (uint16_t)(c + 1), r) == (uint32_t)'I' &&
+                rill_client_cell_codepoint(_client, (uint16_t)(c + 2), r) == (uint32_t)'L' &&
+                rill_client_cell_codepoint(_client, (uint16_t)(c + 3), r) == (uint32_t)'L' &&
+                rill_client_cell_codepoint(_client, (uint16_t)(c + 4), r) == (uint32_t)'M') {
+                mark = 1;
+            }
+        }
+    }
+    uint64_t ws_id = rill_client_workspace_id(_client);
+    uint64_t sent = rill_client_bytes_sent(_client);
+    int agents = rill_find_ident(content, @"agent-row-fake") ? 1 : 0;
+    int hidden = 0;
+    int insp = 0;
+    if ([split isKindOfClass:[NSSplitView class]] && split.subviews.count >= 3) {
+        hidden = (left < 1.0 || split.subviews[0].hidden) ? 1 : 0;
+        insp = (right < 1.0 || split.subviews[2].hidden) ? 1 : 0;
+    } else {
+        hidden = (left < 1.0) ? 1 : 0;
+    }
+    NSView *wsRow = rill_find_ident(content, @"workspace-row-0");
+    if (!wsRow) {
+        NSString *wsIdent = [NSString stringWithFormat:@"workspace-id-%llu", (unsigned long long)ws_id];
+        wsRow = rill_find_ident(content, wsIdent);
+    }
+    const char *ws_label = "";
+    if (wsRow) {
+        for (NSView *sub in wsRow.subviews) {
+            if ([sub isKindOfClass:[NSTextField class]]) {
+                ws_label = ((NSTextField *)sub).stringValue.UTF8String ?: "";
+                break;
+            }
+        }
+    }
+    int quit = rill_menu_has_key(NSApp.mainMenu, @"q", NSEventModifierFlagCommand) ? 1 : 0;
+    int closedef = rill_menu_has_key(NSApp.mainMenu, @"w", NSEventModifierFlagCommand) ? 1 : 0;
+    int tabs = rill_count_ident_prefix(content, @"kernel-tab-");
+    int tab_close = rill_count_ident_prefix(content, @"rill-tab-close-");
+    int tab1 = rill_menu_has_key(NSApp.mainMenu, @"1", NSEventModifierFlagCommand) ? 1 : 0;
+    int kern_tabs = rill_nav_tab_count(NULL);
+    NSUInteger selected = 0;
+    for (NSUInteger i = 0; i < 16; i++) {
+        NSString *ident = [NSString stringWithFormat:@"kernel-tab-%lu", (unsigned long)i];
+        NSView *chip = rill_find_ident(content, ident);
+        if (!chip) {
+            break;
+        }
+        if (chip.layer && chip.layer.backgroundColor) {
+            CGFloat a = CGColorGetAlpha(chip.layer.backgroundColor);
+            if (a > 0.10) {
+                selected = i;
+            }
+        }
+    }
+    int plus_trail = 0;
+    NSView *plusv = rill_find_ident(content, @"rill-tab-plus");
+    NSView *sv = rill_find_ident(content, @"chrome-tab-scroll");
+    if (plusv && sv) {
+        CGFloat gap = NSMinX(plusv.frame) - NSMaxX(sv.frame);
+        if (gap >= 0 && gap <= 12.0) {
+            plus_trail = 1;
+        }
+    }
+    int overflow = 0;
+    if ([sv isKindOfClass:[NSScrollView class]]) {
+        NSScrollView *scroll = (NSScrollView *)sv;
+        if (scroll.documentView.bounds.size.width > scroll.contentView.bounds.size.width + 2.0) {
+            overflow = 1;
+        }
+    }
+    int hints = rill_count_visible_ident_prefix(content, @"chord-hint-");
     NSString *line = [NSString
         stringWithFormat:
             @"seq=%u fullscreen=%d visible=%d key=%d chrome=%u left=%.0f center=%.0f right=%.0f "
             @"first=%s opaque=%d alpha=%d nav_bg=%06x nav_top=%.0f pad_y=%.0f chrome_font=%.0f "
-            @"host=%s cell_px=%.0f glyph_m=%.0f\n",
+            @"host=%s cell_px=%.0f glyph_m=%.0f paint0=%u live0=%u hist=%u scroll=%u mark=%d ws_id=%llu "
+            @"ws_label=%s agents=%d hidden=%d insp=%d sent=%llu quit=%d close=%d tabs=%d kern_tabs=%d "
+            @"tab_close=%d tab1=%d selected=%lu plus_trail=%d overflow=%d hints=%d\n",
             _heartbeatSeq, fs, vis, key, chrome, left, center, right, first, opaque, alpha, nav_bg,
-            nav_top, _padY, chrome_font, host, cell_px, glyph_m];
+            nav_top, _padY, chrome_font, host, cell_px, glyph_m, paint0, live0, hist, scrolloff, mark,
+            (unsigned long long)ws_id, ws_label, agents, hidden, insp, (unsigned long long)sent, quit,
+            closedef, tabs, kern_tabs, tab_close, tab1, (unsigned long)selected, plus_trail, overflow,
+            hints];
     [line writeToFile:@(path) atomically:YES encoding:NSUTF8StringEncoding error:NULL];
 }
 
@@ -805,10 +1032,14 @@ static unsigned rill_view_bg_rgb(NSView *v) {
     /* Only damaged rows are rebuilt; the rest of the mirror persists across
      * frames (ADR 0003 D3). The old path re-rasterised every cell every frame
      * and ignored the damage range entirely. */
-    uint16_t r0 = grid.full_damage ? 0 : grid.damage_row0;
-    uint16_t r1 = grid.full_damage ? (grid.rows ? grid.rows - 1 : 0) : grid.damage_row1;
-    if (r1 >= grid.rows) {
-        r1 = grid.rows ? grid.rows - 1 : 0;
+    uint16_t r0 = 0;
+    uint16_t r1 = grid.rows ? (uint16_t)(grid.rows - 1) : 0;
+    if (!grid.full_damage && grid.damage_row0 <= grid.damage_row1) {
+        r0 = grid.damage_row0;
+        r1 = grid.damage_row1;
+        if (r1 >= grid.rows) {
+            r1 = grid.rows ? (uint16_t)(grid.rows - 1) : 0;
+        }
     }
 
     for (uint16_t y = r0; y <= r1 && y < grid.rows; y++) {
@@ -1097,6 +1328,192 @@ static unsigned rill_view_bg_rgb(NSView *v) {
     return YES;
 }
 
+- (BOOL)acceptsFirstMouse:(NSEvent *)event {
+    (void)event;
+    return YES;
+}
+
+- (void)mouseDown:(NSEvent *)event {
+    [self.window makeFirstResponder:self];
+    [self rillSendPointer:event kind:0];
+}
+
+- (void)mouseUp:(NSEvent *)event {
+    [self rillSendPointer:event kind:1];
+}
+
+- (void)rightMouseDown:(NSEvent *)event {
+    [self.window makeFirstResponder:self];
+    [self rillSendPointer:event kind:0];
+}
+
+- (void)rightMouseUp:(NSEvent *)event {
+    [self rillSendPointer:event kind:1];
+}
+
+- (void)otherMouseDown:(NSEvent *)event {
+    [self.window makeFirstResponder:self];
+    [self rillSendPointer:event kind:0];
+}
+
+- (void)otherMouseUp:(NSEvent *)event {
+    [self rillSendPointer:event kind:1];
+}
+
+- (uint8_t)rillButtonFromEvent:(NSEvent *)event {
+    NSInteger n = event.buttonNumber;
+    if (n <= 0) {
+        return 0;
+    }
+    if (n == 1) {
+        return 2;
+    }
+    if (n == 2) {
+        return 1;
+    }
+    return (uint8_t)MIN(n, 255);
+}
+
+- (void)rillCellFromEvent:(NSEvent *)event col:(uint16_t *)col row:(uint16_t *)row {
+    NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
+    CGFloat cw = MAX(_cellW, 1.0);
+    CGFloat ch = MAX(_cellH, 1.0);
+    int c = (int)floor((p.x - _padX) / cw);
+    int r = (int)floor((NSHeight(self.bounds) - p.y - _padY) / ch);
+    if (c < 0) {
+        c = 0;
+    }
+    if (r < 0) {
+        r = 0;
+    }
+    if (_cols > 0 && c >= (int)_cols) {
+        c = (int)_cols - 1;
+    }
+    if (_rows > 0 && r >= (int)_rows) {
+        r = (int)_rows - 1;
+    }
+    *col = (uint16_t)(c + 1);
+    *row = (uint16_t)(r + 1);
+}
+
+- (int)rillSendPointer:(NSEvent *)event kind:(uint8_t)kind {
+    if (!_client) {
+        return 0;
+    }
+    if ((event.modifierFlags & NSEventModifierFlagShift) != 0) {
+        return 0;
+    }
+    uint16_t col = 1;
+    uint16_t row = 1;
+    [self rillCellFromEvent:event col:&col row:&row];
+    return rill_client_send_pointer(_client, kind, [self rillButtonFromEvent:event], col, row);
+}
+
+- (void)scrollWheel:(NSEvent *)event {
+    if (!_client) {
+        return;
+    }
+    const char *mut = getenv("RILL_MUTATE");
+    if (mut && strcmp(mut, "ignore_wheel") == 0) {
+        return;
+    }
+    if ((event.modifierFlags & NSEventModifierFlagShift) == 0) {
+        uint16_t col = 1;
+        uint16_t row = 1;
+        [self rillCellFromEvent:event col:&col row:&row];
+        CGFloat dy = event.scrollingDeltaY;
+        if (event.hasPreciseScrollingDeltas) {
+            dy /= 16.0;
+        }
+        if (dy != 0.0) {
+            uint8_t kind = dy > 0.0 ? 2 : 3;
+            if (rill_client_send_pointer(_client, kind, 0, col, row) == 1) {
+                return;
+            }
+        }
+    }
+    CGFloat dy = event.scrollingDeltaY;
+    if (event.hasPreciseScrollingDeltas) {
+        dy /= 16.0;
+    }
+    int32_t lines = (int32_t)llround(dy);
+    if (lines == 0 && dy != 0.0) {
+        lines = dy > 0.0 ? 1 : -1;
+    }
+    if (lines == 0) {
+        return;
+    }
+    rill_client_scroll_lines(_client, lines);
+    /* presentEcho only blits the last instance buffer. Rebuild from the
+     * scrolled snapshot or the wheel is a no-op on screen. */
+    [self renderFrame];
+    [self presentEcho];
+    [self writeTestHeartbeat];
+}
+
+- (void)returnToLiveViewport {
+    if (_client) {
+        rill_client_follow_live(_client);
+    }
+    if ([self shouldPresent]) {
+        [self renderFrame];
+        [self presentEcho];
+    }
+}
+
+- (void)applyHostSidebarChord {
+    const char *mut = getenv("RILL_MUTATE");
+    if (mut && strcmp(mut, "always_forward_chord") == 0) {
+        uint8_t b = '1';
+        [self sendBytes:&b length:1];
+        [self writeTestHeartbeat];
+        return;
+    }
+    if (_client) {
+        rill_client_follow_live(_client);
+    }
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"RillToggleNav" object:self];
+    [self returnToLiveViewport];
+    [self writeTestHeartbeat];
+}
+
+- (void)applyHostInspectorChord {
+    const char *mut = getenv("RILL_MUTATE");
+    if (mut && strcmp(mut, "always_forward_chord") == 0) {
+        uint8_t b = '1';
+        [self sendBytes:&b length:1];
+        [self writeTestHeartbeat];
+        return;
+    }
+    if (_client) {
+        rill_client_follow_live(_client);
+    }
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"RillToggleInspector" object:self];
+    [self returnToLiveViewport];
+    [self writeTestHeartbeat];
+}
+
+- (void)paste:(id)sender {
+    (void)sender;
+    if (!_client || !rill_client_alive(_client)) {
+        return;
+    }
+    NSString *s = [[NSPasteboard generalPasteboard] stringForType:NSPasteboardTypeString];
+    if (!s.length) {
+        return;
+    }
+    NSData *data = [s dataUsingEncoding:NSUTF8StringEncoding];
+    if (!data.length) {
+        return;
+    }
+    if (rill_client_paste(_client, data.bytes, data.length) != 0) {
+        NSLog(@"Rill: paste: %s", rill_client_last_error() ?: "error");
+        return;
+    }
+    [self paintEchoAfterInput];
+    [self writeTestHeartbeat];
+}
+
 - (void)sendBytes:(const uint8_t *)bytes length:(size_t)len {
     if (len == 0) {
         return;
@@ -1143,7 +1560,102 @@ static unsigned rill_view_bg_rgb(NSView *v) {
 
 /* ^C was untypeable in the previous build, which also made T-DROP unreachable
  * through the GUI (docs/SPIKE-0-AUDIT.md S3-8g). */
+static BOOL rill_is_nav_chord(NSEvent *event) {
+    if (event.type != NSEventTypeKeyDown) {
+        return NO;
+    }
+    NSEventModifierFlags mods =
+        event.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask;
+    BOOL cmd = (mods & NSEventModifierFlagCommand) != 0;
+    BOOL opt = (mods & NSEventModifierFlagOption) != 0;
+    BOOL ctrl = (mods & NSEventModifierFlagControl) != 0;
+    if (!cmd || !opt || ctrl) {
+        return NO;
+    }
+    if (event.keyCode == 18 || event.keyCode == 83) {
+        return YES;
+    }
+    NSString *plain = event.charactersIgnoringModifiers.lowercaseString;
+    return [plain isEqualToString:@"1"];
+}
+
+static BOOL rill_is_inspector_chord(NSEvent *event) {
+    if (event.type != NSEventTypeKeyDown) {
+        return NO;
+    }
+    NSEventModifierFlags mods =
+        event.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask;
+    BOOL cmd = (mods & NSEventModifierFlagCommand) != 0;
+    BOOL opt = (mods & NSEventModifierFlagOption) != 0;
+    BOOL ctrl = (mods & NSEventModifierFlagControl) != 0;
+    if (!cmd || !ctrl || opt) {
+        return NO;
+    }
+    if (event.keyCode == 18 || event.keyCode == 83) {
+        return YES;
+    }
+    NSString *plain = event.charactersIgnoringModifiers.lowercaseString;
+    return [plain isEqualToString:@"1"];
+}
+
+- (BOOL)performKeyEquivalent:(NSEvent *)event {
+    if (rill_is_nav_chord(event)) {
+        [self applyHostSidebarChord];
+        return YES;
+    }
+    if (rill_is_inspector_chord(event)) {
+        [self applyHostInspectorChord];
+        return YES;
+    }
+    NSEventModifierFlags mods =
+        event.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask;
+    BOOL cmd = (mods & NSEventModifierFlagCommand) != 0;
+    BOOL opt = (mods & NSEventModifierFlagOption) != 0;
+    BOOL ctrl = (mods & NSEventModifierFlagControl) != 0;
+    NSString *plain = event.charactersIgnoringModifiers.lowercaseString;
+    if (cmd && !opt && !ctrl && plain.length == 1) {
+        unichar c = [plain characterAtIndex:0];
+        if (c == 'v') {
+            [self paste:nil];
+            return YES;
+        }
+        if (c == 'a' || c == 'e') {
+            uint8_t buf[4];
+            int n = rill_encode_edit(c == 'a' ? 1 : 2, buf);
+            if (n > 0) {
+                [self sendBytes:buf length:(size_t)n];
+            }
+            return YES;
+        }
+    }
+    return [super performKeyEquivalent:event];
+}
+
+- (void)flagsChanged:(NSEvent *)event {
+    NSEventModifierFlags mods =
+        event.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask;
+    BOOL cmd = (mods & NSEventModifierFlagCommand) != 0;
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"RillChordHints"
+                                                        object:self
+                                                      userInfo:@{@"on" : @(cmd)}];
+    [super flagsChanged:event];
+}
+
 - (void)keyDown:(NSEvent *)event {
+    NSEventModifierFlags mods =
+        event.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask;
+    NSString *plain = event.charactersIgnoringModifiers;
+    BOOL cmd = (mods & NSEventModifierFlagCommand) != 0;
+    BOOL opt = (mods & NSEventModifierFlagOption) != 0;
+    BOOL ctrl = (mods & NSEventModifierFlagControl) != 0;
+    if (rill_is_nav_chord(event)) {
+        [self applyHostSidebarChord];
+        return;
+    }
+    if (rill_is_inspector_chord(event)) {
+        [self applyHostInspectorChord];
+        return;
+    }
     if (_nfrRunning && _nfrMode == RillNfrModeHid) {
         _nfrHidKeyDowns++;
         if (_nfrHidKeyDowns == 1) {
@@ -1163,14 +1675,73 @@ static unsigned rill_view_bg_rgb(NSView *v) {
             _sentinel.keyTimestamp = event.timestamp + (ca - uptime);
         }
     }
-    NSEventModifierFlags mods = event.modifierFlags;
-    NSString *plain = event.charactersIgnoringModifiers;
 
     switch (event.keyCode) {
         case 36: { uint8_t b = '\r'; [self sendBytes:&b length:1]; return; }
-        case 51: { uint8_t b = 0x7f; [self sendBytes:&b length:1]; return; }
+        case 51: {
+            uint8_t op = 0;
+            if (cmd) {
+                op = 6; /* EDIT_DELETE_TO_START */
+            } else if (opt) {
+                op = 5; /* EDIT_DELETE_WORD */
+            }
+            if (op) {
+                uint8_t buf[4];
+                int n = rill_encode_edit(op, buf);
+                if (n > 0) {
+                    [self sendBytes:buf length:(size_t)n];
+                }
+                return;
+            }
+            uint8_t b = 0x7f;
+            [self sendBytes:&b length:1];
+            return;
+        }
+        case 117: {
+            if (cmd) {
+                uint8_t buf[4];
+                int n = rill_encode_edit(7, buf);
+                if (n > 0) {
+                    [self sendBytes:buf length:(size_t)n];
+                }
+                return;
+            }
+            uint8_t s[4] = {0x1b, '[', '3', '~'};
+            [self sendBytes:s length:4];
+            return;
+        }
         case 53: { uint8_t b = 0x1b; [self sendBytes:&b length:1]; return; }
         case 48: { uint8_t b = '\t'; [self sendBytes:&b length:1]; return; }
+        case 115: {
+            uint8_t buf[4];
+            int n = rill_encode_edit(8, buf);
+            if (n > 0) {
+                [self sendBytes:buf length:(size_t)n];
+            }
+            return;
+        }
+        case 119: {
+            uint8_t buf[4];
+            int n = rill_encode_edit(9, buf);
+            if (n > 0) {
+                [self sendBytes:buf length:(size_t)n];
+            }
+            return;
+        }
+        case 116: {
+            rill_client_scroll_lines(_client, 16);
+            [self renderFrame];
+            [self presentEcho];
+            [self writeTestHeartbeat];
+            return;
+        }
+        case 121: {
+            rill_client_scroll_lines(_client, -16);
+            [self renderFrame];
+            [self presentEcho];
+            [self writeTestHeartbeat];
+            return;
+        }
         case 126: {
             uint8_t s[3];
             rill_client_encode_arrow(_client, (uint8_t)'A', s);
@@ -1184,18 +1755,50 @@ static unsigned rill_view_bg_rgb(NSView *v) {
             return;
         }
         case 124: {
+            if (cmd || opt) {
+                uint8_t buf[4];
+                int n = rill_encode_edit(cmd ? 2 : 4, buf);
+                if (n > 0) {
+                    [self sendBytes:buf length:(size_t)n];
+                }
+                return;
+            }
             uint8_t s[3];
             rill_client_encode_arrow(_client, (uint8_t)'C', s);
             [self sendBytes:s length:3];
             return;
         }
         case 123: {
+            if (cmd || opt) {
+                uint8_t buf[4];
+                int n = rill_encode_edit(cmd ? 1 : 3, buf);
+                if (n > 0) {
+                    [self sendBytes:buf length:(size_t)n];
+                }
+                return;
+            }
             uint8_t s[3];
             rill_client_encode_arrow(_client, (uint8_t)'D', s);
             [self sendBytes:s length:3];
             return;
         }
         default: break;
+    }
+
+    if (cmd && !ctrl && plain.length == 1) {
+        unichar c = [[plain lowercaseString] characterAtIndex:0];
+        if (c == 'v') {
+            [self paste:nil];
+            return;
+        }
+        if (c == 'a' || c == 'e') {
+            uint8_t buf[4];
+            int n = rill_encode_edit(c == 'a' ? 1 : 2, buf);
+            if (n > 0) {
+                [self sendBytes:buf length:(size_t)n];
+            }
+            return;
+        }
     }
 
     if ((mods & NSEventModifierFlagControl) && plain.length == 1) {

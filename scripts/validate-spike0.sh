@@ -167,6 +167,63 @@ run_gate "T-CHROME-INSET" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
 run_gate "T-CHROME-FONT" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
   cargo test -p rill-host --offline --test t_split_look \
   t_chrome_section_font -- --nocapture
+run_gate "T-SCROLL-OFFSCREEN" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_chrome_interact \
+  t_scroll_wheel_reveals_lines_that_left_the_grid -- --nocapture
+run_gate "T-SCROLL-FOLLOW-LIVE" \
+  cargo test -p rill-host --offline --lib \
+  t_keystroke_returns_scrolled_viewport_to_live -- --nocapture
+run_gate "T-SCROLL-JUMP-DAMAGE" \
+  cargo test -p rill-host --offline --lib \
+  t_viewport_jump_paints_full_grid_not_stale_rows -- --nocapture
+run_gate "T-NAV-VIEWSTATE" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_chrome_interact \
+  t_nav_viewstate_hide_chrome_keeps_the_window -- --nocapture
+run_gate "T-HOST-CHORD" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_chrome_interact \
+  t_host_chord_does_not_write_the_pty -- --nocapture
+run_gate "T-INSPECTOR-CHORD" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_chrome_interact \
+  t_control_cmd_1_toggles_inspector_not_workspaces -- --nocapture
+run_gate "T-HOST-EDIT-KEYS" \
+  cargo test -p rill-host --offline --lib \
+  t_cmd_option_edit_keys_encode_readline_bytes -- --nocapture
+run_gate "T-MOUSE-SGR" \
+  cargo test -p rill-host --offline --lib \
+  t_host_encodes_sgr_mouse_when_mode_is_on -- --nocapture
+run_gate "T-HOST-PASTE" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_chrome_interact \
+  t_cmd_v_pastes_onto_the_pty -- --nocapture
+run_gate "T-APP-QUIT-CLOSE-MENU" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_chrome_interact \
+  t_app_menu_has_quit_and_close -- --nocapture
+run_gate "T-CMD-W-CLOSE" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_chrome_interact \
+  t_cmd_w_hides_window_keeps_the_gui -- --nocapture
+run_gate "T-NAV-NEW-TAB-DAEMON" \
+  cargo test -p rilld --offline --test gates \
+  t_nav_new_tab_spawns_a_second_leaf -- --nocapture
+run_gate "T-NAV-NEW-TAB" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_chrome_interact \
+  t_new_tab_creates_a_kernel_leaf -- --nocapture
+run_gate "T-NAV-CMD-W-TAB" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_chrome_interact \
+  t_cmd_w_closes_the_tab_not_the_window -- --nocapture
+run_gate "T-NAV-TAB-STRIP" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_chrome_interact \
+  t_tab_strip_has_close_trailing_plus_and_cmd_number -- --nocapture
+run_gate "T-NAV-TAB-OVERFLOW" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_chrome_interact \
+  t_tab_strip_scrolls_overflowing_tabs -- --nocapture
+run_gate "T-NAV-CHORD-HINTS" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_chrome_interact \
+  t_cmd_hold_shows_shortcut_badges -- --nocapture
+run_gate "T-NAV-WORKSPACE" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_chrome_interact \
+  t_nav_workspace_projection_uses_kernel_id -- --nocapture
+run_gate "T-AGENT-EMPTY" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_chrome_interact \
+  t_agent_inventory_is_empty_until_task_exists -- --nocapture
 run_gate "T-DOCK-REOPEN" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
   cargo test -p rill-host --offline --test t_dock_reopen -- --nocapture
 run_gate "T-MOBILE-BACKGROUND-DETACH" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
@@ -353,6 +410,70 @@ if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
     env RILL_GUI_APP="$ROOT/dist/Rill.app" \
     cargo test -p rill-host --offline --test t_split_look \
     t_chrome_section_font -- --nocapture
+  run_control "T-SCROLL-OFFSCREEN" ignore_wheel \
+    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rill-host --offline --features mutate --test t_chrome_interact \
+    t_scroll_wheel_reveals_lines_that_left_the_grid -- --nocapture
+  run_control "T-SCROLL-FOLLOW-LIVE" keep_scroll_on_input \
+    cargo test -p rill-host --offline --lib \
+    t_keystroke_returns_scrolled_viewport_to_live -- --nocapture
+  run_control "T-SCROLL-JUMP-DAMAGE" honor_empty_damage \
+    cargo test -p rill-host --offline --lib \
+    t_viewport_jump_paints_full_grid_not_stale_rows -- --nocapture
+  run_control "T-NAV-VIEWSTATE" hide_sidebar_detaches \
+    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rill-host --offline --test t_chrome_interact \
+    t_nav_viewstate_hide_chrome_keeps_the_window -- --nocapture
+  run_control "T-HOST-CHORD" always_forward_chord \
+    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rill-host --offline --test t_chrome_interact \
+    t_host_chord_does_not_write_the_pty -- --nocapture
+  run_control "T-HOST-EDIT-KEYS" skip_host_edit_keys \
+    cargo test -p rill-host --offline --lib \
+    t_cmd_option_edit_keys_encode_readline_bytes -- --nocapture
+  run_control "T-MOUSE-SGR" skip_mouse_encode \
+    cargo test -p rill-host --offline --lib \
+    t_host_encodes_sgr_mouse_when_mode_is_on -- --nocapture
+  run_control "T-APP-QUIT-CLOSE-MENU" skip_app_quit_menu \
+    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rill-host --offline --test t_chrome_interact \
+    t_app_menu_has_quit_and_close -- --nocapture
+  run_control "T-NAV-NEW-TAB" chrome_invents_tab \
+    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rill-host --offline --test t_chrome_interact \
+    t_new_tab_creates_a_kernel_leaf -- --nocapture
+  run_control "T-NAV-CMD-W-TAB" always_close_window \
+    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rill-host --offline --test t_chrome_interact \
+    t_cmd_w_closes_the_tab_not_the_window -- --nocapture
+  run_control "T-NAV-TAB-STRIP-CLOSE" skip_tab_close \
+    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rill-host --offline --test t_chrome_interact \
+    t_tab_strip_has_close_trailing_plus_and_cmd_number -- --nocapture
+  run_control "T-NAV-TAB-STRIP-PLUS" plus_at_window_trailing \
+    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rill-host --offline --test t_chrome_interact \
+    t_tab_strip_has_close_trailing_plus_and_cmd_number -- --nocapture
+  run_control "T-NAV-TAB-STRIP-KEYS" skip_tab_index_keys \
+    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rill-host --offline --test t_chrome_interact \
+    t_tab_strip_has_close_trailing_plus_and_cmd_number -- --nocapture
+  run_control "T-NAV-TAB-OVERFLOW" clip_tabs_no_scroll \
+    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rill-host --offline --test t_chrome_interact \
+    t_tab_strip_scrolls_overflowing_tabs -- --nocapture
+  run_control "T-NAV-CHORD-HINTS" skip_cmd_hints \
+    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rill-host --offline --test t_chrome_interact \
+    t_cmd_hold_shows_shortcut_badges -- --nocapture
+  run_control "T-NAV-WORKSPACE" chrome_invents_workspace_row \
+    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rill-host --offline --features mutate --test t_chrome_interact \
+    t_nav_workspace_projection_uses_kernel_id -- --nocapture
+  run_control "T-AGENT-EMPTY" fabricate_agent_row \
+    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rill-host --offline --test t_chrome_interact \
+    t_agent_inventory_is_empty_until_task_exists -- --nocapture
   run_control "T-DOCK-REOPEN" skip_dock_reopen \
     env RILL_GUI_APP="$ROOT/dist/Rill.app" \
     cargo test -p rill-host --offline --test t_dock_reopen -- --nocapture

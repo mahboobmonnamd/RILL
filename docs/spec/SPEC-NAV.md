@@ -13,7 +13,8 @@
   proves the layer under it is sound.
 - **Authority:** [ADR 0038](../adr/0038-session-graph-navigation-model.md),
   [ADR 0039](../adr/0039-inventories-are-cold-readers.md), amended by
-  [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md) D1–D3
+  [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md) D1–D3,
+  [ADR 0056](../adr/0056-vertical-slices-backend-and-host.md)
 - **Requires:** [SPEC-GRAPH](SPEC-GRAPH.md), [SPEC-KERNEL](SPEC-KERNEL.md),
   [SPEC-CHROME](SPEC-CHROME.md),
   [SPEC-DOMAIN-LIFECYCLE](SPEC-DOMAIN-LIFECYCLE.md)
@@ -47,6 +48,13 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 - Its terminal surface references zero or one TerminalExecution. Rich surfaces
   and inspectors own no PTY.
 - Hiding a surface MUST detach only the presenter.
+- When more tabs exist than fit, chips MUST shrink down to a minimum width
+  first. Only below that minimum MAY the strip scroll. The new-tab control
+  MUST sit immediately after the tab cluster, not at the far trailing edge
+  of the window.
+- Holding Command MAY show small chord badges on tabs (`⌘1`–`⌘9`) and the
+  workspace row (`⌥⌘1`). Badges MUST NOT become first responder or consume
+  the flags-changed event. Releasing Command hides them.
 - The runtime MUST keep a hidden TerminalExecution alive and drain its PTY under
   bounded recovery policy. Hidden panes MUST NOT stall the child.
 - Re-showing initializes a disposable client mirror from the host checkpoint
@@ -177,9 +185,8 @@ preserves decision history but is not evidence for the current T-NAV-CLOSE and
 its behavior MUST NOT be wired into chrome. The topology and reparent tests
 close only their data-structure prerequisites. None of the full gates has a
 window yet: `host/macos/ChromeHost` does not call `create_node`, `reparent_node`
-or `close_node`, and no packaged e2e has run. That wiring is open work — see
-[#260](https://github.com/mahboobmonnamd/RILL/issues/260)'s lane for the host
-side.
+or `close_node`, and no packaged e2e has run. That wiring is [#345](https://github.com/mahboobmonnamd/RILL/issues/345)
+(ADR 0056): cold `.nav` command in rilld plus host New Tab in the same issue.
 
 ## 12. Out of scope
 

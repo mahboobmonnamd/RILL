@@ -308,6 +308,8 @@ fn openpty() -> Result<(OwnedFd, File), Error> {
     // SAFETY: standard POSIX PTY handshake; every fd is wrapped or closed.
     let master = unsafe { libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY | libc::O_NONBLOCK) };
     if master < 0 {
+        let err = std::io::Error::last_os_error();
+        eprintln!("rilld: pty: posix_openpt: {err}");
         return Err(Error::Pty("posix_openpt"));
     }
     let master = unsafe { OwnedFd::from_raw_fd(master) };

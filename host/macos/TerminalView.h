@@ -37,6 +37,7 @@ typedef struct {
 /* Measurement hook (SPEC-DISPLAY §8). Writes seq / fullscreen / visible / key
  * from the live NSWindow when RILL_TEST_HEARTBEAT is set. */
 - (void)writeTestHeartbeat;
+- (void)returnToLiveViewport;
 
 @end
 

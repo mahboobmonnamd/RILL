@@ -765,6 +765,8 @@ and `TerminalView` had no `scrollWheel:`.
 
 **Required mutation.** `RILL_MUTATE=ignore_wheel`.
 
+A later keystroke MUST return the viewport to the live tail (`follow_live_after_input`).
+Mutation `keep_scroll_on_input` keeps the wheel offset.
 ---
 
 ## T-NAV-VIEWSTATE / host chords — hide chrome without PTY writes
@@ -773,13 +775,128 @@ Authority: [SPEC-NAV](spec/SPEC-NAV.md) §5, [#340](https://github.com/mahboobmo
 
 **Bug.** Keys all went to the PTY; sidebars could not hide.
 
-**Oracle.** ⌥⌘1 / `RILL_TEST_HIDE_CHROME` sets heartbeat `hidden=1` `left=0`
-`sent=0` while the GUI pid stays alive.
+**Oracle.** ⌥⌘1 / `RILL_TEST_HIDE_CHROME` sets `hidden=1` `left=0` with
+`insp=0` and inspector width kept (`host=local`). ⌃⌘1 sets `insp=1` without
+hiding Workspaces. `sent=0`. GUI pid stays alive.
 
 **Required mutations.** `hide_sidebar_detaches`, `always_forward_chord`.
 
 ---
 
+## T-HOST-EDIT-KEYS — macOS line/word chords become readline bytes
+
+Authority: [SPEC-DISPLAY](spec/SPEC-DISPLAY.md) §6, [ADR 0051](adr/0051-input-editor-history-and-completion.md) D1 (raw mode still goes to the PTY).
+
+**Bug.** ⌘/⌥ motions and ⌘V never reached the attach stream.
+
+**Oracle.** `encode_edit` emits Ctrl+A/E, ESC-b/f, Ctrl+W/U/K, CSI Home/End.
+Packaged `RILL_TEST_INJECT_EDIT` / `RILL_TEST_INJECT_PASTE` increase `sent`.
+
+**Required mutation.** `skip_host_edit_keys`.
+
+---
+
+## T-APP-QUIT-CLOSE — ⌘Q and ⌘W exist; close hides the window not the PTY
+
+Authority: [SPEC-NAV](spec/SPEC-NAV.md) §3, T-KILL (GUI death must not reap the kernel).
+
+**Bug.** Building a custom `mainMenu` omitted Quit/Close.
+
+**Oracle.** Heartbeat `quit=1` `close=1`. `RILL_TEST_CLOSE_WINDOW` → `visible=0` while the GUI pid stays alive.
+
+**Required mutation.** `skip_app_quit_menu`.
+
+---
+
+## T-MOUSE-SGR — pointer CSI reaches the PTY when Chip 1 mouse mode is on
+
+Authority: [ADR 0055](adr/0055-mockup-is-destination-mouse-first.md),
+[SPEC-HOST-POINTER](spec/SPEC-HOST-POINTER.md), [#344](https://github.com/mahboobmonnamd/RILL/issues/344).
+
+**Bug.** Clicks only focused the Metal view; TUIs never saw mouse reports.
+
+**Oracle.** `encode_pointer` with `mouse_sgr` emits `CSI <0;1;1M` for a press at
+cell (1,1). Reporting off is empty. Wheel with reporting on is `CSI <64;…M` and
+is not host history.
+
+**Required mutation.** `skip_mouse_encode`.
+
+---
+
+## T-NAV-NEW-TAB — File New Tab creates a kernel leaf and a host tab
+
+Authority: [ADR 0056](adr/0056-vertical-slices-backend-and-host.md),
+[SPEC-NAV](spec/SPEC-NAV.md), [#345](https://github.com/mahboobmonnamd/RILL/issues/345).
+
+**Bug.** Kernel Tab exists at bind; chrome cannot create another.
+
+**Oracle.** After ⌘T / File → New Tab, cold nav reports two tab ids and the
+host presents both. Second PTY is `rilld` `spawn_leaf`, not GUI spawn.
+
+**Required mutation.** `chrome_invents_tab`.
+
+---
+
+## T-NAV-CMD-W-TAB — ⌘W closes the tab presentation, not the window
+
+Authority: [SPEC-NAV](spec/SPEC-NAV.md) §3, [#346](https://github.com/mahboobmonnamd/RILL/issues/346).
+
+**Bug.** Close always `performClose`d the window.
+
+**Oracle.** After New Tab then ⌘W: `visible=1`, host `tabs=1`, `kern_tabs=2`.
+
+**Required mutation.** `always_close_window`.
+
+---
+
+## T-NAV-TAB-STRIP — close control, trailing +, ⌘1–⌘9
+
+Authority: [SPEC-NAV](spec/SPEC-NAV.md), Apple tab chrome.
+
+**Bug.** Tabs had no ×, chips were cramped with + in the empty middle, and
+⌘1–⌘9 did not switch tabs.
+
+**Oracle.** After New Tab: `tab_close>=2`, `plus_trail=1` (`+` follows the
+tab cluster), `tab1=1`, and select-first yields `selected=0`.
+
+**Required mutations.** `skip_tab_close`, `plus_at_window_trailing`, `skip_tab_index_keys`.
+
+---
+
+## T-NAV-TAB-OVERFLOW — overflowing tabs stay reachable
+
+Authority: [SPEC-NAV](spec/SPEC-NAV.md) §2.
+
+**Bug.** Extra tabs were clipped with no scroll. Chips must shrink to a
+minimum width before scrolling.
+
+**Oracle.** After six kernel tabs, heartbeat `overflow=1` and `tabs>=6`.
+
+**Required mutation.** `clip_tabs_no_scroll`.
+
+---
+
+## T-NAV-CHORD-HINTS — ⌘ hold previews tab and workspace chords
+
+Authority: [SPEC-NAV](spec/SPEC-NAV.md) §2.
+
+**Bug.** No cmux-style chord badges; overlays must not steal the grid.
+
+**Oracle.** With ⌘ down / `RILL_TEST_CMD_HINT`: `hints>=3`, `first=terminal`.
+
+**Required mutation.** `skip_cmd_hints`.
+
+---
+
+## T-NAV-TAB-STRESS — many tabs, present still ticks (occasional)
+
+Authority: [SPEC-NAV](spec/SPEC-NAV.md) §2. **Not** a `make gates` closer.
+
+**Oracle.** Eight tabs: `overflow=1`, GUI alive, heartbeat `seq` still advances.
+
+**Run.** `make stress` (`--ignored`). Do not add to regular validate.
+
+---
 ## T-NAV-WORKSPACE-PROJECTION — chrome row is a kernel Workspace id
 
 Authority: [SPEC-NAV](spec/SPEC-NAV.md) §1, [#341](https://github.com/mahboobmonnamd/RILL/issues/341).

@@ -23,6 +23,13 @@ pub fn cold_identity_socket_path(attach_socket: impl AsRef<Path>) -> PathBuf {
     PathBuf::from(path)
 }
 
+/// Cold container-tree projection for chrome (SPEC-NAV §1). Not an attach frame.
+pub fn cold_nav_socket_path(attach_socket: impl AsRef<Path>) -> PathBuf {
+    let mut path = attach_socket.as_ref().as_os_str().to_os_string();
+    path.push(".nav");
+    PathBuf::from(path)
+}
+
 /// Internal worker listener. Sibling of the public attach socket, never under
 /// shared `/tmp` as the production parent (SPEC-RUNTIME-SUPERVISION §2).
 pub fn worker_socket_path(attach_socket: impl AsRef<Path>) -> PathBuf {
@@ -601,6 +608,9 @@ mod tests {
         let w = worker_socket_path("/tmp/rill-a.sock");
         assert_eq!(w, PathBuf::from("/tmp/rill-a.sock.worker"));
         assert_ne!(w, a);
+        let n = cold_nav_socket_path("/tmp/rill-a.sock");
+        assert_eq!(n, PathBuf::from("/tmp/rill-a.sock.nav"));
+        assert_ne!(n, a);
     }
 
     #[test]
