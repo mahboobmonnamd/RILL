@@ -857,10 +857,10 @@ Authority: [SPEC-NAV](spec/SPEC-NAV.md), Apple tab chrome.
 **Bug.** Tabs had no ×, chips were cramped with + in the empty middle, and
 ⌘1–⌘9 did not switch tabs.
 
-**Oracle.** After New Tab: `tab_close>=2`, `plus_trail=1`, `tab1=1`, and
-select-first yields `selected=0`.
+**Oracle.** After New Tab: `tab_close>=2`, `plus_trail=1` (`+` follows the
+tab cluster), `tab1=1`, and select-first yields `selected=0`.
 
-**Required mutations.** `skip_tab_close`, `plus_after_tabs`, `skip_tab_index_keys`.
+**Required mutations.** `skip_tab_close`, `plus_at_window_trailing`, `skip_tab_index_keys`.
 
 ---
 
@@ -868,7 +868,8 @@ select-first yields `selected=0`.
 
 Authority: [SPEC-NAV](spec/SPEC-NAV.md) §2.
 
-**Bug.** Extra tabs were clipped with no scroll.
+**Bug.** Extra tabs were clipped with no scroll. Chips must shrink to a
+minimum width before scrolling.
 
 **Oracle.** After six kernel tabs, heartbeat `overflow=1` and `tabs>=6`.
 

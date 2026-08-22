@@ -389,7 +389,13 @@ impl Client {
         wrap_paste(self.modes.bracketed_paste, body)
     }
 
-    pub fn send_pointer(&mut self, kind: u8, button: u8, col: u16, row: u16) -> Result<bool, Error> {
+    pub fn send_pointer(
+        &mut self,
+        kind: u8,
+        button: u8,
+        col: u16,
+        row: u16,
+    ) -> Result<bool, Error> {
         let bytes = encode_pointer(self.modes, kind, button, col, row);
         if bytes.is_empty() {
             return Ok(false);
@@ -634,7 +640,14 @@ pub fn encode_pointer(
     let cx = 32u16.saturating_add(col.min(223));
     let cy = 32u16.saturating_add(row.min(223));
     let b = 32u16.saturating_add(u16::from(cb.min(223)));
-    vec![0x1b, b'[', b'M', b.min(255) as u8, cx.min(255) as u8, cy.min(255) as u8]
+    vec![
+        0x1b,
+        b'[',
+        b'M',
+        b.min(255) as u8,
+        cx.min(255) as u8,
+        cy.min(255) as u8,
+    ]
 }
 
 /// Percentile over an already-sorted slice, 0-indexed and without the
@@ -709,10 +722,7 @@ mod tests {
         let mut on = TerminalModeState::fresh();
         on.mouse_sgr = true;
         on.mouse_x10 = true;
-        assert_eq!(
-            encode_pointer(on, POINTER_PRESS, 0, 1, 1),
-            b"\x1b[<0;1;1M"
-        );
+        assert_eq!(encode_pointer(on, POINTER_PRESS, 0, 1, 1), b"\x1b[<0;1;1M");
         assert_eq!(
             encode_pointer(on, POINTER_RELEASE, 0, 2, 3),
             b"\x1b[<0;2;3m"

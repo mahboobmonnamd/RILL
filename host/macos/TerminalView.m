@@ -813,15 +813,15 @@ static unsigned rill_view_bg_rgb(NSView *v) {
         }
     }
     int plus_trail = 0;
-    NSView *strip = rill_find_ident(content, @"chrome-tab-strip");
     NSView *plusv = rill_find_ident(content, @"rill-tab-plus");
-    if (strip && plusv) {
-        if (NSMaxX(plusv.frame) > strip.bounds.size.width - 48.0) {
+    NSView *sv = rill_find_ident(content, @"chrome-tab-scroll");
+    if (plusv && sv) {
+        CGFloat gap = NSMinX(plusv.frame) - NSMaxX(sv.frame);
+        if (gap >= 0 && gap <= 12.0) {
             plus_trail = 1;
         }
     }
     int overflow = 0;
-    NSView *sv = rill_find_ident(content, @"chrome-tab-scroll");
     if ([sv isKindOfClass:[NSScrollView class]]) {
         NSScrollView *scroll = (NSScrollView *)sv;
         if (scroll.documentView.bounds.size.width > scroll.contentView.bounds.size.width + 2.0) {

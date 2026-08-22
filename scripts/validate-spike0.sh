@@ -450,7 +450,7 @@ if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
     env RILL_GUI_APP="$ROOT/dist/Rill.app" \
     cargo test -p rill-host --offline --test t_chrome_interact \
     t_tab_strip_has_close_trailing_plus_and_cmd_number -- --nocapture
-  run_control "T-NAV-TAB-STRIP-PLUS" plus_after_tabs \
+  run_control "T-NAV-TAB-STRIP-PLUS" plus_at_window_trailing \
     env RILL_GUI_APP="$ROOT/dist/Rill.app" \
     cargo test -p rill-host --offline --test t_chrome_interact \
     t_tab_strip_has_close_trailing_plus_and_cmd_number -- --nocapture

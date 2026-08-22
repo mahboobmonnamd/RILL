@@ -48,8 +48,10 @@ Normative keywords: MUST, MUST NOT, SHOULD, MAY.
 - Its terminal surface references zero or one TerminalExecution. Rich surfaces
   and inspectors own no PTY.
 - Hiding a surface MUST detach only the presenter.
-- When more tabs exist than fit the strip, chrome MUST keep every tab reachable
-  by horizontal scrolling. Clipping tabs with no scroll is forbidden.
+- When more tabs exist than fit, chips MUST shrink down to a minimum width
+  first. Only below that minimum MAY the strip scroll. The new-tab control
+  MUST sit immediately after the tab cluster, not at the far trailing edge
+  of the window.
 - Holding Command MAY show small chord badges on tabs (`⌘1`–`⌘9`) and the
   workspace row (`⌥⌘1`). Badges MUST NOT become first responder or consume
   the flags-changed event. Releasing Command hides them.

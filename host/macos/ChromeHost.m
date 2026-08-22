@@ -127,9 +127,11 @@ static NSTextField *RillChordHint(NSString *text, uint32_t fg) {
         _index = idx;
         _on = on;
         self.wantsLayer = YES;
-        self.layer.cornerRadius = 7;
+        self.layer.cornerRadius = 8;
+        self.layer.borderWidth = on ? 1.0 : 0.0;
+        self.layer.borderColor = [RillRgbaColor(fg) colorWithAlphaComponent:0.45].CGColor;
         self.layer.backgroundColor =
-            on ? [RillRgbaColor(fg) colorWithAlphaComponent:0.16].CGColor
+            on ? [RillRgbaColor(fg) colorWithAlphaComponent:0.28].CGColor
                : [RillRgbaColor(fg) colorWithAlphaComponent:0.05].CGColor;
         self.accessibilityIdentifier = [NSString stringWithFormat:@"kernel-tab-%lu", (unsigned long)idx];
         self.accessibilityRole = NSAccessibilityButtonRole;
@@ -171,14 +173,14 @@ static NSTextField *RillChordHint(NSString *text, uint32_t fg) {
     [super layout];
     CGFloat w = MAX(1.0, self.bounds.size.width);
     CGFloat h = MAX(1.0, self.bounds.size.height);
-    CGFloat pad = 6.0;
+    CGFloat pad = 10.0;
     CGFloat closeW = self.closeButton.hidden ? 0.0 : 18.0;
     BOOL hintOn = !self.hint.hidden && self.hint.stringValue.length > 0;
-    CGFloat hintW = hintOn ? 28.0 : 0.0;
-    self.closeButton.frame = NSMakeRect(w - pad - 18.0, MAX(0.0, (h - 18.0) / 2.0), 18.0, 18.0);
+    CGFloat hintSlot = 32.0;
+    self.closeButton.frame = NSMakeRect(w - 8.0 - 18.0, MAX(0.0, (h - 18.0) / 2.0), 18.0, 18.0);
     self.hint.frame = NSMakeRect(pad, MAX(0.0, (h - 16.0) / 2.0), 28.0, 16.0);
-    CGFloat titleX = pad + (hintOn ? hintW + 4.0 : 0.0);
-    CGFloat titleR = w - pad - (closeW > 0.0 ? closeW + 4.0 : 0.0);
+    CGFloat titleX = hintOn ? pad + hintSlot : pad;
+    CGFloat titleR = w - 8.0 - (closeW > 0.0 ? closeW + 4.0 : 0.0);
     self.titleField.frame =
         NSMakeRect(titleX, MAX(0.0, (h - 18.0) / 2.0), MAX(8.0, titleR - titleX), 18.0);
 }
@@ -261,37 +263,47 @@ static NSTextField *RillChordHint(NSString *text, uint32_t fg) {
     CGFloat h = self.bounds.size.height;
     CGFloat pad = 10;
     CGFloat plusW = 28;
-    CGFloat gap = 6;
+    CGFloat gap = 5;
     NSUInteger n = self.chips.count;
     const char *mut = getenv("RILL_MUTATE");
     BOOL noscroll = mut && strcmp(mut, "clip_tabs_no_scroll") == 0;
-    CGFloat avail = MAX(80, w - pad * 2 - plusW - 8);
-    CGFloat tw = 148;
-    if (noscroll && n > 0) {
-        tw = (avail - gap * (CGFloat)(n - 1)) / (CGFloat)n;
-        if (tw < 72) {
-            tw = 72;
-        }
-        if (tw > 240) {
-            tw = 240;
+    BOOL plusFar = mut && strcmp(mut, "plus_at_window_trailing") == 0;
+    CGFloat avail = MAX(80, w - pad * 2 - plusW - 6);
+    const CGFloat kTabMin = 112;
+    const CGFloat kTabMax = 200;
+    CGFloat tw = kTabMax;
+    if (n > 0) {
+        CGFloat gaps = gap * (CGFloat)(n - 1);
+        CGFloat fit = (avail - gaps) / (CGFloat)n;
+        if (noscroll) {
+            tw = MIN(kTabMax, MAX(72, fit));
+        } else if (fit >= kTabMax) {
+            tw = kTabMax;
+        } else if (fit >= kTabMin) {
+            tw = fit;
+        } else {
+            tw = kTabMin;
         }
     }
     CGFloat x = 0;
     for (RillTabChip *chip in self.chips) {
         chip.hint.hidden = !self.hintsOn || chip.hint.stringValue.length == 0;
-        chip.frame = NSMakeRect(x, 2, tw, h - 8);
+        chip.frame = NSMakeRect(x, 4, tw, h - 10);
+        [chip setNeedsLayout:YES];
+        [chip layoutSubtreeIfNeeded];
         x += tw + gap;
     }
-    CGFloat rowW = MAX(avail, x);
-    if (noscroll) {
-        rowW = avail;
+    CGFloat cluster = n == 0 ? 0 : x - gap;
+    BOOL overflow = cluster > avail + 0.5;
+    CGFloat scrollW = overflow ? avail : MAX(cluster, 1);
+    self.chipRow.frame = NSMakeRect(0, 0, MAX(scrollW, cluster), h);
+    self.chipScroll.frame = NSMakeRect(pad, 0, scrollW, h);
+    self.chipScroll.hasHorizontalScroller = overflow;
+    CGFloat plusX = pad + scrollW + 4;
+    if (plusFar) {
+        plusX = w - pad - plusW;
     }
-    self.chipRow.frame = NSMakeRect(0, 0, rowW, h);
-    self.chipScroll.frame = NSMakeRect(pad, 0, avail, h);
-    self.plus.frame = NSMakeRect(w - pad - plusW, (h - 22) / 2, plusW, 22);
-    if (mut && strcmp(mut, "plus_after_tabs") == 0) {
-        self.plus.frame = NSMakeRect(pad + MIN(x, avail), (h - 22) / 2, plusW, 22);
-    }
+    self.plus.frame = NSMakeRect(plusX, (h - 22) / 2, plusW, 22);
     for (CALayer *layer in self.layer.sublayers) {
         if ([layer.name isEqualToString:@"tab-edge"]) {
             layer.frame = NSMakeRect(0, h - 1, w, 1);
@@ -331,11 +343,14 @@ static NSTextField *RillChordHint(NSString *text, uint32_t fg) {
     for (RillTabChip *chip in self.chips) {
         BOOL on = i == selected;
         chip.on = on;
+        chip.layer.borderWidth = on ? 1.0 : 0.0;
+        chip.layer.borderColor = [RillRgbaColor(self.fgRgba) colorWithAlphaComponent:0.45].CGColor;
         chip.layer.backgroundColor =
-            on ? [RillRgbaColor(self.fgRgba) colorWithAlphaComponent:0.16].CGColor
+            on ? [RillRgbaColor(self.fgRgba) colorWithAlphaComponent:0.28].CGColor
                : [RillRgbaColor(self.fgRgba) colorWithAlphaComponent:0.05].CGColor;
         chip.titleField.font = [NSFont systemFontOfSize:NSFont.systemFontSize
                                                  weight:on ? NSFontWeightMedium : NSFontWeightRegular];
+        [chip setNeedsLayout:YES];
         i++;
     }
 }
@@ -743,6 +758,7 @@ static NSTextField *RillChordHint(NSString *text, uint32_t fg) {
             next = self.terminals.count - 1;
         }
         self.selectedTab = next;
+        [self reloadTabBar];
         [self showTabAtIndex:next];
         return;
     }

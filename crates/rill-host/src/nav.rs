@@ -41,9 +41,7 @@ fn parse_id_list(s: &str) -> Vec<u64> {
     if s.is_empty() {
         return Vec::new();
     }
-    s.split(',')
-        .filter_map(|p| p.parse().ok())
-        .collect()
+    s.split(',').filter_map(|p| p.parse().ok()).collect()
 }
 
 fn read_line(stream: &mut UnixStream) -> Result<String, Error> {

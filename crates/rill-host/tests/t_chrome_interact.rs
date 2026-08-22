@@ -310,7 +310,10 @@ fn t_nav_viewstate_hide_chrome_keeps_the_window() {
         libc::kill(pid as i32, libc::SIGTERM);
     }
     let _ = gui.wait();
-    assert!(still, "GUI must stay alive while chrome is hidden; heartbeat={raw:?}");
+    assert!(
+        still,
+        "GUI must stay alive while chrome is hidden; heartbeat={raw:?}"
+    );
     let hb = hb.unwrap_or_else(|| panic!("sidebars never hid; heartbeat={raw:?}"));
     assert_eq!(hb.first.as_deref(), Some("terminal"));
     assert_ne!(
@@ -352,10 +355,18 @@ fn t_host_chord_does_not_write_the_pty() {
             hb.sent.unwrap_or(0) > 0,
             "mutation must forward the chord; heartbeat={raw:?}"
         );
-        assert_ne!(hb.hidden, Some(1), "mutation must not hide chrome; heartbeat={raw:?}");
+        assert_ne!(
+            hb.hidden,
+            Some(1),
+            "mutation must not hide chrome; heartbeat={raw:?}"
+        );
         return;
     }
-    assert_eq!(hb.hidden, Some(1), "chord must hide chrome; heartbeat={raw:?}");
+    assert_eq!(
+        hb.hidden,
+        Some(1),
+        "chord must hide chrome; heartbeat={raw:?}"
+    );
     assert_ne!(
         hb.insp,
         Some(1),
@@ -374,7 +385,11 @@ fn t_control_cmd_1_toggles_inspector_not_workspaces() {
     let sock = unique_sock();
     let heartbeat = PathBuf::from(format!("{}.hb", sock.display()));
     let _ = fs::remove_file(&heartbeat);
-    let mut gui = spawn_gui(&sock, &heartbeat, &[("RILL_TEST_INJECT_INSPECTOR_CHORD", "1")]);
+    let mut gui = spawn_gui(
+        &sock,
+        &heartbeat,
+        &[("RILL_TEST_INJECT_INSPECTOR_CHORD", "1")],
+    );
     let pid = gui.id();
     let hb = wait_heartbeat(&heartbeat, pid, Duration::from_secs(6), |h| {
         h.insp == Some(1) || h.sent.unwrap_or(0) > 0
@@ -384,8 +399,13 @@ fn t_control_cmd_1_toggles_inspector_not_workspaces() {
         libc::kill(pid as i32, libc::SIGTERM);
     }
     let _ = gui.wait();
-    let hb = hb.unwrap_or_else(|| panic!("inspector chord produced no heartbeat; heartbeat={raw:?}"));
-    assert_eq!(hb.insp, Some(1), "⌃⌘1 must hide the inspector; heartbeat={raw:?}");
+    let hb =
+        hb.unwrap_or_else(|| panic!("inspector chord produced no heartbeat; heartbeat={raw:?}"));
+    assert_eq!(
+        hb.insp,
+        Some(1),
+        "⌃⌘1 must hide the inspector; heartbeat={raw:?}"
+    );
     assert_ne!(
         hb.hidden,
         Some(1),
@@ -414,7 +434,10 @@ fn t_nav_workspace_projection_uses_kernel_id() {
     }
     let _ = gui.wait();
     let hb = hb.unwrap_or_else(|| {
-        panic!("no heartbeat; sock={} heartbeat={raw:?} stderr={err:?}", sock.display())
+        panic!(
+            "no heartbeat; sock={} heartbeat={raw:?} stderr={err:?}",
+            sock.display()
+        )
     });
     let id = hb.ws_id.unwrap_or(0);
     assert!(id > 0, "kernel workspace id missing; heartbeat={raw:?}");
@@ -442,7 +465,11 @@ fn t_agent_inventory_is_empty_until_task_exists() {
     }
     let _ = gui.wait();
     let hb = hb.unwrap_or_else(|| panic!("no heartbeat; heartbeat={raw:?}"));
-    assert_eq!(hb.agents, Some(0), "fabricated agent row; heartbeat={raw:?}");
+    assert_eq!(
+        hb.agents,
+        Some(0),
+        "fabricated agent row; heartbeat={raw:?}"
+    );
 }
 
 /// Bug: ⌘A / line-start never reached the PTY.
@@ -531,7 +558,11 @@ fn t_cmd_w_hides_window_keeps_the_gui() {
     let _ = gui.wait();
     assert!(still, "⌘W must not terminate the GUI; heartbeat={raw:?}");
     let hb = hb.unwrap_or_else(|| panic!("window never hid; heartbeat={raw:?}"));
-    assert_eq!(hb.visible, Some(0), "close must hide the window; heartbeat={raw:?}");
+    assert_eq!(
+        hb.visible,
+        Some(0),
+        "close must hide the window; heartbeat={raw:?}"
+    );
 }
 
 /// Bug: ⌘W closed the window while a second tab was open (SPEC-NAV §3).
@@ -593,7 +624,7 @@ fn t_new_tab_creates_a_kernel_leaf() {
 }
 
 /// Bug: tabs had no close control, cramped chips, + in the empty middle, no ⌘1–⌘9.
-/// Mutations: `skip_tab_close`, `plus_after_tabs`, `skip_tab_index_keys`.
+/// Mutations: `skip_tab_close`, `plus_at_window_trailing`, `skip_tab_index_keys`.
 #[test]
 fn t_tab_strip_has_close_trailing_plus_and_cmd_number() {
     let sock = unique_sock();
@@ -622,7 +653,11 @@ fn t_tab_strip_has_close_trailing_plus_and_cmd_number() {
         hb.tab_close.unwrap_or(0) >= 2,
         "each tab needs a close control; heartbeat={raw:?}"
     );
-    assert_eq!(hb.plus_trail, Some(1), "+ must sit at the trailing edge; heartbeat={raw:?}");
+    assert_eq!(
+        hb.plus_trail,
+        Some(1),
+        "+ must follow the tab cluster; heartbeat={raw:?}"
+    );
     assert_eq!(hb.tab1, Some(1), "⌘1 must select tab 1; heartbeat={raw:?}");
     assert_eq!(
         hb.selected,
@@ -649,8 +684,15 @@ fn t_tab_strip_scrolls_overflowing_tabs() {
     }
     let _ = gui.wait();
     let hb = hb.unwrap_or_else(|| panic!("overflowing tabs not scrollable; heartbeat={raw:?}"));
-    assert_eq!(hb.overflow, Some(1), "tab strip must scroll; heartbeat={raw:?}");
-    assert!(hb.tabs.unwrap_or(0) >= 6, "all tab chips exist; heartbeat={raw:?}");
+    assert_eq!(
+        hb.overflow,
+        Some(1),
+        "tab strip must scroll; heartbeat={raw:?}"
+    );
+    assert!(
+        hb.tabs.unwrap_or(0) >= 6,
+        "all tab chips exist; heartbeat={raw:?}"
+    );
 }
 
 /// Bug: holding ⌘ did not preview tab/workspace chords (cmux).
