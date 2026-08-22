@@ -767,7 +767,6 @@ and `TerminalView` had no `scrollWheel:`.
 
 A later keystroke MUST return the viewport to the live tail (`follow_live_after_input`).
 Mutation `keep_scroll_on_input` keeps the wheel offset.
-
 ---
 
 ## T-NAV-VIEWSTATE / host chords — hide chrome without PTY writes
@@ -898,7 +897,6 @@ Authority: [SPEC-NAV](spec/SPEC-NAV.md) §2. **Not** a `make gates` closer.
 **Run.** `make stress` (`--ignored`). Do not add to regular validate.
 
 ---
-
 ## T-NAV-WORKSPACE-PROJECTION — chrome row is a kernel Workspace id
 
 Authority: [SPEC-NAV](spec/SPEC-NAV.md) §1, [#341](https://github.com/mahboobmonnamd/RILL/issues/341).
