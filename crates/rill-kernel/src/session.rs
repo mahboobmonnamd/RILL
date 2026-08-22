@@ -57,6 +57,7 @@ impl HostIdentity {
 
 pub struct Session {
     pty: Pty,
+    ephemeral: bool,
     ring: ByteRing,
     attach_generation: Option<u64>,
     credit: u64,
@@ -86,6 +87,10 @@ impl Session {
         Self::spawn_with(shell, args, size, Discipline::Interactive)
     }
 
+    pub fn spawn_ephemeral(shell: &str, args: &[&str], size: Winsize) -> Result<Self, Error> {
+        Self::spawn_configured(shell, args, size, Discipline::Interactive, true)
+    }
+
     /// `Discipline::Raw` is required by T-BYTES: with the normal line
     /// discipline, what reaches the ring is the tty echo, not child output
     /// (SPEC-KERNEL §10).
@@ -95,9 +100,20 @@ impl Session {
         size: Winsize,
         discipline: Discipline,
     ) -> Result<Self, Error> {
+        Self::spawn_configured(shell, args, size, discipline, false)
+    }
+
+    fn spawn_configured(
+        shell: &str,
+        args: &[&str],
+        size: Winsize,
+        discipline: Discipline,
+        ephemeral: bool,
+    ) -> Result<Self, Error> {
         let pty = Pty::spawn_with(shell, args, size, discipline)?;
         Ok(Self {
             pty,
+            ephemeral,
             ring: ByteRing::new(RING_CAP),
             attach_generation: None,
             credit: 0,
@@ -319,8 +335,12 @@ impl Session {
         self.attach_generation.is_some() || self.observers > 0
     }
 
-    fn ephemeral() -> bool {
-        std::env::var("RILL_EPHEMERAL").as_deref() == Ok("1")
+    fn ephemeral(&self) -> bool {
+        #[cfg(feature = "mutate")]
+        if std::env::var("RILL_MUTATE").as_deref() == Ok("dynamic_ephemeral_env") {
+            return std::env::var("RILL_EPHEMERAL").as_deref() == Ok("1");
+        }
+        self.ephemeral
     }
 
     // ---------------------------------------------------------------- outbound
@@ -379,7 +399,7 @@ impl Session {
         self.attach_generation = None;
         self.credit = 0;
 
-        if Self::ephemeral() {
+        if self.ephemeral() {
             let _ = self.pty.terminate();
         }
 
@@ -677,7 +697,7 @@ impl Drop for Session {
         if std::env::var("RILL_MUTATE").as_deref() == Ok("ignore_ephemeral") {
             return;
         }
-        if Self::ephemeral() {
+        if self.ephemeral() {
             let _ = self.pty.terminate();
         }
     }
