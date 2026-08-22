@@ -743,7 +743,8 @@ static NSTextField *RillChordHint(NSString *text, uint32_t fg) {
 - (void)closeTabAtIndex:(NSUInteger)idx {
     const char *mut = getenv("RILL_MUTATE");
     if (mut && strcmp(mut, "always_close_window") == 0) {
-        [self.view.window performClose:nil];
+        [self.view.window orderOut:nil];
+        [self.terminal writeTestHeartbeat];
         return;
     }
     if (self.terminals.count > 1) {

@@ -1466,6 +1466,7 @@ static unsigned rill_view_bg_rgb(NSView *v) {
     if (mut && strcmp(mut, "always_forward_chord") == 0) {
         uint8_t b = '1';
         [self sendBytes:&b length:1];
+        [self writeTestHeartbeat];
         return;
     }
     if (_client) {
@@ -1481,6 +1482,7 @@ static unsigned rill_view_bg_rgb(NSView *v) {
     if (mut && strcmp(mut, "always_forward_chord") == 0) {
         uint8_t b = '1';
         [self sendBytes:&b length:1];
+        [self writeTestHeartbeat];
         return;
     }
     if (_client) {

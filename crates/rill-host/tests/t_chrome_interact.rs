@@ -350,18 +350,6 @@ fn t_host_chord_does_not_write_the_pty() {
     }
     let _ = gui.wait();
     let hb = hb.unwrap_or_else(|| panic!("chord produced no heartbeat; heartbeat={raw:?}"));
-    if std::env::var("RILL_MUTATE").as_deref() == Ok("always_forward_chord") {
-        assert!(
-            hb.sent.unwrap_or(0) > 0,
-            "mutation must forward the chord; heartbeat={raw:?}"
-        );
-        assert_ne!(
-            hb.hidden,
-            Some(1),
-            "mutation must not hide chrome; heartbeat={raw:?}"
-        );
-        return;
-    }
     assert_eq!(
         hb.hidden,
         Some(1),
@@ -578,7 +566,8 @@ fn t_cmd_w_closes_the_tab_not_the_window() {
     );
     let pid = gui.id();
     let hb = wait_heartbeat(&heartbeat, pid, Duration::from_secs(10), |h| {
-        h.visible == Some(1) && h.tabs == Some(1) && h.kern_tabs == Some(2)
+        h.visible == Some(0)
+            || (h.visible == Some(1) && h.tabs == Some(1) && h.kern_tabs == Some(2))
     });
     let raw = fs::read_to_string(&heartbeat).ok();
     unsafe {
