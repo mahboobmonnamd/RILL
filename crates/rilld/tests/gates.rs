@@ -12,8 +12,16 @@ use rilld::{pump, Daemon};
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use vt_engine::VtEngine;
+
+static ENV_MUTATION_LOCK: Mutex<()> = Mutex::new(());
+
+fn with_env_lock<T>(f: impl FnOnce() -> T) -> T {
+    let _guard = ENV_MUTATION_LOCK.lock().expect("env mutation lock");
+    f()
+}
 
 fn temp_sock(tag: &str) -> PathBuf {
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -386,11 +394,15 @@ fn t_attached_session_poll_does_not_busy_loop() {
 fn t_outbound_partial_write_does_not_replay_a_frame() {
     use std::os::fd::AsRawFd;
 
-    std::env::set_var("RILL_TEST_TINY_SNDBUF", "1");
+    with_env_lock(|| {
+        std::env::set_var("RILL_TEST_TINY_SNDBUF", "1");
+    });
     struct ClearTiny;
     impl Drop for ClearTiny {
         fn drop(&mut self) {
-            std::env::remove_var("RILL_TEST_TINY_SNDBUF");
+            with_env_lock(|| {
+                std::env::remove_var("RILL_TEST_TINY_SNDBUF");
+            });
         }
     }
     let _clear = ClearTiny;
@@ -676,10 +688,13 @@ fn t_attach_protocol_mismatch_is_refused() {
 /// T-GRAPH-NESTED. Required mutation: `skip_nested_guard`.
 #[test]
 fn t_nested_rilld_bind_is_refused() {
-    std::env::set_var("RILL_INSIDE", "1");
-    let sock = temp_sock("nested");
-    let err = Daemon::bind(&sock, "/bin/sleep", &["30"], Winsize::default());
-    std::env::remove_var("RILL_INSIDE");
+    let err = with_env_lock(|| {
+        std::env::set_var("RILL_INSIDE", "1");
+        let sock = temp_sock("nested");
+        let err = Daemon::bind(&sock, "/bin/sleep", &["30"], Winsize::default());
+        std::env::remove_var("RILL_INSIDE");
+        err
+    });
     assert!(
         matches!(err, Err(rilld::Error::NestedLaunch)),
         "nested bind succeeded"
