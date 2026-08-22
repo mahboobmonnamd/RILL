@@ -916,7 +916,10 @@ fn protocol1_writer_credit(clients: &[Client], id: SessionId) -> Option<u64> {
 }
 
 /// Non-blocking drain of `outbox`. Partial progress stays queued (Q1).
-pub(crate) fn write_outbox(stream: &mut UnixStream, outbox: &mut VecDeque<u8>) -> Result<(), Error> {
+pub(crate) fn write_outbox(
+    stream: &mut UnixStream,
+    outbox: &mut VecDeque<u8>,
+) -> Result<(), Error> {
     while !outbox.is_empty() {
         let n = {
             let (front, back) = outbox.as_slices();
