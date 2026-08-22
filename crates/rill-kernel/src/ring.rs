@@ -26,6 +26,10 @@ impl ByteRing {
     }
 
     pub fn retained_base(&self) -> u64 {
+        #[cfg(feature = "mutate")]
+        if std::env::var("RILL_MUTATE").as_deref() == Ok("snapshot_relative_offsets") {
+            return 0;
+        }
         self.retained_base
     }
 
@@ -112,5 +116,49 @@ mod tests {
         assert_eq!(ring.end_offset(), 6);
         assert!(ring.deltas_after(0).is_err());
         assert_eq!(ring.deltas_after(2).expect("tail"), b"cdef");
+    }
+
+    /// T-CONTENT-MONOTONIC-OFFSETS — eviction advances the retained base while
+    /// preserving absolute offsets for every surviving byte.
+    /// Required mutation: `RILL_MUTATE=snapshot_relative_offsets`.
+    #[test]
+    fn t_content_monotonic_offsets_survive_ring_eviction() {
+        let mut ring = ByteRing::new(8);
+        ring.append(b"abcdefgh");
+        assert_eq!(ring.retained_base(), 0);
+        assert_eq!(ring.end_offset(), 8);
+
+        ring.append(b"ijklmnop");
+        assert_eq!(ring.snapshot(), b"ijklmnop");
+        assert_eq!(ring.retained_base(), 8);
+        assert_eq!(ring.end_offset(), 16);
+        assert_eq!(
+            ring.deltas_after(8)
+                .expect("checkpoint offset still retained"),
+            b"ijklmnop"
+        );
+        assert_eq!(
+            ring.deltas_after(12).expect("tail remains contiguous"),
+            b"mnop"
+        );
+    }
+
+    #[test]
+    fn stage3_checkpoint_plus_deltas_remains_lossless_after_eviction() {
+        let mut ring = ByteRing::new(6);
+        ring.append(b"abcdef");
+        ring.append(b"ghijkl");
+
+        let checkpoint = 6;
+        let deltas = ring
+            .deltas_after(checkpoint)
+            .expect("checkpoint remains live");
+        assert_eq!(deltas, b"ghijkl");
+        assert_eq!(ring.retained_base(), 6);
+        assert_eq!(ring.end_offset(), 12);
+        assert!(
+            ring.deltas_after(5).is_err(),
+            "older offsets are evicted and fail closed"
+        );
     }
 }
