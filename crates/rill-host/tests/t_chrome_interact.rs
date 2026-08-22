@@ -566,8 +566,10 @@ fn t_cmd_w_closes_the_tab_not_the_window() {
     );
     let pid = gui.id();
     let hb = wait_heartbeat(&heartbeat, pid, Duration::from_secs(10), |h| {
-        h.visible == Some(0)
-            || (h.visible == Some(1) && h.tabs == Some(1) && h.kern_tabs == Some(2))
+        // Success: tab closed, window stays. Mutation `always_close_window`:
+        // window ordered out after the second leaf exists.
+        (h.visible == Some(1) && h.tabs == Some(1) && h.kern_tabs == Some(2))
+            || (h.visible == Some(0) && h.kern_tabs.unwrap_or(0) >= 2)
     });
     let raw = fs::read_to_string(&heartbeat).ok();
     unsafe {
