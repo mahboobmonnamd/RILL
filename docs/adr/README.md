@@ -47,3 +47,11 @@ ADR 0053 D12: pointer encoder is PTY fidelity, not Block chrome.
 projection of the same object in one issue. Lanes stay parallel on independent
 objects. In-memory New Tab is [#345](https://github.com/mahboobmonnamd/RILL/issues/345);
 Flow UI still waits on ContentTimeline.
+
+## 2026-08-22 CLI-agent integration
+
+[ADR 0057](0057-cli-agent-integration-architecture.md) defines the first-class
+model for Claude Code, Codex CLI and compatible terminal-running CLI agents.
+The decision preserves PTY ownership, task/object authority, adapter boundaries,
+provider capability levels and worktree isolation while permitting native UI
+projections around the agent-owned terminal grid.

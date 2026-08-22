@@ -640,6 +640,86 @@ shows `fullscreen=1`.
 
 ---
 
+## T-CLI-AGENT — terminal-first provider integrations
+
+Authority: [ADR 0057](adr/0057-cli-agent-integration-architecture.md),
+[SPEC-CLI-AGENT](spec/SPEC-CLI-AGENT.md).
+
+### T-CLI-AGENT-LEVELS — provider integration degrades by documented capability
+
+**Status.** Red — architecture-only gate, not a shipped feature.
+
+**Oracle.** A fake CLI agent with no structured lifecycle handshake must remain
+Level 0/1. A provider with an official structured adapter may move to Level 2,
+while the raw PTY remains the source of truth for terminal input. The oracle is
+that normalized capability state and the one execution owner, not prompt text.
+
+**Procedure.** Drive a fake provider through the adapter boundary with a
+provider-specific payload absent from official docs and then with a provider
+hook/handshake fixture present. Assert the runtime reports the lower capability
+level and preserves the raw terminal owner.
+
+**Required mutation.** `provider_guess_from_prompt_text` or
+`adapt_every_agent_as_structured` turns the gate red by inventing capability and
+pretending a provider's terminal TUI is the durable authority.
+
+**Negative control.** `manual` until the fake-provider fixture and adapter
+normalization exist.
+
+### T-CLI-AGENT-TERMINAL-OWNERSHIP — a CLI agent is not a second PTY owner
+
+**Status.** Red — architecture-only gate.
+
+**Oracle.** The Task reports the same `TerminalExecutionId` before and after the
+agent launches, and the terminal pane still owns a single PTY. A second PTY only
+appears when the user creates a second terminal execution.
+
+**Procedure.** Launch a fake CLI agent inside a terminal pane and assert the
+execution identity and PTY owner remain unchanged while the provider-driven TUI
+runs. Ensure exiting the agent returns the same terminal to the prior shell or
+Flow presentation.
+
+**Required mutation.** `spawn_second_pty_for_agent` turns this gate red by
+creating a second execution or silently rebinding the pane.
+
+**Negative control.** `manual` until the terminal lifecycle fixture exists.
+
+### T-CLI-AGENT-ADAPTER-BOUNDARY — known provider events are normalized once
+
+**Status.** Red — architecture-only gate.
+
+**Oracle.** A provider approval request or tool event is normalized into a
+Task-centered event with provenance. Unknown provider data is preserved as
+unsupported metadata rather than silently rewritten as a known event.
+
+**Procedure.** Inject a provider approval payload and an unknown payload into the
+fake adapter; confirm the runtime records the normalized event and explicitly
+flags unsupported information.
+
+**Required mutation.** `misclassify_unknown_event_as_approval` turns the gate red
+by discarding provenance and inventing the wrong event type.
+
+**Negative control.** `manual` until adapter normalization fixtures exist.
+
+### T-CLI-AGENT-WORKTREE — concurrent task worktrees remain isolated
+
+**Status.** Red — architecture-only gate.
+
+**Oracle.** Two simultaneous agent tasks targeting the same repository refuse to
+share a worktree. The runtime records the explicit worktree path and the refusal
+reason when a collision is detected.
+
+**Procedure.** Launch two fake agent tasks against the same repo path; assert the
+second task either gets a distinct worktree or refuses to start without a
+collision.
+
+**Required mutation.** `allow_shared_worktree_between_tasks` turns this gate red
+by letting two tasks mutate the same working tree.
+
+**Negative control.** `manual` until the task/worktree fixture exists.
+
+---
+
 ## T-SPLIT — window is three panes around Chip 1
 
 Authority: [ADR 0018](adr/0018-three-pane-host-chrome.md),

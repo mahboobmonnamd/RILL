@@ -66,8 +66,9 @@ Installs or checks Rust (`rustc` ≥ 1.85) and Xcode Command Line Tools. No Zig.
 4. [ADR 0054](docs/adr/0054-chip0-retired.md) — Chip 1 is live; Chip 0 retired
 5. [Deferred](docs/DEFERRED.md) — specified product work that is not in the binary ([#338](https://github.com/mahboobmonnamd/RILL/issues/338))
 6. [ADR 0053](docs/adr/0053-runtime-domain-content-and-client-authority.md) — runtime, domain, content and client authority
-7. [Architecture evidence](docs/ARCHITECTURE-EVIDENCE-2026-08-21.md) — repository findings and workflow sources
-8. [ADR registry](docs/adr/README.md) — canonical numbering and historical mappings
+7. [ADR 0057](docs/adr/0057-cli-agent-integration-architecture.md) — terminal-first CLI-agent integration architecture
+8. [Architecture evidence](docs/ARCHITECTURE-EVIDENCE-2026-08-21.md) — repository findings and workflow sources
+9. [ADR registry](docs/adr/README.md) — canonical numbering and historical mappings
 9. [ADR 0001](docs/adr/0001-session-operating-system.md) — the lock
 10. [ADR 0002](docs/adr/0002-falsifiable-evidence.md) — what counts as evidence
 11. [ADR 0003](docs/adr/0003-display-pipeline.md) — renderer and key→present
