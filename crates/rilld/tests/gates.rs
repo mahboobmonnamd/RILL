@@ -815,3 +815,54 @@ fn t_nav_new_tab_spawns_a_second_leaf() {
         "need two kernel tabs; snap={snap} reply={reply}"
     );
 }
+
+/// T-FLOW-SUBMISSION-AUTHORITY — the runtime assigns identity and sequence to
+/// exact structured-input bytes instead of the host inventing a Flow card.
+/// Required mutation: `RILL_MUTATE=drop_content_submission`.
+#[test]
+fn t_flow_submission_creates_one_authoritative_terminal_input() {
+    let sock = temp_sock("flow");
+    let mut daemon = Daemon::bind(&sock, "/bin/sh", &[], Winsize::default()).expect("bind");
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    let worker = std::thread::spawn(move || {
+        while rx.try_recv().is_err() {
+            let _ = pump(&mut daemon, Duration::from_millis(30));
+        }
+    });
+    std::thread::sleep(Duration::from_millis(50));
+
+    let mut path = sock.as_os_str().to_os_string();
+    path.push(".content");
+    let mut content = UnixStream::connect(PathBuf::from(path)).expect("content socket");
+    content.set_read_timeout(Some(Duration::from_secs(2))).ok();
+    let command = b"cargo test";
+    let mut request = Vec::with_capacity(17 + command.len());
+    request.extend_from_slice(b"RLC1");
+    request.push(2);
+    request.extend_from_slice(&0u64.to_be_bytes());
+    request.extend_from_slice(&(command.len() as u32).to_be_bytes());
+    request.extend_from_slice(command);
+    content.write_all(&request).expect("submit");
+
+    let mut response = [0u8; 256];
+    let n = content.read(&mut response).expect("content snapshot");
+    let _ = tx.send(());
+    let _ = worker.join();
+    assert!(n >= 24, "short content response: {n}");
+    assert_eq!(&response[..4], b"RLC1", "content response version");
+    assert_eq!(response[4], 0, "content response status");
+    assert_eq!(
+        u32::from_be_bytes(response[5..9].try_into().expect("count")),
+        1
+    );
+    assert_eq!(response[9], 1, "event kind must be TerminalInput");
+    assert_eq!(
+        u64::from_be_bytes(response[10..18].try_into().expect("sequence")),
+        1
+    );
+    let id_len = u16::from_be_bytes(response[18..20].try_into().expect("id length")) as usize;
+    let text_len = u32::from_be_bytes(response[20..24].try_into().expect("text length")) as usize;
+    assert!(id_len > 0, "runtime must assign an event id");
+    let text_start = 24 + id_len;
+    assert_eq!(&response[text_start..text_start + text_len], command);
+}

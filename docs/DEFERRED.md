@@ -20,7 +20,7 @@ Shipped-path repairs live on [#334](https://github.com/mahboobmonnamd/RILL/issue
 | One TOML authority; Ghostty grammar as import-only | Live overlay still wins after `host-surface.toml` | ADR 0043, ADR 0053 D14 |
 | T-PERF matrix / hid T-NFR in GitHub-hosted CI | SPEC-TERMINAL-PERFORMANCE Red; ADR 0009 D4 forbids hid close on `macos-14` | ADR 0009 |
 | Scrollback-as-lines / reflow | Host POD viewport over `take_scrolled_off`; chip still has no ring; reflow later | SPEC-VT-SCREEN §5, §8 |
-| Compositor / Flow / Raw / TUI switch | SPEC-COMPOSITOR is specification only until ContentTimeline (D12 steps 3–4). Named tests already in TEST-CASES (`T-INPUT-MODE-TRANSITION`, `T-COMPOSITOR-PRESERVES-METAL-GRID`, `T-PERF-RAW-TUI-BYPASS`). Implementation is not authorized in this slice. | ADR 0053 D7–D9 |
+| Full compositor scene graph / rich surfaces | Issue #348 authorizes only bounded Flow projection, composer, and independent Raw/TUI fallback. Shared text, selection, accessibility, images, diffs, agents and workspace activity remain deferred. | ADR 0053 D7–D9; ADR 0056 D5 |
 | Mock tabs / Block cards / file tree / Attention | Concept evidence only (ADR 0053 D16). First legal mock-adjacent slice is raw mouse (#344, ADR 0055), not chrome. | ADR 0055, SPEC-HOST-POINTER |
 
 Do not delete the kernel container tree or `rill-orchestrate` as dead code.

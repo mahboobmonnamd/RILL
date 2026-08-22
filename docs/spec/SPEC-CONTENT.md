@@ -1,14 +1,14 @@
 # SPEC-CONTENT — terminal event ledger, ContentTimeline and retention
 
-- **Status:** Accepted for ADR 0053 D12 item 3 implementation — 2026-08-22.
-  Product-owner approval authorizes the per-gate `lane:kernel` slices tracked
-  by #331. Flow/host projection remains D12 item 4 and is not authorized here.
+- **Status:** Accepted for ADR 0053 D12 items 3–4 implementation — 2026-08-22.
+  Item 3 closed in PR #365. ADR 0056 D1 and D5 plus issue #348 authorize the
+  bounded Flow/host projection while Raw/TUI remains independently operable.
 - **Authority:** [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md)
   D5–D8, D15 and D22; supersedes range-only normal rendering in
   [ADR 0050](../adr/0050-blocks-are-a-cold-overlay.md).
 - **Requires:** [SPEC-TERMINAL-PERFORMANCE](SPEC-TERMINAL-PERFORMANCE.md).
-- **Lane:** `lane:kernel` for authoritative events and retention;
-  `lane:host` for virtualized presentation.
+- **Lanes:** `lane:kernel` for authoritative events and retention;
+  `lane:host` for the virtualized Flow projection in issue #348.
 
 ## 1. Separate records
 
@@ -100,6 +100,25 @@ second ledger, attention queue or navigation requirement, and it does not show
 every command/tool event by default. Visual lanes/graphs are client state. A
 new durable causal edge is allowed only when correctness needs information that
 cannot be derived reliably.
+
+### 3.3 Stage 4 local content channel
+
+Issue #348 uses a separate local `.content` Unix socket. It is not an attach
+frame and never shares terminal `DATA`, `CREDIT`, PTY-drain or presenter queues.
+The channel is versioned binary data with explicit lengths and a 64 KiB maximum
+request; malformed versions, kinds, lengths and unknown TerminalExecution IDs
+fail closed.
+
+The first request kinds are bounded timeline snapshot and structured terminal
+input submission. A submission names the target execution and carries the exact
+UTF-8 editor bytes. The runtime assigns event identity and sequence, appends one
+`TerminalInput` event, and returns an authoritative bounded snapshot. Clients
+may cache that snapshot only as disposable projection state. UI geometry,
+cards, spines and editor drafts never cross this channel.
+
+The socket is an interim local transport for the same transport-neutral content
+messages required by ADR 0053 D9. It does not authorize protocol 2, remote
+transport or a second semantic model.
 
 ## 4. Boundaries and raw mode
 

@@ -19,9 +19,11 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use vt_engine::{Palette, VtEngine};
 
+mod content;
 mod error;
 mod nav;
 mod scroll;
+pub use content::{content_submit, parse_content_snapshot, ContentItem};
 pub use error::Error;
 pub use nav::{nav_new_tab, nav_snapshot, parse_nav_line, NavSnapshot};
 pub use rill_look::chrome_surface_rgba;
@@ -62,6 +64,8 @@ pub struct Client {
     workspace_id: Option<u64>,
     modes: TerminalModeState,
     bytes_sent: u64,
+    content_items: Vec<ContentItem>,
+    execution_id: u64,
     #[allow(dead_code)]
     attach_path: PathBuf,
 }
@@ -105,6 +109,8 @@ impl Client {
             workspace_id,
             modes: TerminalModeState::default(),
             bytes_sent: 0,
+            content_items: Vec::new(),
+            execution_id: session_id.unwrap_or(0),
             attach_path,
         };
         client.send(Frame::attach(1, session_id))?;
@@ -168,6 +174,15 @@ impl Client {
             .as_ref()
             .map(|c| c.cursor)
             .unwrap_or(0xd9d9_d9ff)
+    }
+
+    pub fn submit_content(&mut self, text: &[u8]) -> Result<(), Error> {
+        self.content_items = content_submit(&self.attach_path, self.execution_id, text)?;
+        Ok(())
+    }
+
+    pub fn content_items(&self) -> &[ContentItem] {
+        &self.content_items
     }
 
     pub fn alive(&self) -> bool {

@@ -356,6 +356,113 @@ static NSTextField *RillChordHint(NSString *text, uint32_t fg) {
 }
 @end
 
+@interface RillFlowSurface : NSView <NSTextFieldDelegate>
+@property (nonatomic, strong) TerminalView *terminal;
+@property (nonatomic, strong) NSScrollView *scroll;
+@property (nonatomic, strong) NSStackView *items;
+@property (nonatomic, strong) NSTextField *composer;
+@property (nonatomic, assign) uint32_t foreground;
+- (instancetype)initWithTerminal:(TerminalView *)terminal foreground:(uint32_t)foreground;
+- (void)submitText:(NSString *)text;
+@end
+
+@implementation RillFlowSurface
+- (BOOL)isFlipped {
+    return YES;
+}
+
+- (instancetype)initWithTerminal:(TerminalView *)terminal foreground:(uint32_t)foreground {
+    self = [super initWithFrame:NSMakeRect(0, 0, 700, 640)];
+    if (self) {
+        _terminal = terminal;
+        _foreground = foreground;
+        self.accessibilityIdentifier = @"flow-root";
+
+        NSStackView *items = [[NSStackView alloc] initWithFrame:NSZeroRect];
+        items.orientation = NSUserInterfaceLayoutOrientationVertical;
+        items.alignment = NSLayoutAttributeLeading;
+        items.spacing = 6;
+        items.edgeInsets = NSEdgeInsetsMake(8, 12, 8, 12);
+        _items = items;
+
+        NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
+        scroll.documentView = items;
+        scroll.drawsBackground = NO;
+        scroll.hasVerticalScroller = YES;
+        scroll.autohidesScrollers = YES;
+        scroll.borderType = NSNoBorder;
+        scroll.accessibilityIdentifier = @"flow-scroll";
+        _scroll = scroll;
+        [self addSubview:scroll];
+
+        [self addSubview:terminal];
+
+        NSTextField *composer = [[NSTextField alloc] initWithFrame:NSZeroRect];
+        composer.placeholderString = @"Command";
+        composer.font = [NSFont monospacedSystemFontOfSize:13 weight:NSFontWeightRegular];
+        composer.delegate = self;
+        composer.target = self;
+        composer.action = @selector(submitComposer:);
+        composer.accessibilityIdentifier = @"flow-composer";
+        _composer = composer;
+        [self addSubview:composer];
+        [self reloadItems];
+    }
+    return self;
+}
+
+- (void)layout {
+    [super layout];
+    CGFloat width = self.bounds.size.width;
+    CGFloat height = self.bounds.size.height;
+    CGFloat composerHeight = 38;
+    CGFloat itemHeight = self.terminal.flowItemCount > 0 ? MIN(126, height * 0.30) : 0;
+    self.scroll.hidden = itemHeight < 1;
+    self.scroll.frame = NSMakeRect(0, 0, width, itemHeight);
+    self.items.frame = NSMakeRect(0, 0, width, MAX(itemHeight, self.items.fittingSize.height));
+    self.terminal.frame = NSMakeRect(0, itemHeight, width, MAX(8, height - itemHeight - composerHeight));
+    self.composer.frame = NSMakeRect(12, MAX(0, height - 32), MAX(40, width - 24), 24);
+}
+
+- (void)submitComposer:(id)sender {
+    (void)sender;
+    [self submitText:self.composer.stringValue];
+}
+
+- (void)submitText:(NSString *)text {
+    if (text.length == 0 || ![self.terminal submitFlowText:text]) {
+        return;
+    }
+    self.composer.stringValue = @"";
+    [self reloadItems];
+    const char *mut = getenv("RILL_MUTATE");
+    if (mut && strcmp(mut, "terminal_content_through_generic_text_nodes") == 0) {
+        self.terminal.hidden = YES;
+    }
+    [self setNeedsLayout:YES];
+    [self layoutSubtreeIfNeeded];
+    [self.window makeFirstResponder:self.terminal];
+    [self.terminal writeTestHeartbeat];
+}
+
+- (void)reloadItems {
+    for (NSView *view in self.items.arrangedSubviews.copy) {
+        [self.items removeArrangedSubview:view];
+        [view removeFromSuperview];
+    }
+    uint32_t count = [self.terminal flowItemCount];
+    for (uint32_t index = 0; index < count; index++) {
+        NSTextField *item = [NSTextField labelWithString:[self.terminal flowItemTextAtIndex:index]];
+        item.font = [NSFont monospacedSystemFontOfSize:13 weight:NSFontWeightMedium];
+        item.textColor = RillRgbaColor(self.foreground);
+        item.lineBreakMode = NSLineBreakByTruncatingTail;
+        item.accessibilityIdentifier =
+            [NSString stringWithFormat:@"flow-card-%u", index];
+        [self.items addArrangedSubview:item];
+    }
+}
+@end
+
 @interface RillCenterHost : NSView
 @property (nonatomic, strong) NSView *tabStrip;
 @property (nonatomic, strong) NSView *terminalHost;
@@ -454,9 +561,11 @@ static NSTextField *RillChordHint(NSString *text, uint32_t fg) {
     RillTabBar *bar = [[RillTabBar alloc] initWithFg:self.fgRgba pane:self.paneRgba chrome:self];
     NSView *host = [[NSView alloc] initWithFrame:NSMakeRect(0, 36, 700, 644)];
     host.autoresizesSubviews = YES;
-    [host addSubview:self.terminal];
-    self.terminal.frame = host.bounds;
-    self.terminal.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    RillFlowSurface *flow = [[RillFlowSurface alloc] initWithTerminal:self.terminal
+                                                            foreground:self.fgRgba];
+    [host addSubview:flow];
+    flow.frame = host.bounds;
+    flow.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     center.tabStrip = bar;
     center.terminalHost = host;
     [center addSubview:bar];
@@ -618,6 +727,15 @@ static NSTextField *RillChordHint(NSString *text, uint32_t fg) {
             [self applyChordHintsFromFlags:NSEventModifierFlagCommand];
         });
     }
+        if (getenv("RILL_TEST_FLOW")) {
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.55 * NSEC_PER_SEC)),
+                                             dispatch_get_main_queue(), ^{
+                                                 RillFlowSurface *flow = (RillFlowSurface *)self.terminal.superview;
+                                                 if ([flow isKindOfClass:[RillFlowSurface class]]) {
+                                                         [flow submitText:@"printf 'RILLFLOW\\n'"];
+                                                 }
+                                             });
+        }
     if (!getenv("RILL_TEST_HIDE_CHROME")) {
         return;
     }
@@ -711,7 +829,7 @@ static NSTextField *RillChordHint(NSString *text, uint32_t fg) {
     self.selectedTab = idx;
     for (NSUInteger i = 0; i < self.terminals.count; i++) {
         TerminalView *tv = self.terminals[i];
-        tv.hidden = i != idx;
+        tv.superview.hidden = i != idx;
         tv.accessibilityIdentifier = i == idx ? @"chrome-center" : @"pane-surface";
     }
     self.terminal = self.terminals[idx];
@@ -752,7 +870,7 @@ static NSTextField *RillChordHint(NSString *text, uint32_t fg) {
             idx = self.terminals.count - 1;
         }
         TerminalView *tv = self.terminals[idx];
-        [tv removeFromSuperview];
+        [tv.superview removeFromSuperview];
         [self.terminals removeObjectAtIndex:idx];
         NSUInteger next = idx == 0 ? 0 : idx - 1;
         if (next >= self.terminals.count) {
@@ -794,9 +912,10 @@ static NSTextField *RillChordHint(NSString *text, uint32_t fg) {
         rill_client_free(client);
         return;
     }
-    tv.frame = self.centerHost.terminalHost.bounds;
-    tv.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    [self.centerHost.terminalHost addSubview:tv];
+    RillFlowSurface *flow = [[RillFlowSurface alloc] initWithTerminal:tv foreground:self.fgRgba];
+    flow.frame = self.centerHost.terminalHost.bounds;
+    flow.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [self.centerHost.terminalHost addSubview:flow];
     [self.terminals addObject:tv];
     [self showTabAtIndex:self.terminals.count - 1];
 }

@@ -40,6 +40,14 @@ jobs:
       - name: rilld Chip 1 resync
         run: cargo test -p rilld --test t_vt_live_resync -- --test-threads=1 --nocapture
 
+      - name: Stage 4 content authority
+        run: |
+          cargo test -p rilld --test gates t_flow_submission_creates_one_authoritative_terminal_input -- --nocapture
+          if RILL_MUTATE=drop_content_submission cargo test -p rilld --features mutate --test gates t_flow_submission_creates_one_authoritative_terminal_input -- --nocapture; then
+            echo "BROKEN INSTRUMENT: T-FLOW-SUBMISSION-AUTHORITY stayed green" >&2
+            exit 1
+          fi
+
       - name: Chip 1 types and engine
         run: cargo test -p rill-vt-types -p vt-engine -p rill-look -- --nocapture
 

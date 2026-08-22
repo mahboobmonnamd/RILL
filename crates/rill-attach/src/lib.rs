@@ -30,6 +30,13 @@ pub fn cold_nav_socket_path(attach_socket: impl AsRef<Path>) -> PathBuf {
     PathBuf::from(path)
 }
 
+/// Cold semantic-content submission and snapshot channel (SPEC-CONTENT §3.3).
+pub fn cold_content_socket_path(attach_socket: impl AsRef<Path>) -> PathBuf {
+    let mut path = attach_socket.as_ref().as_os_str().to_os_string();
+    path.push(".content");
+    PathBuf::from(path)
+}
+
 /// Internal worker listener. Sibling of the public attach socket, never under
 /// shared `/tmp` as the production parent (SPEC-RUNTIME-SUPERVISION §2).
 pub fn worker_socket_path(attach_socket: impl AsRef<Path>) -> PathBuf {

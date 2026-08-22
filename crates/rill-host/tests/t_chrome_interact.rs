@@ -64,6 +64,9 @@ struct Heartbeat {
     plus_trail: Option<u32>,
     overflow: Option<u32>,
     hints: Option<u32>,
+    flow: Option<u32>,
+    flow_cards: Option<u32>,
+    term_visible: Option<u32>,
 }
 
 fn read_heartbeat(path: &PathBuf) -> Option<Heartbeat> {
@@ -95,6 +98,9 @@ fn read_heartbeat(path: &PathBuf) -> Option<Heartbeat> {
     let mut plus_trail = None;
     let mut overflow = None;
     let mut hints = None;
+    let mut flow = None;
+    let mut flow_cards = None;
+    let mut term_visible = None;
     for part in s.split_whitespace() {
         if let Some(v) = part.strip_prefix("seq=") {
             seq = v.parse().ok();
@@ -177,6 +183,15 @@ fn read_heartbeat(path: &PathBuf) -> Option<Heartbeat> {
         if let Some(v) = part.strip_prefix("hints=") {
             hints = v.parse().ok();
         }
+        if let Some(v) = part.strip_prefix("flow=") {
+            flow = v.parse().ok();
+        }
+        if let Some(v) = part.strip_prefix("flow_cards=") {
+            flow_cards = v.parse().ok();
+        }
+        if let Some(v) = part.strip_prefix("term_visible=") {
+            term_visible = v.parse().ok();
+        }
     }
     Some(Heartbeat {
         seq: seq?,
@@ -206,6 +221,9 @@ fn read_heartbeat(path: &PathBuf) -> Option<Heartbeat> {
         plus_trail,
         overflow,
         hints,
+        flow,
+        flow_cards,
+        term_visible,
     })
 }
 
@@ -258,6 +276,32 @@ fn spawn_gui(sock: &PathBuf, heartbeat: &PathBuf, extra: &[(&str, &str)]) -> std
         gui_cmd.env(k, v);
     }
     gui_cmd.spawn().expect("spawn packaged Rill")
+}
+
+/// T-COMPOSITOR-PRESERVES-METAL-GRID — Flow must retain the live Metal grid
+/// as the independently operable Raw/TUI primitive.
+/// Required mutation: `RILL_MUTATE=terminal_content_through_generic_text_nodes`.
+#[test]
+fn t_compositor_flow_preserves_the_metal_terminal_grid() {
+    let sock = unique_sock();
+    let heartbeat = PathBuf::from(format!("{}.hb", sock.display()));
+    let _ = fs::remove_file(&heartbeat);
+    let mut gui = spawn_gui(&sock, &heartbeat, &[("RILL_TEST_FLOW", "1")]);
+    let pid = gui.id();
+    let hb = wait_heartbeat(&heartbeat, pid, Duration::from_secs(8), |h| {
+        h.flow == Some(1) && h.flow_cards.unwrap_or(0) > 0
+    });
+    let raw = fs::read_to_string(&heartbeat).ok();
+    unsafe {
+        libc::kill(pid as i32, libc::SIGTERM);
+    }
+    let _ = gui.wait();
+    let hb = hb.unwrap_or_else(|| panic!("Flow never projected content; heartbeat={raw:?}"));
+    assert_eq!(
+        hb.term_visible,
+        Some(1),
+        "Flow must retain the Metal Raw/TUI primitive; heartbeat={raw:?}"
+    );
 }
 
 /// Bug: long output left the Chip 1 grid with no wheel/offset paint.

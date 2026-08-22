@@ -5,11 +5,15 @@ mod error;
 mod proxy;
 
 use rill_attach::{
-    cold_identity_socket_path, cold_nav_socket_path, Decoder, Frame, PROTOCOL_2, PROTOCOL_VERSION,
+    cold_content_socket_path, cold_identity_socket_path, cold_nav_socket_path, Decoder, Frame,
+    PROTOCOL_2, PROTOCOL_VERSION,
 };
-use rill_kernel::{Kernel, NodeChild, NodeKind, Session, SessionId, Winsize};
+use rill_kernel::{
+    ContentEvent, ContentKind, ContentTimeline, Kernel, NodeChild, NodeKind, Session, SessionId,
+    Winsize,
+};
 use rill_vt_types::{PodGrid, TerminalEmulation};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
@@ -30,6 +34,8 @@ pub struct Daemon {
     identity_socket_path: PathBuf,
     nav_listener: UnixListener,
     nav_socket_path: PathBuf,
+    content_listener: UnixListener,
+    content_socket_path: PathBuf,
     workspace_id: rill_kernel::NodeId,
     _lock: File,
     kernel: Kernel,
@@ -44,6 +50,25 @@ pub struct Daemon {
     shell_args: Vec<String>,
     size: Winsize,
     nav_conns: Vec<UnixStream>,
+    content_conns: Vec<ContentConnection>,
+    content_timelines: HashMap<SessionId, ContentTimeline>,
+}
+
+const CONTENT_REQUEST_MAX: usize = 64 * 1024;
+const CONTENT_TIMELINE_MAX_ITEMS: usize = 64;
+const CONTENT_RESPONSE_MAX: usize = 1024 * 1024;
+
+struct ContentConnection {
+    stream: UnixStream,
+    input: Vec<u8>,
+    output: VecDeque<u8>,
+    handled: bool,
+}
+
+struct ContentRequest {
+    kind: u8,
+    execution: u64,
+    payload: Vec<u8>,
 }
 
 struct Client {
@@ -119,6 +144,13 @@ impl Daemon {
         let nav_listener = UnixListener::bind(&nav_socket_path)?;
         nav_listener.set_nonblocking(true)?;
         std::fs::set_permissions(&nav_socket_path, std::fs::Permissions::from_mode(0o600))?;
+        let content_socket_path = cold_content_socket_path(&socket_path);
+        if content_socket_path.exists() {
+            std::fs::remove_file(&content_socket_path)?;
+        }
+        let content_listener = UnixListener::bind(&content_socket_path)?;
+        content_listener.set_nonblocking(true)?;
+        std::fs::set_permissions(&content_socket_path, std::fs::Permissions::from_mode(0o600))?;
         let mut kernel = Kernel::new();
         let default_id = kernel.spawn_leaf(shell, args, size)?;
         let workspace_id = kernel.create_node(NodeKind::Workspace, None)?;
@@ -154,6 +186,8 @@ impl Daemon {
             identity_socket_path,
             nav_listener,
             nav_socket_path,
+            content_listener,
+            content_socket_path,
             workspace_id,
             _lock: lock,
             kernel,
@@ -165,6 +199,8 @@ impl Daemon {
             shell_args: args.iter().map(|s| (*s).to_string()).collect(),
             size,
             nav_conns: Vec::new(),
+            content_conns: Vec::new(),
+            content_timelines: HashMap::new(),
         })
     }
 
@@ -289,22 +325,28 @@ impl Daemon {
     }
 
     fn poll_io(&mut self, timeout_ms: i32) -> Result<(), Error> {
-        let mut fds = Vec::new();
-        fds.push(libc::pollfd {
-            fd: self.listener.as_raw_fd(),
-            events: libc::POLLIN,
-            revents: 0,
-        });
-        fds.push(libc::pollfd {
-            fd: self.identity_listener.as_raw_fd(),
-            events: libc::POLLIN,
-            revents: 0,
-        });
-        fds.push(libc::pollfd {
-            fd: self.nav_listener.as_raw_fd(),
-            events: libc::POLLIN,
-            revents: 0,
-        });
+        let mut fds = vec![
+            libc::pollfd {
+                fd: self.listener.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            },
+            libc::pollfd {
+                fd: self.identity_listener.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            },
+            libc::pollfd {
+                fd: self.nav_listener.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            },
+            libc::pollfd {
+                fd: self.content_listener.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            },
+        ];
         for c in &self.clients {
             let mut events = libc::POLLIN;
             if !c.outbox.is_empty() {
@@ -327,10 +369,14 @@ impl Daemon {
         if fds[2].revents & libc::POLLIN != 0 {
             self.accept_cold_nav()?;
         }
+        if fds[3].revents & libc::POLLIN != 0 {
+            self.accept_cold_content()?;
+        }
         self.poll_nav_commands()?;
+        self.poll_content_commands()?;
         let mut i = 0;
         while i < self.clients.len() && i < n_clients {
-            let idx = 3 + i;
+            let idx = 4 + i;
             if idx < fds.len()
                 && fds[idx].revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR) != 0
             {
@@ -520,6 +566,120 @@ impl Daemon {
             self.nav_conns.remove(i);
         }
         Ok(())
+    }
+
+    fn accept_cold_content(&mut self) -> Result<(), Error> {
+        match self.content_listener.accept() {
+            Ok((stream, _)) => {
+                stream.set_nonblocking(true)?;
+                self.content_conns.push(ContentConnection {
+                    stream,
+                    input: Vec::new(),
+                    output: VecDeque::new(),
+                    handled: false,
+                });
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(e) => return Err(e.into()),
+        }
+        Ok(())
+    }
+
+    fn poll_content_commands(&mut self) -> Result<(), Error> {
+        let mut i = 0;
+        while i < self.content_conns.len() {
+            let mut remove = false;
+            if !self.content_conns[i].handled {
+                let mut buf = [0u8; 4096];
+                loop {
+                    match self.content_conns[i].stream.read(&mut buf) {
+                        Ok(0) => {
+                            remove = true;
+                            break;
+                        }
+                        Ok(n) => {
+                            if self.content_conns[i].input.len().saturating_add(n)
+                                > CONTENT_REQUEST_MAX + 17
+                            {
+                                self.content_conns[i].output = content_error_response(1).into();
+                                self.content_conns[i].handled = true;
+                                break;
+                            }
+                            self.content_conns[i].input.extend_from_slice(&buf[..n]);
+                        }
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                        Err(_) => {
+                            remove = true;
+                            break;
+                        }
+                    }
+                }
+                if !remove && !self.content_conns[i].handled {
+                    match decode_content_request(&self.content_conns[i].input) {
+                        Ok(Some(request)) => {
+                            let response = self.content_response(request);
+                            self.content_conns[i].output = response.into();
+                            self.content_conns[i].handled = true;
+                        }
+                        Ok(None) => {}
+                        Err(()) => {
+                            self.content_conns[i].output = content_error_response(1).into();
+                            self.content_conns[i].handled = true;
+                        }
+                    }
+                }
+            }
+            if !remove && self.content_conns[i].handled {
+                let conn = &mut self.content_conns[i];
+                remove = write_outbox(&mut conn.stream, &mut conn.output).is_err()
+                    || conn.output.is_empty();
+            }
+            if remove {
+                self.content_conns.remove(i);
+            } else {
+                i += 1;
+            }
+        }
+        Ok(())
+    }
+
+    fn content_response(&mut self, request: ContentRequest) -> Vec<u8> {
+        let id = if request.execution == 0 {
+            self.default_id
+        } else {
+            SessionId::from_u64(request.execution)
+        };
+        if self.kernel.session(id).is_none() {
+            return content_error_response(2);
+        }
+        let timeline = self.content_timelines.entry(id).or_default();
+        if request.kind == 2 {
+            #[cfg(feature = "mutate")]
+            let drop_submission =
+                std::env::var("RILL_MUTATE").as_deref() == Ok("drop_content_submission");
+            #[cfg(not(feature = "mutate"))]
+            let drop_submission = false;
+            if !drop_submission {
+                if timeline.len() >= CONTENT_TIMELINE_MAX_ITEMS {
+                    return content_error_response(3);
+                }
+                let Ok(text) = String::from_utf8(request.payload) else {
+                    return content_error_response(1);
+                };
+                let sequence = timeline.len() as u64 + 1;
+                let event = ContentEvent::structured_terminal_input(
+                    format!("input-{}-{sequence}", id.as_u64()),
+                    sequence,
+                    text,
+                );
+                if timeline.append(event).is_err() {
+                    return content_error_response(3);
+                }
+            }
+        } else if request.kind != 1 || !request.payload.is_empty() {
+            return content_error_response(1);
+        }
+        encode_content_snapshot(timeline)
     }
 
     fn resolve_attach(&self, session_id: Option<u64>) -> Result<SessionId, Error> {
@@ -1043,6 +1203,77 @@ fn protocol1_writer_credit(clients: &[Client], id: SessionId) -> Option<u64> {
     min_c
 }
 
+fn decode_content_request(bytes: &[u8]) -> Result<Option<ContentRequest>, ()> {
+    if bytes.len() < 17 {
+        return Ok(None);
+    }
+    if &bytes[..4] != b"RLC1" {
+        return Err(());
+    }
+    let execution = u64::from_be_bytes(bytes[5..13].try_into().map_err(|_| ())?);
+    let payload_len = u32::from_be_bytes(bytes[13..17].try_into().map_err(|_| ())?) as usize;
+    if payload_len > CONTENT_REQUEST_MAX {
+        return Err(());
+    }
+    let total = 17usize.checked_add(payload_len).ok_or(())?;
+    if bytes.len() < total {
+        return Ok(None);
+    }
+    if bytes.len() != total {
+        return Err(());
+    }
+    Ok(Some(ContentRequest {
+        kind: bytes[4],
+        execution,
+        payload: bytes[17..total].to_vec(),
+    }))
+}
+
+fn content_error_response(status: u8) -> Vec<u8> {
+    let mut response = Vec::with_capacity(9);
+    response.extend_from_slice(b"RLC1");
+    response.push(status);
+    response.extend_from_slice(&0u32.to_be_bytes());
+    response
+}
+
+fn encode_content_snapshot(timeline: &ContentTimeline) -> Vec<u8> {
+    let mut items = Vec::new();
+    let mut count = 0u32;
+    for event in timeline.events() {
+        let kind = match event.kind {
+            ContentKind::TerminalInput => 1,
+            ContentKind::TerminalOutput => 2,
+            ContentKind::BackgroundOutput => 3,
+            ContentKind::Discontinuity => 11,
+            ContentKind::Truncation => 12,
+            _ => 13,
+        };
+        let id = event.event_id.as_bytes();
+        let text = event.materialized_text().unwrap_or("").as_bytes();
+        let item_len = 15usize.saturating_add(id.len()).saturating_add(text.len());
+        if id.len() > u16::MAX as usize
+            || text.len() > CONTENT_REQUEST_MAX
+            || 9usize.saturating_add(items.len()).saturating_add(item_len) > CONTENT_RESPONSE_MAX
+        {
+            break;
+        }
+        items.push(kind);
+        items.extend_from_slice(&event.sequence.to_be_bytes());
+        items.extend_from_slice(&(id.len() as u16).to_be_bytes());
+        items.extend_from_slice(&(text.len() as u32).to_be_bytes());
+        items.extend_from_slice(id);
+        items.extend_from_slice(text);
+        count += 1;
+    }
+    let mut response = Vec::with_capacity(9 + items.len());
+    response.extend_from_slice(b"RLC1");
+    response.push(0);
+    response.extend_from_slice(&count.to_be_bytes());
+    response.extend_from_slice(&items);
+    response
+}
+
 /// Non-blocking drain of `outbox`. Partial progress stays queued (Q1).
 pub(crate) fn write_outbox(
     stream: &mut UnixStream,
@@ -1069,6 +1300,7 @@ impl Drop for Daemon {
         let _ = std::fs::remove_file(&self.socket_path);
         let _ = std::fs::remove_file(&self.identity_socket_path);
         let _ = std::fs::remove_file(&self.nav_socket_path);
+        let _ = std::fs::remove_file(&self.content_socket_path);
     }
 }
 

@@ -223,6 +223,23 @@ impl ContentEvent {
         }
     }
 
+    pub fn structured_terminal_input(
+        event_id: impl Into<String>,
+        sequence: u64,
+        text: impl Into<String>,
+    ) -> Self {
+        Self {
+            event_id: event_id.into(),
+            kind: ContentKind::TerminalInput,
+            sequence,
+            parent_event_id: None,
+            source_range: None,
+            availability: EventAvailability::Available,
+            source: None,
+            materialized_text: Some(text.into()),
+        }
+    }
+
     pub fn truncated(event_id: impl Into<String>, sequence: u64, range: (u64, u64)) -> Self {
         Self {
             event_id: event_id.into(),
@@ -252,7 +269,7 @@ impl ContentEvent {
                 .as_deref()
                 .is_some_and(|text| text.starts_with("$ "));
         }
-        false
+        self.kind == ContentKind::TerminalInput
     }
 
     pub fn redacted_export(&self, rules: &[RedactionRule]) -> RedactedExport {
@@ -275,10 +292,14 @@ impl ContentEvent {
     }
 
     pub fn size_hint(&self) -> u64 {
-        match self.source_range {
+        let payload = self
+            .materialized_text
+            .as_ref()
+            .map_or(0, |text| text.len() as u64);
+        payload.saturating_add(match self.source_range {
             Some((start, end)) => end.saturating_sub(start).max(1),
             None => self.event_id.len() as u64 + 16,
-        }
+        })
     }
 }
 
