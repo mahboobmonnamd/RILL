@@ -4,10 +4,22 @@ use rill_orchestrate::automation::{
 
 #[test]
 fn t_aut_event_maturity_classifies_supported_surface() {
-    assert_eq!(RillEventKind::WorkspaceOpened.maturity(), rill_orchestrate::automation::EventClass::V1);
-    assert_eq!(RillEventKind::CommandCompleted.maturity(), rill_orchestrate::automation::EventClass::V1);
-    assert_eq!(RillEventKind::AgentStarted.maturity(), rill_orchestrate::automation::EventClass::Future);
-    assert_eq!(RillEventKind::AttentionCreated.maturity(), rill_orchestrate::automation::EventClass::Future);
+    assert_eq!(
+        RillEventKind::WorkspaceOpened.maturity(),
+        rill_orchestrate::automation::EventClass::V1
+    );
+    assert_eq!(
+        RillEventKind::CommandCompleted.maturity(),
+        rill_orchestrate::automation::EventClass::V1
+    );
+    assert_eq!(
+        RillEventKind::AgentStarted.maturity(),
+        rill_orchestrate::automation::EventClass::Future
+    );
+    assert_eq!(
+        RillEventKind::AttentionCreated.maturity(),
+        rill_orchestrate::automation::EventClass::Future
+    );
 }
 
 #[test]

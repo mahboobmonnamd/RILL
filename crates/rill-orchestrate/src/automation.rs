@@ -144,7 +144,11 @@ impl RillAction {
     /// and rejects empty or contradictory values before enqueueing.
     pub fn validate(&self) -> Result<(), ActionValidationError> {
         match self {
-            Self::CreateTab { tab_id: Some(id), title, command } => {
+            Self::CreateTab {
+                tab_id: Some(id),
+                title,
+                command,
+            } => {
                 if id.trim().is_empty() {
                     return Err(ActionValidationError::MissingIdentifier("tab_id".into()));
                 }
@@ -167,7 +171,11 @@ impl RillAction {
                 }
                 Ok(())
             }
-            Self::SplitPane { pane_id, direction: _, command } => {
+            Self::SplitPane {
+                pane_id,
+                direction: _,
+                command,
+            } => {
                 if pane_id.trim().is_empty() {
                     return Err(ActionValidationError::MissingIdentifier("pane_id".into()));
                 }
@@ -211,7 +219,10 @@ impl RillAction {
                 }
                 Ok(())
             }
-            Self::ChangeRuntimeAppearanceOverride { theme, background_opacity } => {
+            Self::ChangeRuntimeAppearanceOverride {
+                theme,
+                background_opacity,
+            } => {
                 if theme.trim().is_empty() {
                     return Err(ActionValidationError::EmptyValue("theme".into()));
                 }
