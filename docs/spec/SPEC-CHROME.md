@@ -55,10 +55,11 @@ keep every product-management surface hidden indefinitely.
 
 ## 4. Placeholders this slice MAY show
 
-- Left: the historical slice MAY show a **Workspaces** heading and one row named
-  from the home directory's last path component. It is placeholder evidence,
-  not a stable implicit Workspace implementation and not persistence proof.
-- Right: inert **Changes** and **Files** rows. Clicks MUST NOT spawn, kill,
+- Left: Workspaces heading and one row whose label is the kernel `Workspace`
+  `NodeId` from the cold nav socket (T-NAV-WORKSPACE-PROJECTION). Mutation
+  `chrome_invents_workspace_row` restores a host-local directory name.
+- Right: inert **Changes** and **Files** rows, plus an **Agents** heading with
+  no rows until Task exists (SPEC-NAV §7). Clicks MUST NOT spawn, kill,
   or detach.
 
 ## 4a. Look

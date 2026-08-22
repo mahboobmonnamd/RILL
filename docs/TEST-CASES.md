@@ -753,6 +753,45 @@ Demonstrated **green** after control-size type (`chrome_font=13`);
 
 ---
 
+## T-SCROLL-OFFSCREEN — wheel shows lines that left the grid
+
+Authority: [SPEC-VT-SCREEN](spec/SPEC-VT-SCREEN.md) §5, [#339](https://github.com/mahboobmonnamd/RILL/issues/339).
+
+**Bug (doc comment).** `ls` / tree output is cut; Chip 1 discards scrolled rows
+and `TerminalView` had no `scrollWheel:`.
+
+**Oracle.** Packaged heartbeat `paint0` is the marker that left live grid row 0
+(`live0` differs). Library: `t_scroll_wheel_reveals_lines_that_left_the_grid`.
+
+**Required mutation.** `RILL_MUTATE=ignore_wheel`.
+
+---
+
+## T-NAV-VIEWSTATE / host chords — hide chrome without PTY writes
+
+Authority: [SPEC-NAV](spec/SPEC-NAV.md) §5, [#340](https://github.com/mahboobmonnamd/RILL/issues/340).
+
+**Bug.** Keys all went to the PTY; sidebars could not hide.
+
+**Oracle.** ⌥⌘1 / `RILL_TEST_HIDE_CHROME` sets heartbeat `hidden=1` `left=0`
+`sent=0` while the GUI pid stays alive.
+
+**Required mutations.** `hide_sidebar_detaches`, `always_forward_chord`.
+
+---
+
+## T-NAV-WORKSPACE-PROJECTION — chrome row is a kernel Workspace id
+
+Authority: [SPEC-NAV](spec/SPEC-NAV.md) §1, [#341](https://github.com/mahboobmonnamd/RILL/issues/341).
+
+**Bug.** Left chrome used the home directory name.
+
+**Oracle.** Heartbeat `ws_id` > 0 and `ws_label` equals that id (cold nav socket).
+
+**Required mutation.** `chrome_invents_workspace_row`.
+
+---
+
 ## T-DOCK-REOPEN — Dock click shows the window
 
 Authority: [ADR 0019](adr/0019-dock-reopen-shows-window.md),

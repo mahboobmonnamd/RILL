@@ -1,6 +1,9 @@
 # SPEC-COMPOSITOR — terminal primitive, rich scene and library seams
 
-- **Status:** Red. Specification only; no implementation is authorized.
+- **Status:** Red. Specification only; no implementation is authorized until
+  ContentTimeline (ADR 0053 D12 steps 3–4) exists. Flow / Raw / TUI named tests
+  in TEST-CASES remain the gates (`T-INPUT-MODE-TRANSITION`,
+  `T-COMPOSITOR-PRESERVES-METAL-GRID`, `T-PERF-RAW-TUI-BYPASS`).
 - **Authority:** [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md)
   D7, D9 and D22.
 - **Requires:** [SPEC-TERMINAL-PERFORMANCE](SPEC-TERMINAL-PERFORMANCE.md).
