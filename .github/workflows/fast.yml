@@ -235,6 +235,7 @@ jobs:
           red T-GRAPH-EVENTS duplicate_event_ids t_graph_event_ids_are_unique_and_terminate_is_idempotent
           red T-GRAPH-LAYOUT omit_second_leaf t_graph_layout_snapshot_names_every_live_leaf
           red T-GRAPH-EPHEMERAL ignore_ephemeral t_graph_ephemeral_drop_terminates_the_child
+          red T-GRAPH-LIFECYCLE-MODE-FIXED dynamic_ephemeral_env t_graph_lifecycle_mode_is_fixed_at_spawn
 
       - name: T-RUNTIME checkpoint negative controls
         run: |

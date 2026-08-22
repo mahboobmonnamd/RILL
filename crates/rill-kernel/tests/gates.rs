@@ -453,6 +453,32 @@ fn t_kill_dropping_the_session_does_not_kill_the_child() {
     unsafe { libc::kill(pid as i32, libc::SIGKILL) };
 }
 
+/// T-GRAPH-LIFECYCLE-MODE-FIXED.
+/// Required mutation: `RILL_MUTATE=dynamic_ephemeral_env`.
+#[test]
+fn t_graph_lifecycle_mode_is_fixed_at_spawn() {
+    let persistent =
+        Session::spawn("/bin/sh", &["-c", "exec sleep 30"], Winsize::default()).expect("spawn");
+    let persistent_pid = persistent.child_pid();
+    let ephemeral =
+        Session::spawn_ephemeral("/bin/sh", &["-c", "exec sleep 30"], Winsize::default())
+            .expect("spawn ephemeral");
+    let ephemeral_pid = ephemeral.child_pid();
+
+    drop(persistent);
+    drop(ephemeral);
+    std::thread::sleep(Duration::from_millis(150));
+
+    let persistent_alive = unsafe { libc::kill(persistent_pid as i32, 0) } == 0;
+    let ephemeral_alive = unsafe { libc::kill(ephemeral_pid as i32, 0) } == 0;
+    assert!(
+        persistent_alive,
+        "persistent Session was terminated on Drop"
+    );
+    assert!(!ephemeral_alive, "ephemeral Session survived Drop");
+    unsafe { libc::kill(persistent_pid as i32, libc::SIGKILL) };
+}
+
 // -------------------------------------------------------------- T-GRAPH (M1)
 
 fn graph_tmp(tag: &str) -> std::path::PathBuf {
@@ -1055,13 +1081,12 @@ fn t_graph_layout_snapshot_names_every_live_leaf() {
 /// Required mutation: `ignore_ephemeral`.
 #[test]
 fn t_graph_ephemeral_drop_terminates_the_child() {
-    std::env::set_var("RILL_EPHEMERAL", "1");
     let pid = {
         let session =
-            Session::spawn("/bin/sh", &["-c", "exec sleep 30"], Winsize::default()).expect("spawn");
+            Session::spawn_ephemeral("/bin/sh", &["-c", "exec sleep 30"], Winsize::default())
+                .expect("spawn");
         session.child_pid()
     };
-    std::env::remove_var("RILL_EPHEMERAL");
     std::thread::sleep(Duration::from_millis(80));
     let alive = unsafe { libc::kill(pid as i32, 0) } == 0;
     assert!(!alive, "ephemeral Drop left child {pid} alive");
