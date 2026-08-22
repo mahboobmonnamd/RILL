@@ -83,6 +83,83 @@ pub unsafe extern "C" fn rill_client_connect_leaf(
     }
 }
 
+/// Submit exact structured-input bytes over the cold content channel.
+///
+/// # Safety
+/// `client` is live and `bytes` points to `len` readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_content_submit(
+    client: *mut Client,
+    bytes: *const u8,
+    len: usize,
+) -> i32 {
+    if client.is_null() || (bytes.is_null() && len != 0) {
+        return -1;
+    }
+    let input = if len == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(bytes, len) }
+    };
+    match unsafe { &mut *client }.submit_content(input) {
+        Ok(()) => unsafe { &*client }.content_items().len() as i32,
+        Err(e) => {
+            set_err(e);
+            -1
+        }
+    }
+}
+
+/// # Safety
+/// `client` is a live handle.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_content_count(client: *const Client) -> u32 {
+    if client.is_null() {
+        return 0;
+    }
+    unsafe { &*client }.content_items().len() as u32
+}
+
+/// # Safety
+/// `client` is live and `index` is checked.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_content_kind(client: *const Client, index: u32) -> u8 {
+    if client.is_null() {
+        return 0;
+    }
+    unsafe { &*client }
+        .content_items()
+        .get(index as usize)
+        .map_or(0, |item| item.kind)
+}
+
+/// The pointer is valid until the next content-text call on this thread.
+///
+/// # Safety
+/// `client` is live and `index` is checked.
+#[no_mangle]
+pub unsafe extern "C" fn rill_client_content_text(
+    client: *const Client,
+    index: u32,
+) -> *const c_char {
+    if client.is_null() {
+        return ptr::null();
+    }
+    let Some(item) = (unsafe { &*client }).content_items().get(index as usize) else {
+        return ptr::null();
+    };
+    thread_local! {
+        static BUF: std::cell::RefCell<Option<CString>> = const { std::cell::RefCell::new(None) };
+    }
+    BUF.with(|buf| {
+        *buf.borrow_mut() = CString::new(item.text.as_str()).ok();
+        buf.borrow()
+            .as_ref()
+            .map(|text| text.as_ptr())
+            .unwrap_or(ptr::null())
+    })
+}
+
 /// Cold NEW_TAB. Writes the new leaf id to `leaf_out`. Returns tab count or -1.
 ///
 /// # Safety

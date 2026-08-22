@@ -1,9 +1,9 @@
 # SPEC-COMPOSITOR — terminal primitive, rich scene and library seams
 
-- **Status:** Red. Specification only; no implementation is authorized until
-  ContentTimeline (ADR 0053 D12 steps 3–4) exists. Flow / Raw / TUI named tests
-  in TEST-CASES remain the gates (`T-INPUT-MODE-TRANSITION`,
-  `T-COMPOSITOR-PRESERVES-METAL-GRID`, `T-PERF-RAW-TUI-BYPASS`).
+- **Status:** Accepted for the issue #348 Flow/Raw slice only — 2026-08-22.
+  Stage 3 established ContentTimeline in PR #365. ADR 0056 D1 and D5 authorize
+  the bounded host projection in §§1–2, 4 and 7. The full retained compositor,
+  text, selection and accessibility work remains Red.
 - **Authority:** [ADR 0053](../adr/0053-runtime-domain-content-and-client-authority.md)
   D7, D9 and D22.
 - **Requires:** [SPEC-TERMINAL-PERFORMANCE](SPEC-TERMINAL-PERFORMANCE.md).
@@ -126,3 +126,6 @@ content, lifecycle or fidelity contracts.
 This spec does not select a cross-platform UI toolkit, replace AppKit, promise a
 public library, implement an IDE or require every internal boundary to become a
 separately compiled crate.
+
+Issue #348 does not authorize the full retained scene graph, shared text crate,
+selection, accessibility, images, diffs, agents or workspace activity timeline.

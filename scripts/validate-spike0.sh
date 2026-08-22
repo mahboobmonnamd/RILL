@@ -131,6 +131,9 @@ run_gate "T-GRAPH-LAYOUT" cargo test -p rill-kernel --offline t_graph_layout_sna
 run_gate "T-GRAPH-EPHEMERAL" cargo test -p rill-kernel --offline t_graph_ephemeral_drop -- --test-threads=1 --nocapture
 run_gate "T-GRAPH-OBSERVE" cargo test -p rilld       --offline t_observe_attach -- --test-threads=1 --nocapture
 run_gate "T-GRAPH-KILL-N" cargo test -p rilld       --offline t_graph_dropping_the_daemon -- --test-threads=1 --nocapture
+run_gate "T-FLOW-SUBMISSION-AUTHORITY" \
+  cargo test -p rilld --offline --test gates \
+  t_flow_submission_creates_one_authoritative_terminal_input -- --nocapture
 
 # ---------------------------------------------------------------------- package
 echo "== package =="
@@ -224,6 +227,9 @@ run_gate "T-NAV-WORKSPACE" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
 run_gate "T-AGENT-EMPTY" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
   cargo test -p rill-host --offline --test t_chrome_interact \
   t_agent_inventory_is_empty_until_task_exists -- --nocapture
+run_gate "T-COMPOSITOR-PRESERVES-METAL-GRID" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+  cargo test -p rill-host --offline --test t_chrome_interact \
+  t_compositor_flow_preserves_the_metal_terminal_grid -- --nocapture
 run_gate "T-DOCK-REOPEN" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
   cargo test -p rill-host --offline --test t_dock_reopen -- --nocapture
 run_gate "T-MOBILE-BACKGROUND-DETACH" env RILL_GUI_APP="$ROOT/dist/Rill.app" \
@@ -474,6 +480,13 @@ if [ "$NEGATIVE_CONTROLS" -eq 1 ]; then
     env RILL_GUI_APP="$ROOT/dist/Rill.app" \
     cargo test -p rill-host --offline --test t_chrome_interact \
     t_agent_inventory_is_empty_until_task_exists -- --nocapture
+  run_control "T-FLOW-SUBMISSION-AUTHORITY" drop_content_submission \
+    cargo test -p rilld --offline --features mutate --test gates \
+    t_flow_submission_creates_one_authoritative_terminal_input -- --nocapture
+  run_control "T-COMPOSITOR-PRESERVES-METAL-GRID" terminal_content_through_generic_text_nodes \
+    env RILL_GUI_APP="$ROOT/dist/Rill.app" \
+    cargo test -p rill-host --offline --test t_chrome_interact \
+    t_compositor_flow_preserves_the_metal_terminal_grid -- --nocapture
   run_control "T-DOCK-REOPEN" skip_dock_reopen \
     env RILL_GUI_APP="$ROOT/dist/Rill.app" \
     cargo test -p rill-host --offline --test t_dock_reopen -- --nocapture

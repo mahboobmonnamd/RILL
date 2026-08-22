@@ -43,6 +43,11 @@ int rill_nav_new_tab(const char *socket, uint64_t *leaf_out);
 int rill_nav_tab_count(const char *socket);
 void rill_client_free(RillClient *client);
 
+int rill_client_content_submit(RillClient *client, const uint8_t *bytes, size_t len);
+uint32_t rill_client_content_count(const RillClient *client);
+uint8_t rill_client_content_kind(const RillClient *client, uint32_t index);
+const char *rill_client_content_text(const RillClient *client, uint32_t index);
+
 /* Attach socket fd, for arming a dispatch_source. The warm path is
  * event-driven; there is no timer (ADR 0003 D2). */
 int rill_client_socket_fd(const RillClient *client);

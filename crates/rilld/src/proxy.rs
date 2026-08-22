@@ -2,7 +2,9 @@
 
 use crate::endpoint::{authorize_peer, ensure_protected_parent};
 use crate::error::Error;
-use rill_attach::{cold_identity_socket_path, cold_nav_socket_path, worker_socket_path};
+use rill_attach::{
+    cold_content_socket_path, cold_identity_socket_path, cold_nav_socket_path, worker_socket_path,
+};
 use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
@@ -61,6 +63,9 @@ struct Pipe {
     b_to_a: VecDeque<u8>,
 }
 
+const CONTENT_REQUEST_PIPE_MAX: usize = 64 * 1024 + 17;
+const CONTENT_RESPONSE_PIPE_MAX: usize = 1024 * 1024;
+
 pub fn run_control(attach_sock: &Path) -> Result<(), Error> {
     ensure_protected_parent(attach_sock)?;
     let worker_sock = worker_socket_path(attach_sock);
@@ -112,8 +117,18 @@ pub fn run_control(attach_sock: &Path) -> Result<(), Error> {
     std::fs::set_permissions(&nav_path, std::fs::Permissions::from_mode(0o600))?;
     let worker_nav = cold_nav_socket_path(&worker_sock);
 
+    let content_path = cold_content_socket_path(attach_sock);
+    if content_path.exists() {
+        let _ = std::fs::remove_file(&content_path);
+    }
+    let content = UnixListener::bind(&content_path)?;
+    content.set_nonblocking(true)?;
+    std::fs::set_permissions(&content_path, std::fs::Permissions::from_mode(0o600))?;
+    let worker_content = cold_content_socket_path(&worker_sock);
+
     let mut pipes: Vec<Pipe> = Vec::new();
     let mut nav_pipes: Vec<Pipe> = Vec::new();
+    let mut content_pipes: Vec<Pipe> = Vec::new();
     loop {
         match listener.accept() {
             Ok((stream, _)) => {
@@ -165,6 +180,24 @@ pub fn run_control(attach_sock: &Path) -> Result<(), Error> {
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
             Err(e) => return Err(e.into()),
         }
+        match content.accept() {
+            Ok((stream, _)) => {
+                if authorize_peer(&stream).is_ok() {
+                    if let Ok(worker) = UnixStream::connect(&worker_content) {
+                        let _ = stream.set_nonblocking(true);
+                        let _ = worker.set_nonblocking(true);
+                        content_pipes.push(Pipe {
+                            a: stream,
+                            b: worker,
+                            a_to_b: VecDeque::new(),
+                            b_to_a: VecDeque::new(),
+                        });
+                    }
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(e) => return Err(e.into()),
+        }
 
         let mut i = 0;
         while i < pipes.len() {
@@ -178,6 +211,14 @@ pub fn run_control(attach_sock: &Path) -> Result<(), Error> {
         while i < nav_pipes.len() {
             if splice(&mut nav_pipes[i]).is_err() {
                 nav_pipes.remove(i);
+            } else {
+                i += 1;
+            }
+        }
+        i = 0;
+        while i < content_pipes.len() {
+            if splice_content(&mut content_pipes[i]).is_err() {
+                content_pipes.remove(i);
             } else {
                 i += 1;
             }
@@ -196,6 +237,11 @@ pub fn run_control(attach_sock: &Path) -> Result<(), Error> {
             },
             libc::pollfd {
                 fd: nav.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            },
+            libc::pollfd {
+                fd: content.as_raw_fd(),
                 events: libc::POLLIN,
                 revents: 0,
             },
@@ -240,6 +286,26 @@ pub fn run_control(attach_sock: &Path) -> Result<(), Error> {
                 revents: 0,
             });
         }
+        for p in &content_pipes {
+            let mut ev_a = libc::POLLIN;
+            if !p.b_to_a.is_empty() {
+                ev_a |= libc::POLLOUT;
+            }
+            let mut ev_b = libc::POLLIN;
+            if !p.a_to_b.is_empty() {
+                ev_b |= libc::POLLOUT;
+            }
+            fds.push(libc::pollfd {
+                fd: p.a.as_raw_fd(),
+                events: ev_a,
+                revents: 0,
+            });
+            fds.push(libc::pollfd {
+                fd: p.b.as_raw_fd(),
+                events: ev_b,
+                revents: 0,
+            });
+        }
         unsafe {
             libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, 50);
         }
@@ -249,6 +315,17 @@ pub fn run_control(attach_sock: &Path) -> Result<(), Error> {
 fn splice(p: &mut Pipe) -> Result<(), Error> {
     read_into(&mut p.a, &mut p.a_to_b)?;
     read_into(&mut p.b, &mut p.b_to_a)?;
+    crate::write_outbox(&mut p.b, &mut p.a_to_b)?;
+    crate::write_outbox(&mut p.a, &mut p.b_to_a)?;
+    Ok(())
+}
+
+fn splice_content(p: &mut Pipe) -> Result<(), Error> {
+    read_into(&mut p.a, &mut p.a_to_b)?;
+    read_into(&mut p.b, &mut p.b_to_a)?;
+    if p.a_to_b.len() > CONTENT_REQUEST_PIPE_MAX || p.b_to_a.len() > CONTENT_RESPONSE_PIPE_MAX {
+        return Err(Error::PeerRefused);
+    }
     crate::write_outbox(&mut p.b, &mut p.a_to_b)?;
     crate::write_outbox(&mut p.a, &mut p.b_to_a)?;
     Ok(())

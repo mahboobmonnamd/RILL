@@ -38,6 +38,9 @@ typedef struct {
  * from the live NSWindow when RILL_TEST_HEARTBEAT is set. */
 - (void)writeTestHeartbeat;
 - (void)returnToLiveViewport;
+- (BOOL)submitFlowText:(NSString *)text;
+- (uint32_t)flowItemCount;
+- (NSString *)flowItemTextAtIndex:(uint32_t)index;
 
 @end
 

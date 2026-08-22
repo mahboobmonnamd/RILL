@@ -1990,6 +1990,7 @@ are failed preconditions, never green skips.
 | T-BLOCK-RERUN — rerun fills input and never executes | Child receives no bytes until separate submit; exact retained command visible | rerun action writes directly to PTY |
 | T-TRANSCRIPT-EVENT-IDEMPOTENCY — event identity is stable and append is idempotent | Replay each event twice and recover from snapshot; final transcript IDs/order/hash equal single append | duplicate EventId creates a second item |
 | T-TRANSCRIPT-BYTE-EVENT-ORDER — semantic events correlate to exact terminal offsets | Real PTY fixture interleaves marks/output; recovered event ranges match independently captured byte offsets | semantic event is emitted before its source byte offset |
+| T-FLOW-SUBMISSION-AUTHORITY — structured input becomes one runtime-owned content item | Submit exact UTF-8 bytes over the cold content channel; the returned event has a runtime-assigned ID, monotonic sequence and `TerminalInput` kind | drop_content_submission |
 | T-FLOW-RAW-SEMANTIC-FAILURE — semantic failure never breaks raw terminal | Kill/fault semantic projector during interactive shell/TUI; raw bytes, input, paint and original pid continue and Raw becomes available | semantic queue backpressure pauses PTY drain |
 | T-ACTIVITY-DERIVED-NOT-AUTHORITY — timeline teardown loses no source state | Destroy/rebuild/filter timeline from durable source events; source IDs/hashes and process state stay unchanged | timeline node owns and deletes approval event |
 
