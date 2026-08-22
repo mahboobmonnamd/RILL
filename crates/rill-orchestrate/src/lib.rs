@@ -4,6 +4,7 @@
 //! typing path.
 
 pub mod attention;
+pub mod automation;
 pub mod config;
 pub mod task;
 pub mod trust;
